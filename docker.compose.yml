@@ -1,0 +1,28 @@
+services:
+  db:
+      image: timescale/timescaledb:latest-pg17
+      container_name: cepheus-timescaledb
+      environment:
+        - POSTGRES_PASSWORD=admin
+      volumes:
+        - ./db/init/:/docker-entrypoint-initdb.d/
+      ports:
+        - 5435:5432
+
+  cepheus-argus:
+    image: cepheus-argus:latest
+    container_name: cepheus-argus
+    build:
+      context: .
+      dockerfile: docker/cepheus-argus.Dockerfile
+    ports:
+      - 8087:8080
+    environment:
+      - OTEL_SINK=otel
+      - OTEL_ENDPOINT=otel-collector:4318
+      - DETECTION_INTERVAL_SECONDS=10
+      - CEPHEUS_DB_URL=postgres://postgres:admin@db:5432/postgres?sslmode=disable
+      - NATS_CONNECT_URL=nats://nats-server:4222
+    depends_on:
+      - db
+      - nats-server
