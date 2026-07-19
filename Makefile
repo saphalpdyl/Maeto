@@ -16,8 +16,8 @@ sync:
 
 ## VM-related
 clean:
-	-sudo containerlab destroy -t clab/example-toplogy.yml
-	-sudo docker rm -f $$(docker ps -aq --filter "name=^clab-retail-")
+	-sudo containerlab destroy -t clab/eight-pop/topology.yml
+	-sudo docker rm -f $$(docker ps -aq --filter "name=^clab-eight-pop-")
 
 ips:
 	@printf "%-24s %-60s\n" "Name" "Interfaces"
@@ -25,6 +25,10 @@ ips:
 	  ifaces=$$(docker exec -it "$$c" sh -c "ip -4 -o addr show scope global | awk '\$$2!=\"lo\" && \$$2!=\"eth0\" {print \$$2 \":\" \$$4}'" 2>/dev/null | tr -d '\r' | paste -sd ', ' -); \
 	  printf "%-24s %-60s\n" "$$c" "$${ifaces:-<none>}"; \
 	done
+
+apply: clean
+	sudo clab deploy -t clab/eight-pop/topology.yml
+	$(MAKE) ips
 
 ## Generators
 sqlc-gen:

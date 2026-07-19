@@ -1,0 +1,35 @@
+name: eight-pop
+
+topology:
+  defaults:
+    kind: linux
+    image: quay.io/frrouting/frr:10.5.1
+    binds:
+      - conf/shared/frr_daemons:/etc/frr/daemons
+
+  nodes:
+    popA:
+    popB:
+    popC:
+    popD:
+    popE:
+    popF:
+    popG:
+    popH:
+
+  links:
+    - endpoints: ["popA:eth1", "popB:eth1"]
+    - endpoints: ["popA:eth2", "popD:eth1"]
+
+    - endpoints: ["popB:eth2", "popC:eth1"]
+
+    - endpoints: ["popC:eth2", "popE:eth1"]
+
+    - endpoints: ["popD:eth2", "popE:eth2"]
+
+    - endpoints: ["popE:eth3", "popF:eth1"]
+
+    - endpoints: ["popF:eth2", "popG:eth1"]
+    - endpoints: ["popF:eth3", "popH:eth1"]
+
+    - endpoints: ["popG:eth2", "popH:eth2"]
