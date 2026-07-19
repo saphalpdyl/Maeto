@@ -1,0 +1,25 @@
+stages:
+  - lint
+  - test
+
+editorconfig:
+  stage: lint
+  script:
+    - make lint.editorconfig
+  tags:
+    - docker
+    - go
+
+lint:
+  image: golangci/golangci-lint:latest
+  stage: lint
+  cache:
+    key: golangci-lint-$CI_COMMIT_REF_SLUG
+    paths:
+      - .cache/golangci-lint
+      - .cache/go/pkg/mod
+  variables:
+    GOLANGCI_LINT_CACHE: $CI_PROJECT_DIR/.cache/golangci-lint
+    GOPATH: $CI_PROJECT_DIR/.cache/go
+  script:
+    - make lint
