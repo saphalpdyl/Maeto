@@ -3,8 +3,8 @@ package argus
 import (
 	"fmt"
 
-	"cepheus/libs/common"
-	"cepheus/services/argus/types"
+	"github.com/saphalpdyl/maeto/libs/common"
+	"github.com/saphalpdyl/maeto/services/argus/types"
 )
 
 type Extractor struct {

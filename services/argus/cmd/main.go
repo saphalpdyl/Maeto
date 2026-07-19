@@ -1,9 +1,9 @@
 package main
 
 import (
-	"cepheus/libs/telemetry"
-	"cepheus/services/argus"
-	log "cepheus/services/argus/log"
+	"github.com/saphalpdyl/maeto/libs/telemetry"
+	"github.com/saphalpdyl/maeto/services/argus"
+	log "github.com/saphalpdyl/maeto/services/argus/log"
 	"context"
 	"crypto/rand"
 	"fmt"

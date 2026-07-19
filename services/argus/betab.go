@@ -1,10 +1,10 @@
 package argus
 
 import (
-	"cepheus/services/argus/types"
 	"encoding/json"
 	"fmt"
 	"math"
+	"github.com/saphalpdyl/maeto/services/argus/types"
 	"time"
 )
 

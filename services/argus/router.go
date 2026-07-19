@@ -1,9 +1,9 @@
 package argus
 
 import (
-	"cepheus/libs/common"
-	"cepheus/services/argus/log"
-	"cepheus/services/argus/types"
+	"github.com/saphalpdyl/maeto/libs/common"
+	"github.com/saphalpdyl/maeto/services/argus/log"
+	"github.com/saphalpdyl/maeto/services/argus/types"
 	"context"
 	"encoding/json"
 	"fmt"

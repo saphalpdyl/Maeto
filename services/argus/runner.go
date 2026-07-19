@@ -5,9 +5,9 @@ import (
 	"log/slog"
 	"time"
 
-	argus_db "cepheus/services/argus/db"
-	"cepheus/services/argus/log"
-	"cepheus/services/argus/types"
+	argus_db "github.com/saphalpdyl/maeto/services/argus/db"
+	"github.com/saphalpdyl/maeto/services/argus/log"
+	"github.com/saphalpdyl/maeto/services/argus/types"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"

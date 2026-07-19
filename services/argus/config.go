@@ -1,7 +1,7 @@
 package argus
 
 import (
-	"cepheus/libs/common"
+	"github.com/saphalpdyl/maeto/libs/common"
 	"log/slog"
 	"os"
 	"strconv"
