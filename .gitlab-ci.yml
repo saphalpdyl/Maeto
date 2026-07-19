@@ -4,8 +4,11 @@ stages:
 
 editorconfig:
   stage: lint
+  image:
+    name: mstruebing/editorconfig-checker:latest
+    entrypoint: [""]
   script:
-    - make lint.editorconfig
+    - ec
 
 lint:
   image: golangci/golangci-lint:latest
