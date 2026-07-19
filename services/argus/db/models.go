@@ -5,8 +5,6 @@
 package argus_db
 
 import (
-	"net/netip"
-
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -118,45 +116,4 @@ type StampProbe struct {
 	Rtt           pgtype.Int8
 	ForwardDelay  pgtype.Int8
 	BackwardDelay pgtype.Int8
-}
-
-type TraceHop struct {
-	Timestamp     pgtype.Timestamptz
-	MeasurementID pgtype.UUID
-	Ip            *netip.Addr
-	Ttl           int32
-	Rtt           pgtype.Int8
-	IcmpType      pgtype.Int4
-	IcmpCode      pgtype.Int4
-	ReplyTtl      pgtype.Int4
-	Asn           pgtype.Int4
-	IsNoHop       bool
-}
-
-type TraceLink struct {
-	Timestamp     pgtype.Timestamptz
-	MeasurementID pgtype.UUID
-	ProbeID       int32
-	SrcIp         *netip.Addr
-	DstIp         *netip.Addr
-	TtlGap        int32
-	DiffRtt       pgtype.Float8
-	IsSrcRespond  bool
-	IsDstRespond  bool
-}
-
-type TraceMeasurement struct {
-	ID            pgtype.UUID
-	SerialID      string
-	AgentConfigID pgtype.UUID
-	Timestamp     pgtype.Timestamptz
-	Type          string
-	Src           netip.Addr
-	Dst           netip.Addr
-	Method        string
-	StopReason    string
-	HopCount      int32
-	AsnPathHash   string
-	LinkPathHash  string
-	Raw           []byte
 }
