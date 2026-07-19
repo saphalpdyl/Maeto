@@ -6,9 +6,6 @@ editorconfig:
   stage: lint
   script:
     - make lint.editorconfig
-  tags:
-    - docker
-    - go
 
 lint:
   image: golangci/golangci-lint:latest
