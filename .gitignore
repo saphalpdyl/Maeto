@@ -51,3 +51,6 @@ go.work
 # Python
 .venv/
 .env/
+
+# Ansible
+roles/**

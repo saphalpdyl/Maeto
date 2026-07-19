@@ -1,0 +1,48 @@
+---
+- name: Provision containerlab host
+  hosts: all
+  become: true
+  vars:
+    docker_users:
+      - vagrant
+    docker_install_compose_plugin: true
+
+  roles:
+    - geerlingguy.docker
+
+  tasks:
+    - name: Copy version.env
+      ansible.builtin.copy:
+        src: version.env
+        dest: /tmp/version.env
+        mode: "0644"
+
+    - name: Load a value from version.env
+      ansible.builtin.set_fact:
+        containerlab_version: "{{ lookup('ansible.builtin.ini', 'CONTAINERLAB_VERSION type=properties file=version.env') }}"
+
+    - name: Install base deps
+      ansible.builtin.apt:
+        name:
+          - traceroute
+          - iputils-ping
+          - net-tools
+          - tcpdump
+          - iperf3
+          - dnsutils
+          - iproute2
+          - curl
+          - mtr-tiny
+          - jq
+          - gnupg
+          - lsb-release
+          - make
+        state: present
+        update_cache: true
+
+    - name: Install containerlab
+      ansible.builtin.shell: >-
+        bash -c "$(curl -sL https://get.containerlab.dev)" --
+        -v {{ containerlab_version }}
+      args:
+        creates: /usr/bin/containerlab

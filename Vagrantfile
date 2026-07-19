@@ -1,5 +1,5 @@
 Vagrant.configure("2") do |config|
-  config.vm.box = "generic/ubuntu2204"
+  config.vm.box = "cloud-image/ubuntu-24.04"
   config.vm.hostname = "dev"
 
   config.vm.provider "libvirt" do |lv|
@@ -7,8 +7,8 @@ Vagrant.configure("2") do |config|
     lv.cpus = 4
   end
 
-  config.vm.provision "file", source: "./version.env", destination: "/tmp/version.env"
-  config.vm.provision "shell", path: "./scripts/dev/install-deps.sh"
-  config.vm.provision "shell", path: "./scripts/dev/install-docker.sh"
-  config.vm.provision "shell", path: "./scripts/dev/install-containerlab.sh"
+  config.vm.provision "ansible" do |a|
+    a.playbook = "playbook.yml"
+    a.galaxy_role_file = "requirements.yml"
+  end
 end
