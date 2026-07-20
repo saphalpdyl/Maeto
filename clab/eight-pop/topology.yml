@@ -6,6 +6,10 @@ topology:
     image: quay.io/frrouting/frr:10.5.1
     binds:
       - conf/shared/frr_daemons:/etc/frr/daemons
+      - conf/__clabNodeName__/frr.conf:/etc/frr/frr.conf
+    exec:
+      - sysctl -w net.ipv6.conf.all.forwarding=1
+      - sysctl -w net.ipv6.conf.all.seg6_enabled=1
 
   nodes:
     popA:
