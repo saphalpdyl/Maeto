@@ -8,6 +8,7 @@ Maeto is a SRv6-based SD-WAN control plane. Computes directional least-cost path
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Pipeline status](https://gitlab.com/saphalpdyl/maeto/badges/main/pipeline.svg)](https://gitlab.com/saphalpdyl/maeto/-/commits/main)
+![GitLab Tag](https://img.shields.io/gitlab/v/tag/84541492)
 
 ---
 <img src="docs/images/maeto-logo-monochrome.svg" width="70" height="30" style="vertical-align: middle;"> by saphalpdyl
