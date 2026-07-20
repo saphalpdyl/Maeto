@@ -1,0 +1,19 @@
+Maeto Logo — Color Reference
+
+MARK
+Blue (colorful, back leaf):   #2563EB
+Green (colorful/dark accent): #16A34A
+Green (dark-mode leaf):       #22C55E
+Slate ink (monochrome back):  #1F2937
+Slate gray (monochrome front):#6B7280
+Icon gray (dark-mode back leaf):#9098A4
+
+WORDMARK
+Ink (light backgrounds):      #141A24
+White (dark backgrounds):     #FFFFFF
+Accent "e":                   #16A34A (light) / #22C55E (dark)
+
+BACKGROUND
+Dark mode canvas:             #141A24
+
+Font: IBM Plex Sans, weight 700, letter-spacing -0.02em
