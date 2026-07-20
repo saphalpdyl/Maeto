@@ -2,6 +2,7 @@ name: eight-pop
 
 topology:
   defaults:
+    network-mode: none
     kind: linux
     image: quay.io/frrouting/frr:10.5.1
     binds:
