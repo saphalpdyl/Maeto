@@ -1,7 +1,12 @@
-.PHONY: lint lint.editorconfig
+.PHONY: lint lint.editorconfig generate
 
 setup:
 	./scripts/hooks/install-hooks.sh
+
+# generate containerlab + frr config from the topology dsl into build/<hash>
+generate:
+	. deploy/.venv/bin/activate
+	PYTHONPATH=deploy python3 -m generator deploy/topologies/eight-pop.yaml
 
 lint:
 	golangci-lint run ./...

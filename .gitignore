@@ -43,6 +43,10 @@ go.work
 # Builds
 **/dist/**
 
+# Generated topology output
+/build/
+/.state/
+
 # Web
 .next/**
 
@@ -51,6 +55,7 @@ go.work
 # Python
 .venv/
 .env/
+*.pyc
 
 # Ansible
 roles/**

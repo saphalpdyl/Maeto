@@ -1,0 +1,23 @@
+name: eight-pop
+
+defaults:
+  locator_prefix: fc00:0::/32
+  link_prefix: fc00:1::/32
+  host_prefix: fd00::/48
+
+pops:
+  - id: A
+  - id: B
+  - id: C
+
+hosts:
+  - id: hA
+    attach: A
+
+  - id: hC
+    attach: C
+
+links:
+  - [A, B]
+  - [A, C]
+  - [B, C]
