@@ -1,6 +1,7 @@
 .PHONY: lint lint.editorconfig generate deploy
 
 TOPOLOGY_YAML := deploy/topologies/eight-pop.yaml
+TOPOLOGY_NAME := eight-pop
 
 setup:
 	./scripts/hooks/install-hooks.sh
@@ -37,13 +38,17 @@ clean:
 	if [ ! -f "$$topo" ]; then echo "missing $$topo; run 'make generate' first" >&2; exit 1; fi; \
 
 	-sudo containerlab destroy -t "$$topo"
-	-sudo docker rm -f $$(docker ps -aq --filter "name=^clab-eight-pop-")
+	-sudo docker rm -f $$(docker ps -aq --filter "name=^clab-$(TOPOLOGY_NAME)-")
 
 ips:
-	@printf "%-24s %-60s\n" "Name" "Interfaces"
-	@for c in $$(docker ps --format '{{.Names}}' | grep '^clab-retail-'); do \
-	  ifaces=$$(docker exec -it "$$c" sh -c "ip -4 -o addr show scope global | awk '\$$2!=\"lo\" && \$$2!=\"eth0\" {print \$$2 \":\" \$$4}'" 2>/dev/null | tr -d '\r' | paste -sd ', ' -); \
-	  printf "%-24s %-60s\n" "$$c" "$${ifaces:-<none>}"; \
+	@printf "%-24s %s\n" "Name" "Interfaces"
+	@for c in $$(docker ps --format '{{.Names}}' | grep '^clab-$(TOPOLOGY_NAME)-'); do \
+		printf "%-24s\n" "$$c"; \
+		docker exec "$$c" sh -c \
+			"ip -6 -o addr show scope global | \
+			 awk '\$$2 != \"lo\" && \$$2 != \"eth0\" {printf \"  %-20s %s\n\", \$$2\":\", \$$4}'" \
+			2>/dev/null || echo "  <none>"; \
+		echo; \
 	done
 
 apply: clean generate deploy
