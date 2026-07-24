@@ -46,7 +46,7 @@ ips:
 		printf "%-24s\n" "$$c"; \
 		docker exec "$$c" sh -c \
 			"ip -6 -o addr show scope global | \
-			 awk '\$$2 != \"lo\" && \$$2 != \"eth0\" {printf \"  %-20s %s\n\", \$$2\":\", \$$4}'" \
+			 awk '\$$2 != \"eth0\" {printf \"  %-20s %s\n\", \$$2\":\", \$$4}'" \
 			2>/dev/null || echo "  <none>"; \
 		echo; \
 	done
