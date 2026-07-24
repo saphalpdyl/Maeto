@@ -9,6 +9,11 @@ pops:
   - id: A
   - id: B
   - id: C
+  - id: D
+  - id: E
+  - id: F
+  - id: G
+  - id: H
 
 hosts:
   - id: hA
@@ -18,6 +23,13 @@ hosts:
     attach: C
 
 links:
-  - [A, B]
-  - [A, C]
-  - [B, C]
+  - [A,B]
+  - [A,D]
+  - [B,C]
+  - [C,E]
+  - [C,F]
+  - [D,E]
+  - [E,F]
+  - [F,G]
+  - [F,H]
+  - [G,H]

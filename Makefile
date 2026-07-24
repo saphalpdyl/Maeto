@@ -1,4 +1,6 @@
-.PHONY: lint lint.editorconfig generate
+.PHONY: lint lint.editorconfig generate deploy
+
+TOPOLOGY_YAML := deploy/topologies/eight-pop.yaml
 
 setup:
 	./scripts/hooks/install-hooks.sh
@@ -6,7 +8,15 @@ setup:
 # generate containerlab + frr config from the topology dsl into build/<hash>
 generate:
 	. deploy/.venv/bin/activate
-	PYTHONPATH=deploy python3 -m generator deploy/topologies/eight-pop.yaml
+	PYTHONPATH=deploy python3 -m generator $(TOPOLOGY_YAML)
+
+# deploy the topology recorded in .state/latest.json (build/<hash>/topology.yml)
+deploy:
+	@if [ ! -f .state/latest.json ]; then echo "no .state/latest.json; run 'make generate' first" >&2; exit 1; fi; \
+	out=$$(python3 -c "import json; print(json.load(open('.state/latest.json'))['output'])"); \
+	topo="$$out/topology.yml"; \
+	if [ ! -f "$$topo" ]; then echo "missing $$topo; run 'make generate' first" >&2; exit 1; fi; \
+	sudo clab deploy -t "$$topo" --reconfigure
 
 lint:
 	golangci-lint run ./...
@@ -21,7 +31,12 @@ sync:
 
 ## VM-related
 clean:
-	-sudo containerlab destroy -t clab/eight-pop/topology.yml
+	@if [ ! -f .state/latest.json ]; then echo "no .state/latest.json; run 'make generate' first" >&2; exit 1; fi; \
+	out=$$(python3 -c "import json; print(json.load(open('.state/latest.json'))['output'])"); \
+	topo="$$out/topology.yml"; \
+	if [ ! -f "$$topo" ]; then echo "missing $$topo; run 'make generate' first" >&2; exit 1; fi; \
+
+	-sudo containerlab destroy -t "$$topo"
 	-sudo docker rm -f $$(docker ps -aq --filter "name=^clab-eight-pop-")
 
 ips:
@@ -31,8 +46,7 @@ ips:
 	  printf "%-24s %-60s\n" "$$c" "$${ifaces:-<none>}"; \
 	done
 
-apply: clean
-	sudo clab deploy -t clab/eight-pop/topology.yml
+apply: clean generate deploy
 	$(MAKE) ips
 
 ## Generators
