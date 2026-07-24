@@ -26,6 +26,18 @@ def render_frr(pop_plan):
         # core links form adjacencies, host links only advertise the prefix
         lines.append(" isis network point-to-point" if i.role == "core" else " isis passive")
         lines.append("!")
+
+    lines += [
+        "segment-routing",
+        " srv6",
+        "  locators",
+        "   locator CORE",
+       f"    prefix {p.blackhole} block-len 32 node-len 16 func-bits 16",
+        "   !",
+        "  !",
+        " !",
+        "!",
+    ]
     lines += [
         f"ipv6 route {p.blackhole} blackhole",
         "!",
@@ -35,7 +47,10 @@ def render_frr(pop_plan):
         " metric-style wide",
         " topology ipv6-unicast",
         " redistribute ipv6 static level-1",
+        " segment-routing srv6",
+        "  locator CORE",
+        " !",
         "!",
-        "",
     ]
+
     return "\n".join(lines)
