@@ -128,10 +128,11 @@ def _parse_links(root, pop_ids):
         raise TopologyError("links must be a list")
     links = []
     seen = set()
+    index = 0
     for i, raw in enumerate(items):
-        if not isinstance(raw, list) or len(raw) != 2:
-            raise TopologyError(f"links[{i}] must have exactly 2 elements")
-        a, b = raw
+        if not isinstance(raw, list) or len(raw) not in (2, 3):
+            raise TopologyError(f"links[{i}] must be [a, b] or [a, b, count]")
+        a, b = raw[0], raw[1]
         for end in (a, b):
             if not isinstance(end, str) or end not in pop_ids:
                 raise TopologyError(f"links[{i}] references unknown pop: {end}")
@@ -141,8 +142,20 @@ def _parse_links(root, pop_ids):
         if key in seen:
             raise TopologyError(f"duplicate link: [{a}, {b}]")
         seen.add(key)
-        links.append(CoreLink(index=i + 1, a=a, b=b))
+        # expand redundant links into distinct parallel physical links
+        for _ in range(_link_count(raw, i)):
+            index += 1
+            links.append(CoreLink(index=index, a=a, b=b))
     return links
+
+
+def _link_count(raw, i):
+    if len(raw) == 2:
+        return 1
+    n = raw[2]
+    if isinstance(n, bool) or not isinstance(n, int) or n < 1:
+        raise TopologyError(f"links[{i}] count must be a positive integer")
+    return n
 
 
 def _require_id(raw, where):

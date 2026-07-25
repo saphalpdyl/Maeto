@@ -23,13 +23,14 @@ hosts:
     attach: C
 
 links:
-  - [A,B]
-  - [A,D]
-  - [B,C]
-  - [C,E]
-  - [C,F]
+  - [A,B,2]
+  - [A,D,2]
+  - [B,C,2]
+  - [B,D]
+  - [C,E,3]
+  - [C,F,2]
   - [D,E]
   - [E,F]
-  - [F,G]
+  - [F,G,2]
   - [F,H]
   - [G,H]
