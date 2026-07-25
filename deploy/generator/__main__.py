@@ -25,11 +25,11 @@ def main(argv=None):
 
     try:
         topo = parse_topology(source)
+        plan = build_plan(topo)
     except TopologyError as e:
         print(f"error: {e}", file=sys.stderr)
         return 1
 
-    plan = build_plan(topo)
     out = write_output(topo, plan, digest, args.build_dir)
     write_state(digest, out, args.state_dir)
     print(f"generated: {out}")

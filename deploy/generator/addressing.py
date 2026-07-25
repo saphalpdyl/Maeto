@@ -1,14 +1,28 @@
 import ipaddress
 
-from .constants import ISIS_AREA
+from .constants import HOST_INSTANCE_BITS, ISIS_AREA, LINK_INSTANCE_BITS, LINK_POP_BITS
+from .errors import TopologyError
 
 
 def _nth_subnet(prefix, new_prefix, n):
-    # nth /new_prefix subnet inside prefix (n is 1-based here)
+    # nth /new_prefix subnet inside prefix
     net = ipaddress.ip_network(prefix, strict=True)
+    if n >= (1 << (new_prefix - net.prefixlen)):
+        raise TopologyError(f"subnet index {n} does not fit within {prefix}")
     step = 1 << (net.max_prefixlen - new_prefix)
     addr = int(net.network_address) + n * step
     return ipaddress.ip_network((addr, new_prefix))
+
+
+def link_subnet_index(lo_idx, hi_idx, instance):
+    # stable index from the two endpoint pop indices + redundancy instance;
+    # independent of the link's position in the links list
+    return (lo_idx << (LINK_POP_BITS + LINK_INSTANCE_BITS)) | (hi_idx << LINK_INSTANCE_BITS) | (instance - 1)
+
+
+def host_subnet_index(attach_idx, instance):
+    # stable index from the attach pop index + host instance on that pop
+    return (attach_idx << HOST_INSTANCE_BITS) | (instance - 1)
 
 
 def _host(net, offset):

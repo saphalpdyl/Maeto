@@ -47,7 +47,7 @@ def _host(host, hp):
         "id": host.id,
         "name": host.node_name,
         "clab_label": host.clab_label,
-        "index": host.index,
+        "instance": hp.instance,
         "attach": host.attach,
         "attach_node": hp.attach_node,
         "subnet": hp.subnet,
@@ -63,6 +63,7 @@ def _link(l):
     return {
         "index": l.index,
         "type": l.kind,
+        "instance": l.instance,
         "subnet": l.subnet,
         "a": {"node": l.a.node, "interface": l.a.iface, "address": l.a.address},
         "b": {"node": l.b.node, "interface": l.b.iface, "address": l.b.address},

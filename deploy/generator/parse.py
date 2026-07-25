@@ -2,9 +2,12 @@ import ipaddress
 
 import yaml
 
+from . import addressing
 from .constants import (
     DEFAULT_KEYS,
     HOST_KEYS,
+    LINK_INSTANCE_BITS,
+    LINK_POP_BITS,
     OVERRIDE_KEYS,
     POP_KEYS,
     TOP_LEVEL_KEYS,
@@ -22,9 +25,9 @@ def parse_topology(source):
     name = _require_name(root)
     defaults = _parse_defaults(root)
     pops = _parse_pops(root)
-    pop_ids = {p.id for p in pops}
-    hosts = _parse_hosts(root, pop_ids)
-    links = _parse_links(root, pop_ids)
+    pop_index = {p.id: p.index for p in pops}
+    hosts = _parse_hosts(root, set(pop_index))
+    links = _parse_links(root, pop_index)
     return Topology(name, defaults, pops, hosts, links)
 
 
@@ -71,24 +74,42 @@ def _parse_pops(root):
     if not isinstance(items, list) or not items:
         raise TopologyError("pops must be a non-empty list")
     pops = []
-    seen = set()
+    seen_ids = set()
+    seen_idx = set()
     for i, raw in enumerate(items):
         if not isinstance(raw, dict):
             raise TopologyError(f"pops[{i}] must be a mapping")
         _reject_unknown(raw, POP_KEYS, f"pops[{i}]")
         pid = _require_id(raw, f"pops[{i}]")
-        if pid in seen:
+        if pid in seen_ids:
             raise TopologyError(f"duplicate pop id: {pid}")
-        seen.add(pid)
+        seen_ids.add(pid)
+        index = _pop_index(raw, i, f"pops[{i}]")
+        if index in seen_idx:
+            raise TopologyError(f"duplicate pop index: {index}")
+        seen_idx.add(index)
         node_name = f"Pop{pid}"
         pops.append(Pop(
             id=pid,
-            index=i + 1,
+            index=index,
             node_name=node_name,
             clab_label=_clab_label(raw, node_name, f"pops[{i}]"),
             data=_data(raw, f"pops[{i}]"),
         ))
     return pops
+
+
+def _pop_index(raw, i, where):
+    # explicit index pins the pop's identity; omitted falls back to declaration order
+    if "index" not in raw:
+        return i + 1
+    n = raw["index"]
+    cap = (1 << LINK_POP_BITS) - 1
+    if isinstance(n, bool) or not isinstance(n, int) or n < 1:
+        raise TopologyError(f"{where}.index must be a positive integer")
+    if n > cap:
+        raise TopologyError(f"{where}.index must be <= {cap}")
+    return n
 
 
 def _parse_hosts(root, pop_ids):
@@ -113,7 +134,6 @@ def _parse_hosts(root, pop_ids):
         node_name = f"Host{hid[1:]}"
         hosts.append(Host(
             id=hid,
-            index=i + 1,
             node_name=node_name,
             clab_label=_clab_label(raw, node_name, f"hosts[{i}]"),
             attach=attach,
@@ -122,19 +142,18 @@ def _parse_hosts(root, pop_ids):
     return hosts
 
 
-def _parse_links(root, pop_ids):
+def _parse_links(root, pop_index):
     items = root.get("links") or []
     if not isinstance(items, list):
         raise TopologyError("links must be a list")
     links = []
     seen = set()
-    index = 0
     for i, raw in enumerate(items):
         if not isinstance(raw, list) or len(raw) not in (2, 3):
             raise TopologyError(f"links[{i}] must be [a, b] or [a, b, count]")
         a, b = raw[0], raw[1]
         for end in (a, b):
-            if not isinstance(end, str) or end not in pop_ids:
+            if not isinstance(end, str) or end not in pop_index:
                 raise TopologyError(f"links[{i}] references unknown pop: {end}")
         if a == b:
             raise TopologyError(f"links[{i}] cannot connect a pop to itself: {a}")
@@ -142,10 +161,12 @@ def _parse_links(root, pop_ids):
         if key in seen:
             raise TopologyError(f"duplicate link: [{a}, {b}]")
         seen.add(key)
-        # expand redundant links into distinct parallel physical links
-        for _ in range(_link_count(raw, i)):
-            index += 1
-            links.append(CoreLink(index=index, a=a, b=b))
+        # order endpoints by pop index so subnet + ::1/::2 are position-independent,
+        # then expand redundancy into distinct parallel links (each its own stable index)
+        lo, hi = sorted((a, b), key=lambda p: pop_index[p])
+        for instance in range(1, _link_count(raw, i) + 1):
+            idx = addressing.link_subnet_index(pop_index[lo], pop_index[hi], instance)
+            links.append(CoreLink(index=idx, a=lo, b=hi, instance=instance))
     return links
 
 
@@ -155,6 +176,8 @@ def _link_count(raw, i):
     n = raw[2]
     if isinstance(n, bool) or not isinstance(n, int) or n < 1:
         raise TopologyError(f"links[{i}] count must be a positive integer")
+    if n > (1 << LINK_INSTANCE_BITS):
+        raise TopologyError(f"links[{i}] count must be <= {1 << LINK_INSTANCE_BITS}")
     return n
 
 

@@ -24,7 +24,11 @@ def is_up_to_date(digest, build_dir, state_dir):
             state = json.load(f)
     except (OSError, ValueError):
         return False
-    return state.get("topology_sha256") == digest and os.path.isdir(output_dir(build_dir, digest))
+    return (
+        state.get("topology_sha256") == digest
+        and state.get("generator_version") == GENERATOR_VERSION
+        and os.path.isdir(output_dir(build_dir, digest))
+    )
 
 
 def write_output(topo, plan, digest, build_dir):

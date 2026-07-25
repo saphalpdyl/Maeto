@@ -23,6 +23,7 @@ class Endpoint:
 class PlannedLink:
     index: int
     kind: str           # core | host
+    instance: int
     subnet: str
     a: Endpoint
     b: Endpoint
@@ -41,6 +42,7 @@ class PopPlan:
 class HostPlan:
     host: object
     attach_node: str
+    instance: int       # ordinal among hosts on the attach pop
     subnet: str
     address: str        # ::2/64
     gateway: str        # ::1
@@ -57,57 +59,71 @@ class Plan:
 
 def build_plan(topo):
     d = topo.defaults
-    iface_by_key = {}   # (pop id, ('core'|'host', idx)) -> eth name
+    hinst = _host_instances(topo)   # host id -> ordinal on its attach pop
+    iface_by_key = {}               # (pop id, ('core', link idx) | ('host', host id)) -> eth name
     pops = {}
 
     for pop in topo.pops:
         ifaces = []
         n = 0
-        for link in topo.links:
-            if pop.id not in (link.a, link.b):
-                continue
+        # canonical order: core links by (peer index, instance), then hosts by instance
+        core = [l for l in topo.links if pop.id in (l.a, l.b)]
+        core.sort(key=lambda l: (topo.pop_by_id(_peer(pop.id, l)).index, l.instance))
+        for link in core:
             n += 1
             name = f"eth{n}"
             _, a_addr, b_addr = addressing.link_addrs(d.link_prefix, link.index)
-            peer_id = link.b if pop.id == link.a else link.a
-            peer = topo.pop_by_id(peer_id).node_name
+            peer = topo.pop_by_id(_peer(pop.id, link)).node_name
             addr = a_addr if pop.id == link.a else b_addr
             ifaces.append(Interface(name, "core", peer, addr, f"core link to {peer}"))
             iface_by_key[(pop.id, ("core", link.index))] = name
 
-        for host in topo.hosts:
-            if host.attach != pop.id:
-                continue
+        attached = sorted((h for h in topo.hosts if h.attach == pop.id), key=lambda h: hinst[h.id])
+        for host in attached:
             n += 1
             name = f"eth{n}"
-            _, pop_addr, _, _ = addressing.host_addrs(d.host_prefix, host.index)
+            _, pop_addr, _, _ = addressing.host_addrs(d.host_prefix, addressing.host_subnet_index(pop.index, hinst[host.id]))
             ifaces.append(Interface(name, "host", host.node_name, pop_addr, f"host link to {host.node_name}"))
-            iface_by_key[(pop.id, ("host", host.index))] = name
+            iface_by_key[(pop.id, ("host", host.id))] = name
 
         blackhole, loopback = addressing.locator(d.locator_prefix, pop.index)
         pops[pop.id] = PopPlan(pop, addressing.isis_net(pop.index), blackhole, loopback, ifaces)
 
     links = []
-    for link in topo.links:
+    for link in sorted(topo.links, key=lambda l: l.index):
         subnet, a_addr, b_addr = addressing.link_addrs(d.link_prefix, link.index)
         a = topo.pop_by_id(link.a)
         b = topo.pop_by_id(link.b)
         links.append(PlannedLink(
-            link.index, "core", subnet,
+            link.index, "core", link.instance, subnet,
             Endpoint(a.node_name, iface_by_key[(link.a, ("core", link.index))], a_addr),
             Endpoint(b.node_name, iface_by_key[(link.b, ("core", link.index))], b_addr),
         ))
 
     hosts = {}
     for host in topo.hosts:
-        subnet, pop_addr, host_addr, gw = addressing.host_addrs(d.host_prefix, host.index)
-        pop_node = topo.pop_by_id(host.attach).node_name
-        pop_iface = iface_by_key[(host.attach, ("host", host.index))]
-        hosts[host.id] = HostPlan(host, pop_node, subnet, host_addr, gw, "eth1", pop_iface)
+        attach = topo.pop_by_id(host.attach)
+        sidx = addressing.host_subnet_index(attach.index, hinst[host.id])
+        subnet, pop_addr, host_addr, gw = addressing.host_addrs(d.host_prefix, sidx)
+        pop_iface = iface_by_key[(host.attach, ("host", host.id))]
+        hosts[host.id] = HostPlan(host, attach.node_name, hinst[host.id], subnet, host_addr, gw, "eth1", pop_iface)
         links.append(PlannedLink(
-            host.index, "host", subnet,
-            Endpoint(pop_node, pop_iface, pop_addr),
+            sidx, "host", hinst[host.id], subnet,
+            Endpoint(attach.node_name, pop_iface, pop_addr),
             Endpoint(host.node_name, "eth1", host_addr),
         ))
 
     return Plan(pops, hosts, links)
+
+
+def _peer(pop_id, link):
+    return link.b if pop_id == link.a else link.a
+
+
+def _host_instances(topo):
+    counts = {}
+    instance = {}
+    for h in topo.hosts:
+        counts[h.attach] = counts.get(h.attach, 0) + 1
+        instance[h.id] = counts[h.attach]
+    return instance

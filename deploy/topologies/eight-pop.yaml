@@ -7,13 +7,21 @@ defaults:
 
 pops:
   - id: A
+    index: 1
   - id: B
+    index: 2
   - id: C
+    index: 3
   - id: D
+    index: 4
   - id: E
+    index: 5
   - id: F
+    index: 6
   - id: G
+    index: 7
   - id: H
+    index: 8
 
 hosts:
   - id: hA
