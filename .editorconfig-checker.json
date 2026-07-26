@@ -5,7 +5,8 @@
     "^services/server/handler/agent_config\\.go$",
     "(^|/)Makefile$",
     "\\.mk$",
-    "\\.ipynb$"
+    "\\.ipynb$",
+    "services/maeto-agent/bpf/headers/"
   ],
   "Disable": {
     "IndentSize": true
