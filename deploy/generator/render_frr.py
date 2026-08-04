@@ -8,6 +8,7 @@ def render_frr(pop_plan):
         "frr defaults traditional",
         f"hostname {p.pop.node_name}",
         "log stdout",
+        "log file /tmp/frr.log debugging",
         "service integrated-vtysh-config",
         "!",
         "interface lo",
@@ -33,14 +34,13 @@ def render_frr(pop_plan):
         "  locators",
         "   locator CORE",
        f"    prefix {p.blackhole} block-len 32 node-len 16 func-bits 16",
+       f"    behavior usid",
         "   !",
         "  !",
         " !",
         "!",
     ]
     lines += [
-        f"ipv6 route {p.blackhole} blackhole",
-        "!",
         f"router isis {ISIS_INSTANCE}",
         f" net {p.isis_net}",
         " is-type level-1",
