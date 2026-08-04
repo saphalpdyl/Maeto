@@ -36,6 +36,7 @@
           - jq
           - gnupg
           - lsb-release
+          - "linux-modules-extra-{{ ansible_kernel }}"
           - make
         state: present
         update_cache: true

@@ -2,9 +2,9 @@
 
 GENERATOR_VERSION = "1.1.0"
 
-FRR_IMAGE = "quay.io/frrouting/frr:10.5.1"
+FRR_IMAGE = "quay.io/frrouting/frr:10.4.1"
 FRR_VERSION = "10.5.1"
-HOST_IMAGE = "nicolaka/netshoot:latest"
+HOST_IMAGE = "maeto-host:latest"
 
 ISIS_AREA = "49.0000"
 ISIS_INSTANCE = "CORE"

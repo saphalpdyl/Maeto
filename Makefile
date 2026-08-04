@@ -31,6 +31,9 @@ sync:
 	rsync -rav . cepheus:/home/vagrant/cepheus/ --exclude-from=.rsyncignore
 
 ## VM-related
+build-vm:
+	docker build -t maeto-host:latest -f docker/maeto-host.Dockerfile .
+
 clean:
 	@if [ ! -f .state/latest.json ]; then echo "no .state/latest.json; run 'make generate' first" >&2; exit 1; fi; \
 	out=$$(python3 -c "import json; print(json.load(open('.state/latest.json'))['output'])"); \
@@ -51,7 +54,7 @@ ips:
 		echo; \
 	done
 
-apply: clean generate deploy
+apply: clean build-vm generate deploy
 	$(MAKE) ips
 
 ## Generators

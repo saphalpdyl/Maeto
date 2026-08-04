@@ -1,0 +1,1 @@
+FROM nicolaka/netshoot:latest
