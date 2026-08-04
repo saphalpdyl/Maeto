@@ -27,6 +27,8 @@ def render_clab(topo, plan):
             "exec": [
                 "sysctl -w net.ipv6.conf.all.forwarding=1",
                 "sysctl -w net.ipv6.conf.all.seg6_enabled=1",
+                "ip link add sr0 type dummy",
+                "ip link set sr0 up"
             ],
             "labels": {"clab_label": pop.clab_label},
         }
