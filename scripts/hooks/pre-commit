@@ -1,5 +1,8 @@
 #! /bin/sh
 
+command -v go >/dev/null 2>&1 || export PATH="$PATH:$HOME/bins/go/bin"
+export PATH="$PATH:$(go env GOPATH)/bin"
+
 echo "Running linting..."
 make lint.editorconfig
 make lint
