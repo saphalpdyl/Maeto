@@ -13,7 +13,7 @@ Maeto is a SRv6-based SD-WAN control plane. Computes directional least-cost path
 ## Architecture
 This is the conceptual architecture of the system excluding implementation features. v0 will use simple protobuf-based contracts instead of PCEP. The same goes for maeto agent shelling out for linux commands instead of Netlink.
 
-![Conceptual Architecture of Maeto](/docs/images/arch/basic_arch.png)
+![Conceptual Architecture of Maeto](/docs/images/arch/basic_arch.svg)
 
 ---
 <img src="docs/images/maeto-logo-monochrome.svg" width="70" height="30" style="vertical-align: middle;"> by saphalpdyl
