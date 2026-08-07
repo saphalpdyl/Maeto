@@ -1,0 +1,8 @@
+syntax = "proto3";
+package cepheus.agent.v1;
+
+option go_package = "github.com/saphalpdyl/maeto/libs/proto/gen/maeto/v1;maetov1";
+
+service AgentControlPlaneService {
+
+}
