@@ -31,6 +31,12 @@ sync:
 	rsync -rav . maeto:/home/vagrant/maeto/ --exclude-from=.rsyncignore
 
 ## VM-related
+
+# The services including NATS, DB etc. will run inside the VM as to
+# not fragment deployment during development and makes things simpler
+dev:
+	docker compose up -d db nats-server
+
 build-vm:
 	docker build -t maeto-host:latest -f docker/maeto-host.Dockerfile .
 

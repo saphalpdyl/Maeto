@@ -3,8 +3,9 @@ Vagrant.configure("2") do |config|
   config.vm.hostname = "dev"
 
   config.vm.provider "libvirt" do |lv|
-    lv.memory = 4096
+    lv.memory = 8192
     lv.cpus = 4
+    lv.machine_virtual_size = 80
   end
 
   config.vm.provision "ansible" do |a|
