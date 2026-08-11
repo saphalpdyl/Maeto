@@ -50,11 +50,17 @@ def render_clab(topo, plan):
         for l in plan.links
     ]
 
+    nodes["nats"] = {
+        "kind": "linux",
+        "image": "nats:2.12.7",
+        "cmd": "--http_port 8222 -js -sd /data",
+        "labels": {"clab_label": "NATS JetStream Server"},
+        "group": "control"
+    }
+
     doc = {
         "name": topo.name,
         "topology": {
-            # eth0 (management) disabled for every node, interfaces start at eth1
-            "defaults": {"network-mode": "none"},
             "nodes": nodes,
             "links": links,
         },

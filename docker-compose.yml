@@ -34,3 +34,12 @@ services:
     depends_on:
       - db
       - nats-server
+
+  maeto-control-plane:
+    image: maeto-control-plane:latest
+    container_name: maeto-control-plane
+    build:
+      context: .
+      dockerfile: docker/maeto-control-plane.Dockerfile
+    volumes:
+      - ./build/state/:/app/data/state/
