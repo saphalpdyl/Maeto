@@ -63,6 +63,12 @@ ips:
 apply: clean build-vm generate deploy
 	$(MAKE) ips
 
+ap:
+	-make clean
+	rm -rf build/
+	$(MAKE) generate
+	$(MAKE) apply
+
 ## Generators
 sqlc-gen:
 	UID=$(shell id -u) GID=$(shell id -g) docker compose -f docker-compose.dev.yml run --rm sqlc

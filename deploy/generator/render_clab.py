@@ -55,7 +55,8 @@ def render_clab(topo, plan):
         "image": "nats:2.12.7",
         "cmd": "--http_port 8222 -js -sd /data",
         "labels": {"clab_label": "NATS JetStream Server"},
-        "group": "control"
+        "group": "control",
+        "mgmt-ipv6": "3fff:172:20:20::800:11"
     }
 
     doc = {
