@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/nats-io/nats.go"
 	"github.com/saphalpdyl/maeto/libs/telemetry"
 	controlplane "github.com/saphalpdyl/maeto/services/control-plane"
 	log "github.com/saphalpdyl/maeto/services/control-plane/log"
@@ -52,7 +53,22 @@ func main() {
 
 	logger.InfoContext(ctx, "starting control plane", log.ListenAddress(config.ListenAddress))
 
+	nc, err := nats.Connect(config.NatsConnectURL)
+	if err != nil {
+		logger.ErrorContext(ctx, "failed to connect to NATS", log.Err(err))
+	}
+
+	pce := controlplane.NewPCE(nc, controlplane.PCEConfig{
+		StatePath:       config.StatePath,
+		TopologyDirPath: config.DataDir,
+	})
+	pce.Run(ctx)
+
 	<-ctx.Done()
 
 	logger.InfoContext(ctx, "shutting down")
+	if err = nc.Drain(); err != nil {
+		logger.ErrorContext(ctx, "failed to drain NATS", log.Err(err))
+	}
+
 }

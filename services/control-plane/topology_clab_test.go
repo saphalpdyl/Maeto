@@ -3,11 +3,6 @@ package controlplane
 import "testing"
 
 func TestBasePathExtraction(t *testing.T) {
-	// mgr := NewClabTopologyManager(ClabTopologyConfig{
-	// 	StatePath:       "testdata/latest.json",
-	// 	TopologyDirPath: "testdata/",
-	// })
-
 	basePath, err := readLatestTopologyBasePath("testdata/latest.json")
 	if err != nil {
 		t.Fatalf("failed to read file: %v", err)

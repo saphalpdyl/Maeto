@@ -70,7 +70,7 @@ type RawTopologyData struct {
 }
 
 func readLatestTopologyBasePath(path string) (string, error) {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // #nosec
 	if err != nil {
 		return "", err
 	}
@@ -91,7 +91,7 @@ func readLatestTopology(statePath string, topologyDirPath string) (*RawTopologyD
 		return nil, err
 	}
 
-	raw, err := os.ReadFile(filepath.Join(topologyDirPath, topologyBasePath, TOPOLOGY_DATA_FILENAME))
+	raw, err := os.ReadFile(filepath.Join(topologyDirPath, topologyBasePath, TOPOLOGY_DATA_FILENAME)) // #nosec
 	if err != nil {
 		return nil, err
 	}
@@ -198,6 +198,9 @@ func (c *ClabTopologyManager) LoadTopology() error {
 	if err != nil {
 		return fmt.Errorf("failed to open and parse containerlab topology: %v", err)
 	}
+
+	c.graph.mu.Lock()
+	defer c.graph.mu.Unlock()
 
 	c.graph = generateGraphFromRawTopology(rawTopoData)
 	c.ready = true

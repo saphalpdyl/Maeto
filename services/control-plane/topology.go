@@ -47,8 +47,6 @@ type Graph struct {
 	edges    map[EdgeID]*Edge
 	prefixes map[string]*Prefix
 	adj      map[NodeID][]EdgeID
-
-	ready bool
 }
 
 type TopologyManager interface {
