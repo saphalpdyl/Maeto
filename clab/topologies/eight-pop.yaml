@@ -3,7 +3,7 @@ name: eight-pop
 defaults:
   locator_prefix: fc00:0::/32
   link_prefix: fc00:1::/32
-  host_prefix: fd00::/48
+  edge_prefix: fd00::/48
 
 pops:
   - id: A
@@ -23,11 +23,14 @@ pops:
   - id: H
     index: 8
 
-hosts:
-  - id: hA
+cpes:
+  - id: cA
     attach: A
 
-  - id: hC
+  - id: cA2
+    attach: A
+
+  - id: cC
     attach: C
 
 links:

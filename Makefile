@@ -38,7 +38,7 @@ dev:
 	docker compose up -d db nats-server
 
 build-vm:
-	docker build -t maeto-host:latest -f docker/maeto-host.Dockerfile .
+	docker build -t maeto-edge:latest -f docker/maeto-edge.Dockerfile .
 
 clean:
 	@if [ ! -f .state/latest.json ]; then echo "no .state/latest.json; run 'make generate' first" >&2; exit 1; fi; \

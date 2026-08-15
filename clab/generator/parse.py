@@ -4,16 +4,18 @@ import yaml
 
 from . import addressing
 from .constants import (
+    CPE_KEYS,
     DEFAULT_KEYS,
-    HOST_KEYS,
+    EDGE_AGGREGATE_PREFIXLEN,
     LINK_INSTANCE_BITS,
     LINK_POP_BITS,
+    MAX_CPES_PER_POP,
     OVERRIDE_KEYS,
     POP_KEYS,
     TOP_LEVEL_KEYS,
 )
 from .errors import TopologyError
-from .model import CoreLink, Defaults, Host, Pop, Topology
+from .model import CoreLink, Cpe, Defaults, Pop, Topology
 
 
 def parse_topology(source):
@@ -26,9 +28,9 @@ def parse_topology(source):
     defaults = _parse_defaults(root)
     pops = _parse_pops(root)
     pop_index = {p.id: p.index for p in pops}
-    hosts = _parse_hosts(root, set(pop_index))
+    cpes = _parse_cpes(root, set(pop_index))
     links = _parse_links(root, pop_index)
-    return Topology(name, defaults, pops, hosts, links)
+    return Topology(name, defaults, pops, cpes, links)
 
 
 def _reject_unknown(d, allowed, where):
@@ -54,8 +56,9 @@ def _parse_defaults(root):
             raise TopologyError(f"defaults.{key} is required")
     _check_prefix("locator_prefix", d["locator_prefix"], 48)
     _check_prefix("link_prefix", d["link_prefix"], 64)
-    _check_prefix("host_prefix", d["host_prefix"], 64)
-    return Defaults(d["locator_prefix"], d["link_prefix"], d["host_prefix"])
+    # each pop gets a whole aggregate out of the edge prefix, not a single /64
+    _check_prefix("edge_prefix", d["edge_prefix"], EDGE_AGGREGATE_PREFIXLEN)
+    return Defaults(d["locator_prefix"], d["link_prefix"], d["edge_prefix"])
 
 
 def _check_prefix(name, value, carve):
@@ -112,34 +115,40 @@ def _pop_index(raw, i, where):
     return n
 
 
-def _parse_hosts(root, pop_ids):
-    items = root.get("hosts") or []
+def _parse_cpes(root, pop_ids):
+    items = root.get("cpes") or []
     if not isinstance(items, list):
-        raise TopologyError("hosts must be a list")
-    hosts = []
+        raise TopologyError("cpes must be a list")
+    cpes = []
     seen = set()
+    per_pop = {}
     for i, raw in enumerate(items):
         if not isinstance(raw, dict):
-            raise TopologyError(f"hosts[{i}] must be a mapping")
-        _reject_unknown(raw, HOST_KEYS, f"hosts[{i}]")
-        hid = _require_id(raw, f"hosts[{i}]")
-        if not (hid.startswith("h") and len(hid) > 1):
-            raise TopologyError(f"host id must start with 'h' and have a suffix: {hid}")
-        if hid in seen:
-            raise TopologyError(f"duplicate host id: {hid}")
-        seen.add(hid)
+            raise TopologyError(f"cpes[{i}] must be a mapping")
+        _reject_unknown(raw, CPE_KEYS, f"cpes[{i}]")
+        cid = _require_id(raw, f"cpes[{i}]")
+        if not (cid.startswith("c") and len(cid) > 1):
+            raise TopologyError(f"cpe id must start with 'c' and have a suffix: {cid}")
+        if cid in seen:
+            raise TopologyError(f"duplicate cpe id: {cid}")
+        seen.add(cid)
         attach = raw.get("attach")
         if not isinstance(attach, str) or attach not in pop_ids:
-            raise TopologyError(f"hosts[{i}].attach must reference an existing pop id: {attach}")
-        node_name = f"Host{hid[1:]}"
-        hosts.append(Host(
-            id=hid,
+            raise TopologyError(f"cpes[{i}].attach must reference an existing pop id: {attach}")
+        # they all share the pop's transit router, so they all come out of the
+        # pop's aggregate
+        per_pop[attach] = per_pop.get(attach, 0) + 1
+        if per_pop[attach] > MAX_CPES_PER_POP:
+            raise TopologyError(f"pop {attach} has more than {MAX_CPES_PER_POP} cpes attached")
+        node_name = f"Cpe{cid[1:]}"
+        cpes.append(Cpe(
+            id=cid,
             node_name=node_name,
-            clab_label=_clab_label(raw, node_name, f"hosts[{i}]"),
+            clab_label=_clab_label(raw, node_name, f"cpes[{i}]"),
             attach=attach,
-            data=_data(raw, f"hosts[{i}]"),
+            data=_data(raw, f"cpes[{i}]"),
         ))
-    return hosts
+    return cpes
 
 
 def _parse_links(root, pop_index):

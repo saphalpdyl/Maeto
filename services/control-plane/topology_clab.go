@@ -21,7 +21,7 @@ type RawTopologyData struct {
 	Defaults         struct {
 		LocatorPrefix string `json:"locator_prefix"`
 		LinkPrefix    string `json:"link_prefix"`
-		HostPrefix    string `json:"host_prefix"`
+		EdgePrefix    string `json:"edge_prefix"`
 	} `json:"defaults"`
 	Pops []struct {
 		ID         string `json:"id"`
@@ -38,19 +38,20 @@ type RawTopologyData struct {
 			Address string `json:"address"`
 		} `json:"interfaces"`
 	} `json:"pops"`
-	Hosts []struct {
+	Cpes []struct {
 		ID            string `json:"id"`
 		Name          string `json:"name"`
 		ClabLabel     string `json:"clab_label"`
 		Instance      int    `json:"instance"`
 		Attach        string `json:"attach"`
 		AttachNode    string `json:"attach_node"`
+		TransitNode   string `json:"transit_node"`
 		Subnet        string `json:"subnet"`
 		Address       string `json:"address"`
 		Gateway       string `json:"gateway"`
 		Interface     string `json:"interface"`
 		PeerInterface string `json:"peer_interface"`
-	} `json:"hosts"`
+	} `json:"cpes"`
 	Links []struct {
 		Index    int    `json:"index"`
 		Type     string `json:"type"`

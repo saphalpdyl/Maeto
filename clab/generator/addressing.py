@@ -1,6 +1,12 @@
 import ipaddress
 
-from .constants import HOST_INSTANCE_BITS, ISIS_AREA, LINK_INSTANCE_BITS, LINK_POP_BITS
+from .constants import (
+    CPE_INSTANCE_BITS,
+    EDGE_AGGREGATE_PREFIXLEN,
+    ISIS_AREA,
+    LINK_INSTANCE_BITS,
+    LINK_POP_BITS,
+)
 from .errors import TopologyError
 
 
@@ -20,9 +26,10 @@ def link_subnet_index(lo_idx, hi_idx, instance):
     return (lo_idx << (LINK_POP_BITS + LINK_INSTANCE_BITS)) | (hi_idx << LINK_INSTANCE_BITS) | (instance - 1)
 
 
-def host_subnet_index(attach_idx, instance):
-    # stable index from the attach pop index + host instance on that pop
-    return (attach_idx << HOST_INSTANCE_BITS) | (instance - 1)
+def edge_subnet_index(attach_idx, instance):
+    # stable index inside the attach pop's slice of the edge prefix; instance 0
+    # is the pop <-> transit uplink and cpes behind that transit take 1..n
+    return (attach_idx << CPE_INSTANCE_BITS) | instance
 
 
 def _host(net, offset):
@@ -41,11 +48,21 @@ def link_addrs(prefix, idx):
     return str(net), f"{_host(net, 1)}/64", f"{_host(net, 2)}/64"
 
 
-def host_addrs(prefix, idx):
-    # returns (subnet /64, pop ::1/64, host ::2/64, gateway ::1)
+def edge_addrs(prefix, idx):
+    # returns (subnet /64, near ::1/64, far ::2/64, near ::1, far ::2)
+    # near is the upstream side of the link (the pop on a pop <-> transit
+    # uplink, the transit router on a transit <-> cpe link), far is the
+    # downstream side; the bare forms are what a default route or a static
+    # nexthop points at
     net = _nth_subnet(prefix, 64, idx)
-    gw = _host(net, 1)
-    return str(net), f"{gw}/64", f"{_host(net, 2)}/64", str(gw)
+    near, far = _host(net, 1), _host(net, 2)
+    return str(net), f"{near}/64", f"{far}/64", str(near), str(far)
+
+
+def edge_aggregate(prefix, attach_idx):
+    # the pop's whole slice of the edge prefix: its transit uplink plus every
+    # cpe subnet behind that transit, so the pop needs one static route not n
+    return str(_nth_subnet(prefix, EDGE_AGGREGATE_PREFIXLEN, attach_idx))
 
 
 def isis_net(idx):

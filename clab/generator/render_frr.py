@@ -24,9 +24,14 @@ def render_frr(pop_plan):
             f" ipv6 address {i.address}",
             f" ipv6 router isis {ISIS_INSTANCE}",
         ]
-        # core links form adjacencies, host links only advertise the prefix
+        # core links form adjacencies, the transit link only advertises the prefix
         lines.append(" isis network point-to-point" if i.role == "core" else " isis passive")
         lines.append("!")
+
+    # the cpe subnets live behind the transit router, so they enter isis as
+    # redistributed statics rather than as connected prefixes
+    for r in p.statics:
+        lines += [f"ipv6 route {r.prefix} {r.nexthop} {r.iface}", "!"]
 
     lines += [
         "segment-routing",

@@ -11,10 +11,11 @@ def render_data(topo, plan, digest):
         "defaults": {
             "locator_prefix": topo.defaults.locator_prefix,
             "link_prefix": topo.defaults.link_prefix,
-            "host_prefix": topo.defaults.host_prefix,
+            "edge_prefix": topo.defaults.edge_prefix,
         },
         "pops": [_pop(topo.pop_by_id(p.id), plan.pops[p.id]) for p in topo.pops],
-        "hosts": [_host(h, plan.hosts[h.id]) for h in topo.hosts],
+        "transits": [_transit(plan.transits[p.id]) for p in topo.pops if p.id in plan.transits],
+        "cpes": [_cpe(c, plan.cpes[c.id]) for c in topo.cpes],
         "links": [_link(l) for l in plan.links],
     }
     return json.dumps(doc, indent=2) + "\n"
@@ -38,24 +39,48 @@ def _pop(pop, pp):
             }
             for i in pp.interfaces
         ],
+        "static_routes": [
+            {"prefix": r.prefix, "nexthop": r.nexthop, "interface": r.iface} for r in pp.statics
+        ],
         "data": pop.data,
     }
 
 
-def _host(host, hp):
+def _transit(tp):
     return {
-        "id": host.id,
-        "name": host.node_name,
-        "clab_label": host.clab_label,
-        "instance": hp.instance,
-        "attach": host.attach,
-        "attach_node": hp.attach_node,
-        "subnet": hp.subnet,
-        "address": hp.address,
-        "gateway": hp.gateway,
-        "interface": hp.iface,
-        "peer_interface": hp.peer_iface,
-        "data": host.data,
+        "id": tp.node_name,
+        "name": tp.node_name,
+        "clab_label": tp.clab_label,
+        "pop": tp.id,
+        "pop_node": tp.pop_node,
+        "gateway": tp.gateway,
+        "interfaces": [
+            {
+                "name": i.name,
+                "role": i.role,
+                "peer": i.peer,
+                "address": i.address,
+            }
+            for i in tp.interfaces
+        ],
+    }
+
+
+def _cpe(cpe, cp):
+    return {
+        "id": cpe.id,
+        "name": cpe.node_name,
+        "clab_label": cpe.clab_label,
+        "instance": cp.instance,
+        "attach": cpe.attach,
+        "attach_node": cp.attach_node,
+        "transit_node": cp.transit_node,
+        "subnet": cp.subnet,
+        "address": cp.address,
+        "gateway": cp.gateway,
+        "interface": cp.iface,
+        "peer_interface": cp.peer_iface,
+        "data": cpe.data,
     }
 
 

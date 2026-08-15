@@ -1,6 +1,6 @@
 import yaml
 
-from .constants import FRR_IMAGE, HOST_IMAGE
+from .constants import CPE_IMAGE, FRR_IMAGE, TRANSIT_IMAGE
 
 
 class _Flow(list):
@@ -32,17 +32,41 @@ def render_clab(topo, plan):
             ],
             "labels": {"clab_label": pop.clab_label},
         }
-    for host in topo.hosts:
-        hp = plan.hosts[host.id]
-        nodes[host.node_name] = {
+
+    for transit in plan.transits.values():
+        cmds = [
+            "sysctl -w net.ipv4.ip_forward=1",
+            "sysctl -w net.ipv6.conf.all.forwarding=1",
+        ]
+        for i in transit.interfaces:
+            cmds.append(f"ip link set dev {i.name} up")
+            cmds.append(f"ip -6 addr replace {i.address} dev {i.name}")
+        # the transit router keeps its management eth0, so docker has already
+        # installed a v6 default there; replace it or the lab default never takes
+        # effect. the management subnet stays reachable over eth0 as a connected
+        # route.
+        cmds.append(f"ip -6 route replace default via {transit.gateway}")
+        nodes[transit.node_name] = {
             "kind": "linux",
-            "image": HOST_IMAGE,
+            "image": TRANSIT_IMAGE,
+            "exec": cmds,
+            "labels": {"clab_label": transit.clab_label},
+        }
+
+    for cpe in topo.cpes:
+        cp = plan.cpes[cpe.id]
+        nodes[cpe.node_name] = {
+            "kind": "linux",
+            "image": CPE_IMAGE,
+            # no management eth0: a cpe is a customer endpoint and must reach
+            # everything through its transit router, never out of band via docker
+            "network-mode": "none",
             "exec": [
-                f"ip link set dev {hp.iface} up",
-                f"ip -6 addr add {hp.address} dev {hp.iface}",
-                f"ip -6 route add default via {hp.gateway}",
+                f"ip link set dev {cp.iface} up",
+                f"ip -6 addr replace {cp.address} dev {cp.iface}",
+                f"ip -6 route replace default via {cp.gateway}",
             ],
-            "labels": {"clab_label": host.clab_label},
+            "labels": {"clab_label": cpe.clab_label},
         }
 
     links = [

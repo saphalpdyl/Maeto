@@ -5,22 +5,22 @@ from dataclasses import dataclass, field
 class Defaults:
     locator_prefix: str
     link_prefix: str
-    host_prefix: str
+    edge_prefix: str
 
 
 @dataclass
 class Pop:
     id: str
-    index: int          # stable identity, drives locator + isis id + derived link/host ips
+    index: int          # stable identity, drives locator + isis id + derived link/edge ips
     node_name: str      # PopA
     clab_label: str
     data: dict = field(default_factory=dict)
 
 
 @dataclass
-class Host:
+class Cpe:
     id: str
-    node_name: str      # HostA
+    node_name: str      # CpeA
     clab_label: str
     attach: str         # pop id
     data: dict = field(default_factory=dict)
@@ -39,7 +39,7 @@ class Topology:
     name: str
     defaults: Defaults
     pops: list          # [Pop]
-    hosts: list         # [Host]
+    cpes: list          # [Cpe]
     links: list         # [CoreLink]
 
     def pop_by_id(self, pid):
