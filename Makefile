@@ -1,6 +1,6 @@
 .PHONY: lint lint.editorconfig generate deploy
 
-TOPOLOGY_YAML := deploy/topologies/eight-pop.yaml
+TOPOLOGY_YAML := clab/topologies/eight-pop.yaml
 TOPOLOGY_NAME := eight-pop
 
 setup:
@@ -8,8 +8,8 @@ setup:
 
 # generate containerlab + frr config from the topology dsl into build/<hash>
 generate:
-	. deploy/.venv/bin/activate
-	PYTHONPATH=deploy python3 -m generator $(TOPOLOGY_YAML)
+	. clab/.venv/bin/activate
+	PYTHONPATH=clab python3 -m generator $(TOPOLOGY_YAML)
 
 # deploy the topology recorded in .state/latest.json (build/<hash>/topology.yml)
 deploy:
