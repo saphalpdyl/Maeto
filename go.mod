@@ -17,7 +17,6 @@ require (
 )
 
 require (
-	connectrpc.com/connect v1.20.0 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cilium/ebpf v0.22.0 // indirect
