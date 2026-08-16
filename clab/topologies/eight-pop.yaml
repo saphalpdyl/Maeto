@@ -23,15 +23,25 @@ pops:
   - id: H
     index: 8
 
+customers:
+  - id: 273
+    allocation: fd7a:3921:111::/48
+  - id: 231
+    allocation: fd7a:3921:e7::/48
+
 cpes:
   - id: cA
     attach: A
-
+    customer: 273
+    prefix: fd7a:3921:111:1::/64
   - id: cA2
     attach: A
-
+    customer: 231
+    prefix: fd7a:3921:e7:1::/64
   - id: cC
     attach: C
+    customer: 273
+    prefix: fd7a:3921:111:2::/64
 
 links:
   - [A,B,2]

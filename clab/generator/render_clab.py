@@ -4,6 +4,8 @@ from .constants import (
     CPE_IMAGE,
     NFT_CONTAINER_PATH,
     NFT_FILENAME,
+    NODE_CONTAINER_PATH,
+    NODE_FILENAME,
     POP_IMAGE,
     TRANSIT_IMAGE,
 )
@@ -53,6 +55,7 @@ def render_clab(topo, plan):
         binds = [
             "conf/shared/frr_daemons:/etc/frr/daemons",
             f"conf/{pop.node_name}/frr.conf:/etc/frr/frr.conf",
+            f"conf/{pop.node_name}/{NODE_FILENAME}:{NODE_CONTAINER_PATH}",
         ]
         if access is not None:
             binds.append(f"conf/{pop.node_name}/{NFT_FILENAME}:{NFT_CONTAINER_PATH}")

@@ -3,6 +3,10 @@ import json
 from .constants import GENERATOR_VERSION
 
 
+def render_node(pop, pp):
+    return json.dumps(_pop(pop, pp), indent=2) + "\n"
+
+
 def render_data(topo, plan, digest):
     doc = {
         "name": topo.name,
@@ -57,7 +61,7 @@ def _access(a):
 
 def _transit(tp):
     return {
-        "id": tp.node_name,
+        "id": tp.id,
         "name": tp.node_name,
         "clab_label": tp.clab_label,
         "pop": tp.id,
@@ -99,6 +103,6 @@ def _link(l):
         "type": l.kind,
         "instance": l.instance,
         "subnet": l.subnet,
-        "a": {"node": l.a.node, "interface": l.a.iface, "address": l.a.address},
-        "b": {"node": l.b.node, "interface": l.b.iface, "address": l.b.address},
+        "a": {"kind": l.a.kind, "id": l.a.id, "node": l.a.node, "interface": l.a.iface, "address": l.a.address},
+        "b": {"kind": l.b.kind, "id": l.b.id, "node": l.b.node, "interface": l.b.iface, "address": l.b.address},
     }

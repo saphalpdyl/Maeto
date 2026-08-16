@@ -5,6 +5,7 @@ import yaml
 from . import addressing
 from .constants import (
     CPE_KEYS,
+    CUSTOMER_KEYS,
     DEFAULT_KEYS,
     EDGE_AGGREGATE_PREFIXLEN,
     LINK_INSTANCE_BITS,
@@ -15,7 +16,7 @@ from .constants import (
     TOP_LEVEL_KEYS,
 )
 from .errors import TopologyError
-from .model import CoreLink, Cpe, Defaults, Pop, Topology
+from .model import CoreLink, Cpe, Customer, Defaults, Pop, Topology
 
 
 def parse_topology(source):
@@ -28,9 +29,10 @@ def parse_topology(source):
     defaults = _parse_defaults(root)
     pops = _parse_pops(root)
     pop_index = {p.id: p.index for p in pops}
-    cpes = _parse_cpes(root, set(pop_index))
+    customers = _parse_customers(root)
+    cpes = _parse_cpes(root, set(pop_index), customers)
     links = _parse_links(root, pop_index)
-    return Topology(name, defaults, pops, cpes, links)
+    return Topology(name, defaults, pops, customers, cpes, links)
 
 
 def _reject_unknown(d, allowed, where):
@@ -115,13 +117,48 @@ def _pop_index(raw, i, where):
     return n
 
 
-def _parse_cpes(root, pop_ids):
+def _parse_customers(root):
+    items = root.get("customers") or []
+    if not isinstance(items, list):
+        raise TopologyError("customers must be a list")
+    customers = []
+    seen = set()
+    for i, raw in enumerate(items):
+        if not isinstance(raw, dict):
+            raise TopologyError(f"customers[{i}] must be a mapping")
+        _reject_unknown(raw, CUSTOMER_KEYS, f"customers[{i}]")
+        cid = raw.get("id")
+        if isinstance(cid, bool) or not isinstance(cid, int) or cid < 1:
+            raise TopologyError(f"customers[{i}].id must be a positive integer")
+        if cid in seen:
+            raise TopologyError(f"duplicate customer id: {cid}")
+        seen.add(cid)
+        alloc = _require_network(raw.get("allocation"), f"customers[{i}].allocation")
+        customers.append(Customer(id=cid, allocation=str(alloc), data=_data(raw, f"customers[{i}]")))
+    return customers
+
+
+def _require_network(value, where):
+    if not isinstance(value, str):
+        raise TopologyError(f"{where} must be a string")
+    try:
+        net = ipaddress.ip_network(value, strict=True)
+    except ValueError as e:
+        raise TopologyError(f"{where} is not a valid network: {e}")
+    if net.version != 6:
+        raise TopologyError(f"{where} must be ipv6")
+    return net
+
+
+def _parse_cpes(root, pop_ids, customers):
     items = root.get("cpes") or []
     if not isinstance(items, list):
         raise TopologyError("cpes must be a list")
+    by_id = {c.id: c for c in customers}
     cpes = []
     seen = set()
     per_pop = {}
+    per_customer = {}
     for i, raw in enumerate(items):
         if not isinstance(raw, dict):
             raise TopologyError(f"cpes[{i}] must be a mapping")
@@ -140,9 +177,23 @@ def _parse_cpes(root, pop_ids):
         per_pop[attach] = per_pop.get(attach, 0) + 1
         if per_pop[attach] > MAX_CPES_PER_POP:
             raise TopologyError(f"pop {attach} has more than {MAX_CPES_PER_POP} cpes attached")
+        cust = raw.get("customer")
+        if cust not in by_id:
+            raise TopologyError(f"cpes[{i}].customer must reference an existing customer id: {cust}")
+        prefix = _require_network(raw.get("prefix"), f"cpes[{i}].prefix")
+        alloc = ipaddress.ip_network(by_id[cust].allocation)
+        if not prefix.subnet_of(alloc):
+            raise TopologyError(f"cpes[{i}].prefix {prefix} is outside customer {cust} allocation {alloc}")
+        # sites of one customer share a vrf, so overlapping prefixes break routing
+        for other in per_customer.setdefault(cust, []):
+            if prefix.overlaps(other):
+                raise TopologyError(f"cpes[{i}].prefix {prefix} overlaps {other} on customer {cust}")
+        per_customer[cust].append(prefix)
         node_name = f"Cpe{cid[1:]}"
         cpes.append(Cpe(
             id=cid,
+            customer=cust,
+            prefix=str(prefix),
             node_name=node_name,
             clab_label=_clab_label(raw, node_name, f"cpes[{i}]"),
             attach=attach,

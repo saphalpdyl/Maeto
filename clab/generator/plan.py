@@ -27,6 +27,8 @@ class AccessPlan:
 
 @dataclass
 class Endpoint:
+    kind: str
+    id: str
     node: str
     iface: str
     address: str
@@ -135,8 +137,8 @@ def build_plan(topo):
         b = topo.pop_by_id(link.b)
         links.append(PlannedLink(
             link.index, "core", link.instance, subnet,
-            Endpoint(a.node_name, iface_by_key[(link.a, ("core", link.index))], a_addr),
-            Endpoint(b.node_name, iface_by_key[(link.b, ("core", link.index))], b_addr),
+            Endpoint("pop", a.id, a.node_name, iface_by_key[(link.a, ("core", link.index))], a_addr),
+            Endpoint("pop", b.id, b.node_name, iface_by_key[(link.b, ("core", link.index))], b_addr),
         ))
 
     transits = {}
@@ -155,8 +157,8 @@ def build_plan(topo):
         transit_ifaces = [TransitIface(TRANSIT_UPLINK_IFACE, "uplink", pop.node_name, transit_addr)]
         links.append(PlannedLink(
             uplink, "transit", 0, subnet,
-            Endpoint(pop.node_name, POP_TRANSIT_IFACE, pop_addr),
-            Endpoint(transit_node, TRANSIT_UPLINK_IFACE, transit_addr),
+            Endpoint("pop", pop.id, pop.node_name, POP_TRANSIT_IFACE, pop_addr),
+            Endpoint("transit", pop.id, transit_node, TRANSIT_UPLINK_IFACE, transit_addr),
         ))
 
         n = 1
@@ -170,8 +172,8 @@ def build_plan(topo):
                                    subnet, cpe_addr, gw, CPE_IFACE, iface)
             links.append(PlannedLink(
                 idx, "cpe", cinst[cpe.id], subnet,
-                Endpoint(transit_node, iface, transit_side),
-                Endpoint(cpe.node_name, CPE_IFACE, cpe_addr),
+                Endpoint("transit", pop.id, transit_node, iface, transit_side),
+                Endpoint("cpe", cpe.id, cpe.node_name, CPE_IFACE, cpe_addr),
             ))
 
         transits[pop.id] = TransitPlan(pop.id, transit_node, f"Transit {pop.id}",
