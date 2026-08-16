@@ -35,16 +35,23 @@ services:
       context: .
       dockerfile: docker/maeto-control-plane.Dockerfile
     environment:
-      - OTEL_SINK=otel
+      - OTEL_SINK=stdout
       - OTEL_ENDPOINT=otel-collector:4318
       - CONTROL_PLANE_LISTEN_ADDRESS=:8080
-      - CONTROL_PLANE_DATA_DIR=/app/data
-      - CONTROL_PLANE_STATE_DIR=/app/state
+      - CONTROL_PLANE_DATA_DIR=/app/data/
+      - CONTROL_PLANE_STATE_DIR=/app/state/latest.json
       - MAETO_DB_URL=postgres://postgres:admin@db:5432/postgres?sslmode=disable
-      - NATS_CONNECT_URL=nats://nats-server:4222
+      - NATS_CONNECT_URL=nats://clab-eight-pop-nats:4222
       - AGENT_HEARTBEAT_INTERVAL=30s
     volumes:
       - ./build/:/app/data/
       - ./.state/:/app/state/
     depends_on:
       - db
+    networks:
+      - default
+      - clab
+
+networks:
+  clab:
+    external: true

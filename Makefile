@@ -36,7 +36,7 @@ sync:
 # The services including NATS, DB etc. will run inside the VM as to
 # not fragment deployment during development and makes things simpler
 dev:
-	docker compose up -d db nats-server
+	docker compose up -d --build maeto-control-plane
 
 build-vm:
 	docker build -t maeto-pop:latest -f docker/maeto-pop.Dockerfile .
