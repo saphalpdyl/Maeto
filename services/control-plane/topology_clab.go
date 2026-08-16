@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 )
 
 type ContainerlabTopologyState struct {
@@ -58,11 +59,15 @@ type RawTopologyData struct {
 		Instance int    `json:"instance"`
 		Subnet   string `json:"subnet"`
 		A        struct {
+			Kind      string `json:"kind"`
+			ID        string `json:"id"`
 			Node      string `json:"node"`
 			Interface string `json:"interface"`
 			Address   string `json:"address"`
 		} `json:"a"`
 		B struct {
+			Kind      string `json:"kind"`
+			ID        string `json:"id"`
 			Node      string `json:"node"`
 			Interface string `json:"interface"`
 			Address   string `json:"address"`
@@ -111,11 +116,14 @@ type ClabTopologyConfig struct {
 }
 
 type ClabTopologyManager struct {
+	mu    sync.RWMutex
 	ready bool
 	graph *Graph
 
 	config ClabTopologyConfig
 }
+
+var _ TopologyManager = (*ClabTopologyManager)(nil)
 
 func NewClabTopologyManager(cfg ClabTopologyConfig) *ClabTopologyManager {
 	return &ClabTopologyManager{
@@ -134,9 +142,8 @@ func generateGraphFromRawTopology(rawTopoData *RawTopologyData) *Graph {
 	}
 
 	for _, p := range rawTopoData.Pops {
-		// TODO: p.ID should be the authoratative ID, but the generator links by Name instead of ID
-		g.nodes[NodeID(p.Name)] = &Node{
-			ID:       NodeID(p.Name),
+		g.nodes[NodeID(p.ID)] = &Node{
+			ID:       NodeID(p.ID),
 			Name:     p.Name,
 			ASN:      0,
 			ISISNet:  "",
@@ -151,11 +158,11 @@ func generateGraphFromRawTopology(rawTopoData *RawTopologyData) *Graph {
 			continue
 		}
 
-		edgeId := EdgeID(fmt.Sprintf("%s:%s-%s:%s", l.A.Node, l.A.Interface, l.B.Node, l.B.Interface))
+		edgeId := EdgeID(fmt.Sprintf("%s:%s-%s:%s", l.A.ID, l.A.Interface, l.B.ID, l.B.Interface))
 		g.edges[edgeId] = &Edge{
 			ID:          edgeId,
-			Local:       NodeID(l.A.Node),
-			Remote:      NodeID(l.B.Node),
+			Local:       NodeID(l.A.ID),
+			Remote:      NodeID(l.B.ID),
 			Role:        "link",
 			LocalIface:  l.A.Interface,
 			RemoteIface: l.B.Interface,
@@ -169,11 +176,11 @@ func generateGraphFromRawTopology(rawTopoData *RawTopologyData) *Graph {
 			Up:          true,
 		}
 
-		revEdgeId := EdgeID(fmt.Sprintf("%s:%s-%s:%s", l.B.Node, l.B.Interface, l.A.Node, l.A.Interface))
+		revEdgeId := EdgeID(fmt.Sprintf("%s:%s-%s:%s", l.B.ID, l.B.Interface, l.A.ID, l.A.Interface))
 		g.edges[revEdgeId] = &Edge{
 			ID:          revEdgeId,
-			Local:       NodeID(l.B.Node),
-			Remote:      NodeID(l.A.Node),
+			Local:       NodeID(l.B.ID),
+			Remote:      NodeID(l.A.ID),
 			Role:        "link",
 			LocalIface:  l.B.Interface,
 			RemoteIface: l.A.Interface,
@@ -187,8 +194,8 @@ func generateGraphFromRawTopology(rawTopoData *RawTopologyData) *Graph {
 			Up:          true,
 		}
 
-		g.adj[NodeID(l.A.Node)] = append(g.adj[NodeID(l.A.Node)], edgeId)
-		g.adj[NodeID(l.B.Node)] = append(g.adj[NodeID(l.B.Node)], revEdgeId)
+		g.adj[NodeID(l.A.ID)] = append(g.adj[NodeID(l.A.ID)], edgeId)
+		g.adj[NodeID(l.B.ID)] = append(g.adj[NodeID(l.B.ID)], revEdgeId)
 	}
 
 	return g
@@ -197,18 +204,30 @@ func generateGraphFromRawTopology(rawTopoData *RawTopologyData) *Graph {
 func (c *ClabTopologyManager) LoadTopology() error {
 	rawTopoData, err := readLatestTopology(c.config.StatePath, c.config.TopologyDirPath)
 	if err != nil {
-		return fmt.Errorf("failed to open and parse containerlab topology: %v", err)
+		return fmt.Errorf("failed to open and parse containerlab topology: %w, statepath: %s, topologydirpath: %s", err, c.config.StatePath, c.config.TopologyDirPath)
 	}
 
-	c.graph.mu.Lock()
-	defer c.graph.mu.Unlock()
+	graph := generateGraphFromRawTopology(rawTopoData)
 
-	c.graph = generateGraphFromRawTopology(rawTopoData)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.graph = graph
 	c.ready = true
 
 	return nil
 }
 
 func (c *ClabTopologyManager) IsReady() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
 	return c.ready
+}
+
+func (c *ClabTopologyManager) Graph() *Graph {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	return c.graph
 }

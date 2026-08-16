@@ -42,7 +42,7 @@ type Prefix struct {
 }
 
 type Graph struct {
-	mu       sync.RWMutex
+	mu       sync.RWMutex //nolint:unused // guards graph once concurrent access lands
 	nodes    map[NodeID]*Node
 	edges    map[EdgeID]*Edge
 	prefixes map[string]*Prefix
