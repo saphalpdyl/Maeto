@@ -3,10 +3,20 @@ package maetoagent
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os/exec"
 	"strings"
 )
+
+const vrfUnreachableMetric = "4278198272"
+
+var _ Dataplane = (*LinuxShellDataplane)(nil)
+
+type DefaultRouteOutput struct {
+	Gateway string `json:"gateway"`
+	Dev     string `json:"dev"`
+}
 
 type LinuxShellDataplane struct{}
 
@@ -25,6 +35,20 @@ func run(ctx context.Context, name string, args ...string) error {
 	return nil
 }
 
+func runWithOutput(ctx context.Context, name string, args ...string) ([]byte, error) {
+	//nolint:gosec // G204: Shell wrapper requires variable execution path
+	cmd := exec.CommandContext(ctx, name, args...)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("%s %s: %w: %s", name, strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
+	}
+
+	return out, nil
+}
+
 func (ls *LinuxShellDataplane) AddVRF(ctx context.Context, tableName string, tableId string, iface string, dtsid string) (err error) {
 	if err := run(ctx, "ip", "link", "add", tableName, "type", "vrf", "table", tableId); err != nil {
 		return fmt.Errorf("create vrf device: %w", err)
@@ -32,6 +56,13 @@ func (ls *LinuxShellDataplane) AddVRF(ctx context.Context, tableName string, tab
 
 	if err := run(ctx, "ip", "link", "set", "dev", tableName, "up"); err != nil {
 		return fmt.Errorf("bring up vrf device: %w", err)
+	}
+
+	// This prevents route lookup from falling through when
+	// it doesn't match a route. Weird Linux VRF implementation thing
+	if err := run(ctx, "ip", "-6", "route", "replace", "unreachable", "default",
+		"vrf", tableName, "metric", vrfUnreachableMetric); err != nil {
+		return fmt.Errorf("install vrf catch-all for %s: %w", tableName, err)
 	}
 
 	if err := run(ctx, "ip", "link", "set", iface, "master", tableName); err != nil {
@@ -74,4 +105,20 @@ func (ls *LinuxShellDataplane) UpsertRouteToPolicy(ctx context.Context, dest str
 	}
 
 	return nil
+}
+
+func (ls *LinuxShellDataplane) GetDefaultRouteAndDev(ctx context.Context) (string, string, error) {
+	rawOutput, err := runWithOutput(ctx, "ip", "-6", "-j", "route", "show", "default")
+	if err != nil {
+		return "", "", fmt.Errorf("failed to get ip route default: %w", err)
+	}
+
+	parsedOutput := make([]DefaultRouteOutput, 1)
+	err = json.Unmarshal(rawOutput, &parsedOutput)
+
+	if err != nil {
+		return "", "", fmt.Errorf("failed to parse JSON output: %w", err)
+	}
+
+	return parsedOutput[0].Gateway, parsedOutput[0].Dev, nil
 }
