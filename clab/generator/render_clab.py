@@ -46,6 +46,7 @@ def render_clab(topo, plan):
             "sysctl -w net.ipv6.conf.all.seg6_enabled=1",
             "ip link add sr0 type dummy",
             "ip link set sr0 up",
+            "sh -c '/usr/lib/frr/docker-start &'"
         ]
         access = plan.pops[pop.id].access
         cmds += _access_setup(access)
@@ -91,9 +92,6 @@ def render_clab(topo, plan):
             # no management eth0: a cpe is a customer endpoint and must reach
             # everything through its transit router, never out of band via docker
             "network-mode": "none",
-            # temporary: portald exits when its controller is unreachable, which
-            # it always is until the out-of-band control path exists
-            "entrypoint": "sleep infinity",
             "exec": [
                 f"ip link set dev {cp.iface} up",
                 f"ip -6 addr replace {cp.address} dev {cp.iface}",
