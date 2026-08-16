@@ -1,6 +1,12 @@
 import yaml
 
-from .constants import CPE_IMAGE, FRR_IMAGE, TRANSIT_IMAGE, VRF_UNREACHABLE_METRIC
+from .constants import (
+    CPE_IMAGE,
+    NFT_CONTAINER_PATH,
+    NFT_FILENAME,
+    POP_IMAGE,
+    TRANSIT_IMAGE,
+)
 
 
 class _Flow(list):
@@ -14,27 +20,20 @@ yaml.SafeDumper.add_representer(
 )
 
 
-def _access_vrf(a):
-    # the customer-facing interface never lives in the global table, so a packet
-    # from a cpe is resolved against a table holding only the transit link and the
-    # aggregate behind it -- there is no core route to forward it onto. enslaving
-    # flushes the interface's v6 addresses, so address it only after the move.
+def _access_setup(a):
     if a is None:
         return []
-    # chained into one command on purpose. clab logs a failed exec and carries on,
-    # so as separate entries a missing vrf module would still let the addr land --
-    # putting the customer interface in the global table with no route back, which
-    # is both open and broken. chained, a failure leaves eth1 unconfigured: closed.
+    # filter first, interface second. clab logs a failed exec and carries on, so
+    # the reverse order would leave a working access interface with no isolation
+    # at all -- open toward the backbone, which is the failure direction that
+    # actually hurts. chained this way, a ruleset that will not load means eth1
+    # never comes up and nothing moves. iifname matches by string, so the rules
+    # load happily before the interface is configured.
     steps = " && ".join([
-        f"ip link add {a.vrf} type vrf table {a.table}",
-        f"ip link set dev {a.vrf} up",
-        f"ip link set dev {a.iface} master {a.vrf}",
+        f"nft -f {NFT_CONTAINER_PATH}",
         f"ip link set dev {a.iface} up",
         f"ip -6 addr replace {a.address} dev {a.iface}",
-        f"ip -6 route replace {a.aggregate} via {a.nexthop} dev {a.iface} vrf {a.vrf}",
-        # without this the vrf leaks: a miss falls through to the main table and
-        # customer traffic is forwarded straight into the backbone
-        f"ip -6 route replace unreachable default vrf {a.vrf} metric {VRF_UNREACHABLE_METRIC}",
+        f"ip -6 route replace {a.aggregate} via {a.nexthop} dev {a.iface}",
     ])
     return [f"sh -c '{steps}'"]
 
@@ -48,14 +47,18 @@ def render_clab(topo, plan):
             "ip link add sr0 type dummy",
             "ip link set sr0 up",
         ]
-        cmds += _access_vrf(plan.pops[pop.id].access)
+        access = plan.pops[pop.id].access
+        cmds += _access_setup(access)
+        binds = [
+            "conf/shared/frr_daemons:/etc/frr/daemons",
+            f"conf/{pop.node_name}/frr.conf:/etc/frr/frr.conf",
+        ]
+        if access is not None:
+            binds.append(f"conf/{pop.node_name}/{NFT_FILENAME}:{NFT_CONTAINER_PATH}")
         nodes[pop.node_name] = {
             "kind": "linux",
-            "image": FRR_IMAGE,
-            "binds": [
-                "conf/shared/frr_daemons:/etc/frr/daemons",
-                f"conf/{pop.node_name}/frr.conf:/etc/frr/frr.conf",
-            ],
+            "image": POP_IMAGE,
+            "binds": binds,
             "exec": cmds,
             "labels": {"clab_label": pop.clab_label},
         }
@@ -88,6 +91,9 @@ def render_clab(topo, plan):
             # no management eth0: a cpe is a customer endpoint and must reach
             # everything through its transit router, never out of band via docker
             "network-mode": "none",
+            # temporary: portald exits when its controller is unreachable, which
+            # it always is until the out-of-band control path exists
+            "entrypoint": "sleep infinity",
             "exec": [
                 f"ip link set dev {cp.iface} up",
                 f"ip -6 addr replace {cp.address} dev {cp.iface}",

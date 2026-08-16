@@ -1,12 +1,12 @@
 # static values shared across the generator
 
-GENERATOR_VERSION = "1.5.0"
+GENERATOR_VERSION = "1.8.0"
 
-FRR_IMAGE = "quay.io/frrouting/frr:10.4.1"
+POP_IMAGE = "maeto-pop:latest"
 FRR_VERSION = "10.5.1"
-# both edge roles are plain forwarding linux boxes, no routing daemon
-CPE_IMAGE = "maeto-edge:latest"
-TRANSIT_IMAGE = "maeto-edge:latest"
+CPE_IMAGE = "maeto-portal:latest"
+# transit models the unmanaged internet: not ours, so stock upstream
+TRANSIT_IMAGE = "nicolaka/netshoot:latest"
 
 ISIS_AREA = "49.0000"
 ISIS_INSTANCE = "CORE"
@@ -33,20 +33,11 @@ POP_TRANSIT_IFACE = "eth1"
 TRANSIT_UPLINK_IFACE = "eth1"
 CPE_IFACE = "eth1"
 
-# the pop's customer-facing interface lives in its own vrf for its whole life, so
-# a packet arriving from a cpe is looked up in a table that holds no core routes
-# and cannot be forwarded into the backbone. per-customer vrfs are created at
-# provisioning time and carry table ids derived from the customer id, so this
-# table id has to sit above any id they will ever allocate.
-ACCESS_VRF = "vrf-access"
-ACCESS_VRF_TABLE = 4000
-
-# a vrf is a fib rule, not a sealed table: on a miss the lookup falls through to
-# rule 32766 and lands in main, which holds every core route. ipv4 vrfs get an
-# automatic unreachable catch-all, ipv6 vrfs do NOT, so the isolation is only
-# real once we install one ourselves. metric matches what the kernel uses for
-# ipv4 so any genuine route, however unattractive, still wins over it.
-VRF_UNREACHABLE_METRIC = 4278198272
+# the access interface is isolated by a packet filter, not by a routing
+# construct. the rendered ruleset is bound in like frr.conf so it is reviewable
+# in the build output rather than buried in an exec string.
+NFT_FILENAME = "maeto.nft"
+NFT_CONTAINER_PATH = "/etc/nftables.d/maeto.nft"
 
 # only key allowed inside a pop/cpe override block
 OVERRIDE_KEYS = {"clab_label"}

@@ -1,13 +1,7 @@
 from dataclasses import dataclass
 
 from . import addressing
-from .constants import (
-    ACCESS_VRF,
-    ACCESS_VRF_TABLE,
-    CPE_IFACE,
-    POP_TRANSIT_IFACE,
-    TRANSIT_UPLINK_IFACE,
-)
+from .constants import CPE_IFACE, POP_TRANSIT_IFACE, TRANSIT_UPLINK_IFACE
 
 
 @dataclass
@@ -21,11 +15,10 @@ class Interface:
 
 @dataclass
 class AccessPlan:
-    # the customer-facing side of a pop, owned by iproute2 rather than frr: it is
-    # deliberately outside the global table and outside isis, so nothing it holds
-    # can reach the core and nothing it holds is advertised to the core
-    vrf: str
-    table: int
+    # the customer-facing side of a pop, owned by iproute2 and nftables rather
+    # than frr: it stays out of isis so nothing it holds is advertised to the
+    # core, and a forward-chain drop keeps anything arriving on it from being
+    # forwarded anywhere at all
     iface: str
     address: str        # ::1/64 on the transit link
     aggregate: str      # /56 covering the uplink and every cpe behind the transit
@@ -111,11 +104,11 @@ def build_plan(topo):
         if attached.get(pop.id):
             uplink = addressing.edge_subnet_index(pop.index, 0)
             _, pop_addr, _, _, transit_addr = addressing.edge_addrs(d.edge_prefix, uplink)
-            # the cpes sit a hop further out, so the access vrf reaches them
-            # through one aggregate handed to the transit router. it stays in the
-            # vrf table -- redistributing it would hand the whole backbone a route
-            # back to customer space, which is exactly what the vrf is preventing
-            access = AccessPlan(ACCESS_VRF, ACCESS_VRF_TABLE, POP_TRANSIT_IFACE, pop_addr,
+            # the cpes sit a hop further out, so the pop reaches them through one
+            # aggregate handed to the transit router. it is never redistributed --
+            # only this pop needs it, and advertising it would hand the whole
+            # backbone a route back into customer space
+            access = AccessPlan(POP_TRANSIT_IFACE, pop_addr,
                                 addressing.edge_aggregate(d.edge_prefix, pop.index), transit_addr)
 
         # eth1 belongs to the transit link on every pop, cpes or not, so core

@@ -14,6 +14,11 @@ RUN CGO_ENABLED=0 go build -o /bin/maeto-portal ./services/maeto-portal/cmd
 
 FROM nicolaka/netshoot:latest
 
+# portald starts and drives charon over vici
+RUN apk add --no-cache strongswan
+RUN : > /etc/swanctl/swanctl.conf
+COPY docker/scripts/charon-maeto.conf /etc/strongswan.d/maeto.conf
+
 COPY --from=build /bin/maeto-portal /usr/local/bin/maeto-portal
 
 WORKDIR /app

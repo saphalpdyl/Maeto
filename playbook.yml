@@ -41,14 +41,18 @@
         state: present
         update_cache: true
 
-    - name: Load the vrf module now
-      ansible.builtin.command: modprobe vrf
+    - name: Load dataplane modules now
+      ansible.builtin.command: "modprobe {{ item }}"
       changed_when: false
+      loop:
+        - vrf
+        - xfrm_interface
+        - esp6
 
-    - name: Load the vrf module on boot
+    - name: Load dataplane modules on boot
       ansible.builtin.copy:
-        content: "vrf\n"
-        dest: /etc/modules-load.d/vrf.conf
+        content: "vrf\nxfrm_interface\nesp6\n"
+        dest: /etc/modules-load.d/maeto.conf
         mode: "0644"
 
     - name: Install containerlab

@@ -48,8 +48,6 @@ def _access(a):
     if a is None:
         return None
     return {
-        "vrf": a.vrf,
-        "table": a.table,
         "interface": a.iface,
         "address": a.address,
         "aggregate": a.aggregate,

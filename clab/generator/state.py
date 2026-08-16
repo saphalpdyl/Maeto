@@ -3,10 +3,11 @@ import json
 import os
 from datetime import datetime, timezone
 
-from .constants import FRR_DAEMONS, GENERATOR_VERSION, HASH_DIR_LEN
+from .constants import FRR_DAEMONS, GENERATOR_VERSION, HASH_DIR_LEN, NFT_FILENAME
 from .render_clab import render_clab
 from .render_data import render_data
 from .render_frr import render_frr
+from .render_nft import render_nft
 
 
 def digest_of(source):
@@ -37,7 +38,11 @@ def write_output(topo, plan, digest, build_dir):
     _write(os.path.join(out, "topology.data.json"), render_data(topo, plan, digest))
     _write(os.path.join(out, "conf", "shared", "frr_daemons"), FRR_DAEMONS)
     for pop in topo.pops:
-        _write(os.path.join(out, "conf", pop.node_name, "frr.conf"), render_frr(plan.pops[pop.id]))
+        pp = plan.pops[pop.id]
+        _write(os.path.join(out, "conf", pop.node_name, "frr.conf"), render_frr(pp))
+        # only pops with cpes have an access side to isolate
+        if pp.access is not None:
+            _write(os.path.join(out, "conf", pop.node_name, NFT_FILENAME), render_nft(pp.access))
     return out
 
 
