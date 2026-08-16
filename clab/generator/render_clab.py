@@ -1,6 +1,6 @@
 import yaml
 
-from .constants import CPE_IMAGE, FRR_IMAGE, TRANSIT_IMAGE
+from .constants import CPE_IMAGE, FRR_IMAGE, TRANSIT_IMAGE, VRF_UNREACHABLE_METRIC
 
 
 class _Flow(list):
@@ -14,9 +14,41 @@ yaml.SafeDumper.add_representer(
 )
 
 
+def _access_vrf(a):
+    # the customer-facing interface never lives in the global table, so a packet
+    # from a cpe is resolved against a table holding only the transit link and the
+    # aggregate behind it -- there is no core route to forward it onto. enslaving
+    # flushes the interface's v6 addresses, so address it only after the move.
+    if a is None:
+        return []
+    # chained into one command on purpose. clab logs a failed exec and carries on,
+    # so as separate entries a missing vrf module would still let the addr land --
+    # putting the customer interface in the global table with no route back, which
+    # is both open and broken. chained, a failure leaves eth1 unconfigured: closed.
+    steps = " && ".join([
+        f"ip link add {a.vrf} type vrf table {a.table}",
+        f"ip link set dev {a.vrf} up",
+        f"ip link set dev {a.iface} master {a.vrf}",
+        f"ip link set dev {a.iface} up",
+        f"ip -6 addr replace {a.address} dev {a.iface}",
+        f"ip -6 route replace {a.aggregate} via {a.nexthop} dev {a.iface} vrf {a.vrf}",
+        # without this the vrf leaks: a miss falls through to the main table and
+        # customer traffic is forwarded straight into the backbone
+        f"ip -6 route replace unreachable default vrf {a.vrf} metric {VRF_UNREACHABLE_METRIC}",
+    ])
+    return [f"sh -c '{steps}'"]
+
+
 def render_clab(topo, plan):
     nodes = {}
     for pop in topo.pops:
+        cmds = [
+            "sysctl -w net.ipv6.conf.all.forwarding=1",
+            "sysctl -w net.ipv6.conf.all.seg6_enabled=1",
+            "ip link add sr0 type dummy",
+            "ip link set sr0 up",
+        ]
+        cmds += _access_vrf(plan.pops[pop.id].access)
         nodes[pop.node_name] = {
             "kind": "linux",
             "image": FRR_IMAGE,
@@ -24,12 +56,7 @@ def render_clab(topo, plan):
                 "conf/shared/frr_daemons:/etc/frr/daemons",
                 f"conf/{pop.node_name}/frr.conf:/etc/frr/frr.conf",
             ],
-            "exec": [
-                "sysctl -w net.ipv6.conf.all.forwarding=1",
-                "sysctl -w net.ipv6.conf.all.seg6_enabled=1",
-                "ip link add sr0 type dummy",
-                "ip link set sr0 up"
-            ],
+            "exec": cmds,
             "labels": {"clab_label": pop.clab_label},
         }
 

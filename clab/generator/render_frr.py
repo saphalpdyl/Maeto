@@ -17,21 +17,18 @@ def render_frr(pop_plan):
         " isis passive",
         "!",
     ]
+    # only core links reach frr. the customer-facing interface is deliberately
+    # absent: it lives in the access vrf, configured by iproute2, so there is no
+    # stanza here that could advertise customer space into the backbone
     for i in p.interfaces:
         lines += [
             f"interface {i.name}",
             f" description {i.description}",
             f" ipv6 address {i.address}",
             f" ipv6 router isis {ISIS_INSTANCE}",
+            " isis network point-to-point",
+            "!",
         ]
-        # core links form adjacencies, the transit link only advertises the prefix
-        lines.append(" isis network point-to-point" if i.role == "core" else " isis passive")
-        lines.append("!")
-
-    # the cpe subnets live behind the transit router, so they enter isis as
-    # redistributed statics rather than as connected prefixes
-    for r in p.statics:
-        lines += [f"ipv6 route {r.prefix} {r.nexthop} {r.iface}", "!"]
 
     lines += [
         "segment-routing",
@@ -51,7 +48,8 @@ def render_frr(pop_plan):
         " is-type level-1",
         " metric-style wide",
         " topology ipv6-unicast",
-        " redistribute ipv6 static level-1",
+        # no redistribute: the backbone carries core prefixes and locators only,
+        # never anything learned from or about a customer
         " segment-routing srv6",
         "  locator CORE",
         " !",

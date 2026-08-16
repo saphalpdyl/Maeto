@@ -41,6 +41,16 @@
         state: present
         update_cache: true
 
+    - name: Load the vrf module now
+      ansible.builtin.command: modprobe vrf
+      changed_when: false
+
+    - name: Load the vrf module on boot
+      ansible.builtin.copy:
+        content: "vrf\n"
+        dest: /etc/modules-load.d/vrf.conf
+        mode: "0644"
+
     - name: Install containerlab
       ansible.builtin.shell: >-
         bash -c "$(curl -sL https://get.containerlab.dev)" --

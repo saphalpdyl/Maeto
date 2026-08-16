@@ -39,10 +39,21 @@ def _pop(pop, pp):
             }
             for i in pp.interfaces
         ],
-        "static_routes": [
-            {"prefix": r.prefix, "nexthop": r.nexthop, "interface": r.iface} for r in pp.statics
-        ],
+        "access": _access(pp.access),
         "data": pop.data,
+    }
+
+
+def _access(a):
+    if a is None:
+        return None
+    return {
+        "vrf": a.vrf,
+        "table": a.table,
+        "interface": a.iface,
+        "address": a.address,
+        "aggregate": a.aggregate,
+        "nexthop": a.nexthop,
     }
 
 

@@ -1,6 +1,6 @@
 # static values shared across the generator
 
-GENERATOR_VERSION = "1.3.0"
+GENERATOR_VERSION = "1.5.0"
 
 FRR_IMAGE = "quay.io/frrouting/frr:10.4.1"
 FRR_VERSION = "10.5.1"
@@ -32,6 +32,21 @@ MAX_CPES_PER_POP = (1 << CPE_INSTANCE_BITS) - 1
 POP_TRANSIT_IFACE = "eth1"
 TRANSIT_UPLINK_IFACE = "eth1"
 CPE_IFACE = "eth1"
+
+# the pop's customer-facing interface lives in its own vrf for its whole life, so
+# a packet arriving from a cpe is looked up in a table that holds no core routes
+# and cannot be forwarded into the backbone. per-customer vrfs are created at
+# provisioning time and carry table ids derived from the customer id, so this
+# table id has to sit above any id they will ever allocate.
+ACCESS_VRF = "vrf-access"
+ACCESS_VRF_TABLE = 4000
+
+# a vrf is a fib rule, not a sealed table: on a miss the lookup falls through to
+# rule 32766 and lands in main, which holds every core route. ipv4 vrfs get an
+# automatic unreachable catch-all, ipv6 vrfs do NOT, so the isolation is only
+# real once we install one ourselves. metric matches what the kernel uses for
+# ipv4 so any genuine route, however unattractive, still wins over it.
+VRF_UNREACHABLE_METRIC = 4278198272
 
 # only key allowed inside a pop/cpe override block
 OVERRIDE_KEYS = {"clab_label"}

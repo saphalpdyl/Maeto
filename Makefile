@@ -17,6 +17,7 @@ deploy:
 	out=$$(python3 -c "import json; print(json.load(open('.state/latest.json'))['output'])"); \
 	topo="$$out/topology.yml"; \
 	if [ ! -f "$$topo" ]; then echo "missing $$topo; run 'make generate' first" >&2; exit 1; fi; \
+	sudo modprobe vrf; \
 	sudo clab deploy -t "$$topo" --reconfigure
 
 lint:

@@ -1,23 +1,35 @@
 from dataclasses import dataclass
 
 from . import addressing
-from .constants import CPE_IFACE, POP_TRANSIT_IFACE, TRANSIT_UPLINK_IFACE
+from .constants import (
+    ACCESS_VRF,
+    ACCESS_VRF_TABLE,
+    CPE_IFACE,
+    POP_TRANSIT_IFACE,
+    TRANSIT_UPLINK_IFACE,
+)
 
 
 @dataclass
 class Interface:
-    name: str           # eth1
-    role: str           # core | transit
+    name: str           # eth2
+    role: str           # core
     peer: str           # peer node name
     address: str        # ::1/64
     description: str
 
 
 @dataclass
-class StaticRoute:
-    prefix: str
-    nexthop: str
+class AccessPlan:
+    # the customer-facing side of a pop, owned by iproute2 rather than frr: it is
+    # deliberately outside the global table and outside isis, so nothing it holds
+    # can reach the core and nothing it holds is advertised to the core
+    vrf: str
+    table: int
     iface: str
+    address: str        # ::1/64 on the transit link
+    aggregate: str      # /56 covering the uplink and every cpe behind the transit
+    nexthop: str        # transit router's ::2
 
 
 @dataclass
@@ -43,8 +55,8 @@ class PopPlan:
     isis_net: str
     blackhole: str      # locator /48
     loopback: str       # ::1/128
-    interfaces: list    # [Interface]
-    statics: list       # [StaticRoute] covering the cpes behind the transit
+    interfaces: list    # [Interface], core links only -- what frr owns
+    access: object      # AccessPlan, or None on a pop with no cpes
 
 
 @dataclass
@@ -95,19 +107,16 @@ def build_plan(topo):
 
     for pop in topo.pops:
         ifaces = []
-        statics = []
+        access = None
         if attached.get(pop.id):
-            transit_node = _transit_node_name(pop)
             uplink = addressing.edge_subnet_index(pop.index, 0)
             _, pop_addr, _, _, transit_addr = addressing.edge_addrs(d.edge_prefix, uplink)
-            ifaces.append(Interface(POP_TRANSIT_IFACE, "transit", transit_node, pop_addr,
-                                    f"transit link to {transit_node}"))
-            # the cpes sit a hop further out, so the pop reaches them through one
-            # aggregate handed to the transit router and redistributed into isis.
-            # the nexthop sits inside that aggregate, so pin the outgoing
-            # interface rather than leaning on recursive resolution
-            statics.append(StaticRoute(addressing.edge_aggregate(d.edge_prefix, pop.index),
-                                       transit_addr, POP_TRANSIT_IFACE))
+            # the cpes sit a hop further out, so the access vrf reaches them
+            # through one aggregate handed to the transit router. it stays in the
+            # vrf table -- redistributing it would hand the whole backbone a route
+            # back to customer space, which is exactly what the vrf is preventing
+            access = AccessPlan(ACCESS_VRF, ACCESS_VRF_TABLE, POP_TRANSIT_IFACE, pop_addr,
+                                addressing.edge_aggregate(d.edge_prefix, pop.index), transit_addr)
 
         # eth1 belongs to the transit link on every pop, cpes or not, so core
         # links always start at eth2 and never shift when cpes are added
@@ -124,7 +133,7 @@ def build_plan(topo):
             iface_by_key[(pop.id, ("core", link.index))] = name
 
         blackhole, loopback = addressing.locator(d.locator_prefix, pop.index)
-        pops[pop.id] = PopPlan(pop, addressing.isis_net(pop.index), blackhole, loopback, ifaces, statics)
+        pops[pop.id] = PopPlan(pop, addressing.isis_net(pop.index), blackhole, loopback, ifaces, access)
 
     links = []
     for link in sorted(topo.links, key=lambda l: l.index):
