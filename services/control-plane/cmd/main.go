@@ -56,13 +56,16 @@ func main() {
 	nc, err := nats.Connect(config.NatsConnectURL)
 	if err != nil {
 		logger.ErrorContext(ctx, "failed to connect to NATS", log.Err(err))
+		os.Exit(1)
 	}
 
-	pce := controlplane.NewPCE(nc, controlplane.PCEConfig{
-		StatePath:       config.StatePath,
-		TopologyDirPath: config.DataDir,
-	})
-	pce.Run(ctx)
+	cp, err := controlplane.NewController(ctx, nc, config, logger)
+	if err != nil {
+		logger.ErrorContext(ctx, "failed to initialize controller", log.Err(err))
+		os.Exit(1)
+	}
+
+	cp.Start(ctx)
 
 	<-ctx.Done()
 

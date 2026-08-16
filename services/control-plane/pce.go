@@ -2,39 +2,22 @@ package controlplane
 
 import (
 	"context"
-
-	"github.com/nats-io/nats.go"
 )
 
 type PCE struct {
-	costGraph       *CostGraph
-	serviceRegistry *ServiceRegistry
-	topo            *ClabTopologyManager
-
-	nats *nats.Conn
+	costGraph *CostGraph
 }
 
-type PCEConfig struct {
-	StatePath       string
-	TopologyDirPath string
-}
-
-func NewPCE(
-	nats *nats.Conn,
-	cfg PCEConfig,
-) *PCE {
+func NewPCE() *PCE {
 	return &PCE{
-		costGraph:       NewCostGraph(),
-		serviceRegistry: NewServiceRegistry(&ServiceRegistryConfig{}),
-		topo: NewClabTopologyManager(ClabTopologyConfig{ //nolint:staticcheck // keep configs decoupled; they only coincidentally match
-			StatePath:       cfg.StatePath,
-			TopologyDirPath: cfg.TopologyDirPath,
-		}),
-
-		nats: nats,
+		costGraph: NewCostGraph(),
 	}
 }
 
-func (p *PCE) Run(ctx context.Context) {
+func (p *PCE) CostGraph() *CostGraph {
+	return p.costGraph
+}
 
+func (p *PCE) Run(ctx context.Context, graph *Graph) {
+	<-ctx.Done()
 }
