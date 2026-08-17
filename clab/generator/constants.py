@@ -1,6 +1,6 @@
 # static values shared across the generator
 
-GENERATOR_VERSION = "1.11.0"
+GENERATOR_VERSION = "1.12.0"
 
 POP_IMAGE = "maeto-pop:latest"
 FRR_VERSION = "10.5.1"
@@ -79,3 +79,13 @@ isisd_options="  -A 127.0.0.1"
 pathd_options="  -A 127.0.0.1"
 staticd_options="-A 127.0.0.1"
 """
+
+# Assumes PYTHONPATH=clab/
+CA_KEY_PATH = ".certs/ca-key.pem"
+CA_CERT_PATH = ".certs/ca-cert.pem"
+CERT_LIFETIME_DAYS = 7300
+
+CA_CERT_BIND = "conf/shared/ca-cert.pem"
+CA_CERT_CONTAINER_PATH = "/etc/swanctl/x509ca/ca-cert.pem"
+CERT_CONTAINER_PATH = "/etc/swanctl/x509/cert.pem"
+KEY_CONTAINER_PATH = "/etc/swanctl/private/key.pem"

@@ -38,6 +38,12 @@
           - lsb-release
           - "linux-modules-extra-{{ ansible_kernel }}"
           - make
+          - strongswan
+          - strongswan-pki
+          - libcharon-extra-plugins
+          - libcharon-extauth-plugins
+          - libstrongswan-extra-plugins
+          - libtss2-tcti-tabrmd0 # https://stackoverflow.com/a/70720567
         state: present
         update_cache: true
 

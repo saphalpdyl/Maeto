@@ -1,7 +1,11 @@
 import yaml
 
 from .constants import (
+    CA_CERT_BIND,
+    CA_CERT_CONTAINER_PATH,
+    CERT_CONTAINER_PATH,
     CPE_IMAGE,
+    KEY_CONTAINER_PATH,
     NFT_CONTAINER_PATH,
     NFT_FILENAME,
     NODE_CONTAINER_PATH,
@@ -56,6 +60,9 @@ def render_clab(topo, plan):
             "conf/shared/frr_daemons:/etc/frr/daemons",
             f"conf/{pop.node_name}/frr.conf:/etc/frr/frr.conf",
             f"conf/{pop.node_name}/{NODE_FILENAME}:{NODE_CONTAINER_PATH}",
+            f"{CA_CERT_BIND}:{CA_CERT_CONTAINER_PATH}",
+            f"conf/{pop.node_name}/cert.pem:{CERT_CONTAINER_PATH}",
+            f"conf/{pop.node_name}/key.pem:{KEY_CONTAINER_PATH}",
         ]
         if access is not None:
             binds.append(f"conf/{pop.node_name}/{NFT_FILENAME}:{NFT_CONTAINER_PATH}")
@@ -95,6 +102,11 @@ def render_clab(topo, plan):
             # no management eth0: a cpe is a customer endpoint and must reach
             # everything through its transit router, never out of band via docker
             "network-mode": "none",
+            "binds": [
+                f"{CA_CERT_BIND}:{CA_CERT_CONTAINER_PATH}",
+                f"conf/{cpe.node_name}/cert.pem:{CERT_CONTAINER_PATH}",
+                f"conf/{cpe.node_name}/key.pem:{KEY_CONTAINER_PATH}",
+            ],
             "exec": [
                 f"ip link set dev {cp.iface} up",
                 f"ip -6 addr replace {cp.address} dev {cp.iface}",

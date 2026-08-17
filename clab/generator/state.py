@@ -9,6 +9,7 @@ from .render_data import render_data, render_node
 from .render_frr import render_frr
 from .render_nft import render_nft
 from .render_customer_db import render_customer_db
+from .render_certs import copy_ca_cert, cpe_identity, pop_identity, render_cert, verify_ca_cert_exist
 
 
 def digest_of(source):
@@ -35,11 +36,22 @@ def is_up_to_date(digest, build_dir, state_dir):
 
 def write_output(topo, plan, digest, build_dir):
     out = output_dir(build_dir, digest)
+
+    if not verify_ca_cert_exist():
+        raise RuntimeError("CA cert or key not found. Please run `make pki` to generate the CA cert and key.")
+
     _write(os.path.join(out, "topology.yml"), render_clab(topo, plan))
     _write(os.path.join(out, "topology.data.json"), render_data(topo, plan, digest))
     _write(os.path.join(out, "customer.db.json"), render_customer_db(topo))
     _write(os.path.join(out, "conf", "shared", "frr_daemons"), FRR_DAEMONS)
+    copy_ca_cert(out)
+
+    for cpe in topo.cpes:
+        render_cert(out, cpe.node_name, cpe_identity(cpe.id, cpe.customer))
+
     for pop in topo.pops:
+        render_cert(out, pop.node_name, pop_identity(pop.node_name))
+
         pp = plan.pops[pop.id]
         _write(os.path.join(out, "conf", pop.node_name, "frr.conf"), render_frr(pp))
         _write(os.path.join(out, "conf", pop.node_name, NODE_FILENAME), render_node(pop, pp))

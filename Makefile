@@ -85,3 +85,9 @@ proto-gen: proto-image
 
 proto-lint: proto-image
 	$(PROTO_RUN) maeto-buf lint
+
+# One-time CA cert generation used by generator to generate PoP and CPE certs
+pki:
+	mkdir -p .certs/
+	pki --gen --type ecdsa --size 256 --outform pem > .certs/ca-key.pem
+	pki --self --ca --lifetime 7300 --in .certs/ca-key.pem --type priv --dn "CN=maeto-ca" --outform pem > .certs/ca-cert.pem
