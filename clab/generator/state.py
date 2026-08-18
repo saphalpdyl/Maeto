@@ -7,15 +7,15 @@ from .constants import (
     FRR_DAEMONS,
     GENERATOR_VERSION,
     HASH_DIR_LEN,
+    MGMT_ROUTES_FILENAME,
     NFT_FILENAME,
     NODE_FILENAME,
-    SWAN_CONF_FILENAME,
 )
 from .render_clab import render_clab
 from .render_data import render_data, render_node
 from .render_frr import render_frr
+from .render_mgmt_routes import render_mgmt_routes
 from .render_nft import render_nft
-from .render_swan_conf import render_cpe_swan_conf
 from .render_customer_db import render_customer_db
 from .render_certs import copy_ca_cert, cpe_identity, pop_identity, render_cert, verify_ca_cert_exist
 
@@ -52,16 +52,11 @@ def write_output(topo, plan, digest, build_dir):
     _write(os.path.join(out, "topology.data.json"), render_data(topo, plan, digest))
     _write(os.path.join(out, "customer.db.json"), render_customer_db(topo))
     _write(os.path.join(out, "conf", "shared", "frr_daemons"), FRR_DAEMONS)
+    _write(os.path.join(out, MGMT_ROUTES_FILENAME), render_mgmt_routes(topo, plan))
     copy_ca_cert(out)
 
     for cpe in topo.cpes:
         render_cert(out, cpe.node_name, cpe_identity(cpe.id, cpe.customer))
-        attach_pop = topo.pop_by_id(cpe.attach)
-        attach_access = plan.pops[cpe.attach].access
-        _write(
-            os.path.join(out, "conf", cpe.node_name, SWAN_CONF_FILENAME),
-            render_cpe_swan_conf(cpe, plan.cpes[cpe.id], attach_pop, attach_access),
-        )
 
     for pop in topo.pops:
         render_cert(out, pop.node_name, pop_identity(pop.node_name))

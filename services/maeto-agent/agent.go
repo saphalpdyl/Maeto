@@ -11,6 +11,7 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/strongswan/govici/vici"
 
+	"github.com/saphalpdyl/maeto/libs/controlapi"
 	"github.com/saphalpdyl/maeto/libs/swan"
 	"github.com/saphalpdyl/maeto/services/maeto-agent/log"
 )
@@ -222,7 +223,7 @@ func (a *Agent) waitForReady(ctx context.Context) bool {
 
 		attempt++
 
-		data, err := a.js.Conn().Request("maeto.control.health.ready", nil, time.Second)
+		data, err := a.js.Conn().Request(controlapi.SubjectHealthReady, nil, time.Second)
 		if err != nil {
 			a.logger.WarnContext(ctx, "control plane unreachable",
 				log.Domain(log.DomainControlPlane),

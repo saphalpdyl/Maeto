@@ -14,8 +14,7 @@ type PortalConfig struct {
 
 	NatsConnectURL string
 
-	PortalID  string
-	AttachPop string
+	PortalID string
 
 	ShutdownGracePeriod time.Duration
 }
@@ -38,16 +37,12 @@ func GetConfig() PortalConfig {
 	otelSink, err := common.TryGetFromEnv("OTEL_SINK")
 	handleConfigErrorWithExit(err)
 
-	otelEndpoint, err := common.TryGetFromEnv("OTEL_ENDPOINT")
-	handleConfigErrorWithExit(err)
+	otelEndpoint := getFromEnvOr("OTEL_ENDPOINT", "")
 
 	natsConnectUrl, err := common.TryGetFromEnv("NATS_CONNECT_URL")
 	handleConfigErrorWithExit(err)
 
 	portalId, err := common.TryGetFromEnv("PORTAL_ID")
-	handleConfigErrorWithExit(err)
-
-	attachPop, err := common.TryGetFromEnv("PORTAL_ATTACH_POP")
 	handleConfigErrorWithExit(err)
 
 	gracePeriod, err := time.ParseDuration(getFromEnvOr("PORTAL_SHUTDOWN_GRACE_PERIOD", "15s"))
@@ -58,7 +53,6 @@ func GetConfig() PortalConfig {
 		OtelEndpoint:        otelEndpoint,
 		NatsConnectURL:      natsConnectUrl,
 		PortalID:            portalId,
-		AttachPop:           attachPop,
 		ShutdownGracePeriod: gracePeriod,
 	}
 }

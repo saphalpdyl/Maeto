@@ -10,6 +10,7 @@ import (
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 
+	"github.com/saphalpdyl/maeto/libs/controlapi"
 	log "github.com/saphalpdyl/maeto/services/control-plane/log"
 )
 
@@ -21,6 +22,7 @@ type Controller struct {
 	intentPublisher *IntentPublisher
 
 	topology  *ClabTopologyManager
+	inventory NodeInventory
 	customers CustomerRepository
 	registry  *ServiceRegistry
 	pce       *PCE
@@ -58,6 +60,14 @@ func NewController(
 		return nil, fmt.Errorf("failed to load topology: %w", err)
 	}
 
+	inventory := NewJSONNodeInventory(NodeInventoryConfig{
+		StatePath:       config.StatePath,
+		TopologyDirPath: config.DataDir,
+	})
+	if err := inventory.Load(ctx); err != nil {
+		return nil, fmt.Errorf("failed to load node inventory: %w", err)
+	}
+
 	customers := NewJSONCustomerRepository(CustomerRepositoryConfig{
 		StatePath:       config.StatePath,
 		TopologyDirPath: config.DataDir,
@@ -84,6 +94,7 @@ func NewController(
 		intentPublisher: intentPublisher,
 
 		topology:  topology,
+		inventory: inventory,
 		customers: customers,
 		registry:  NewServiceRegistry(&ServiceRegistryConfig{}),
 		pce:       NewPCE(),
@@ -98,6 +109,10 @@ func (c *Controller) Start(ctx context.Context) {
 	go c.pce.Run(ctx, c.topology.Graph())
 
 	if err := c.setupHealthEndpoint(ctx); err != nil {
+		return
+	}
+
+	if err := c.setupPortalAuthEndpoint(ctx); err != nil {
 		return
 	}
 
@@ -124,6 +139,56 @@ func (c *Controller) setupHealthEndpoint(ctx context.Context) error {
 
 	if err != nil {
 		c.logger.ErrorContext(ctx, "failed to subscribe to maeto.control.health.ready", log.Err(err))
+		return err
+	}
+
+	return nil
+}
+
+func (c *Controller) setupPortalAuthEndpoint(ctx context.Context) error {
+	_, err := c.js.Conn().Subscribe(controlapi.SubjectPortalAuthIdentity, func(msg *nats.Msg) {
+		var req controlapi.PortalAuthEndpointRequest
+		if err := json.Unmarshal(msg.Data, &req); err != nil {
+			c.logger.ErrorContext(ctx, "failed to unmarshal request", log.Err(err))
+			return
+		}
+
+		site, exists := c.customers.SiteByPortalID(req.PortalID)
+		if !exists {
+			c.logger.ErrorContext(ctx, "portal identity not found")
+			return
+		}
+
+		attachNode, exists := c.inventory.Node(NodeID(site.Attach))
+		if !exists {
+			c.logger.ErrorContext(ctx, "attach node not found in inventory", log.NodeID(site.Attach))
+			return
+		}
+
+		if !attachNode.HasAccessSide() {
+			c.logger.ErrorContext(ctx, "attach node has no access side", log.NodeID(site.Attach))
+			return
+		}
+
+		data, err := json.Marshal(controlapi.PortalAuthEndpointResponse{
+			LocalSwanIdentity:  site.Identity,
+			RemoteSwanIdentity: fmt.Sprintf("%s.maeto.net", attachNode.Name),
+			AttachNode:         site.AttachNode,
+			Prefix:             site.Prefix.String(),
+			AttachNodeAddr:     attachNode.Access.Address.Addr().String(),
+		})
+		if err != nil {
+			c.logger.ErrorContext(ctx, "failed to marshal response", log.Err(err))
+			return
+		}
+
+		if err := msg.Respond(data); err != nil {
+			c.logger.ErrorContext(ctx, "failed to send reply", log.Err(err))
+		}
+	})
+
+	if err != nil {
+		c.logger.ErrorContext(ctx, "failed to subscribe to maeto.control.portal.auth.identity", log.Err(err))
 		return err
 	}
 

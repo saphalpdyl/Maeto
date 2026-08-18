@@ -1,6 +1,6 @@
 # static values shared across the generator
 
-GENERATOR_VERSION = "1.14.0"
+GENERATOR_VERSION = "1.18.0"
 
 POP_IMAGE = "maeto-pop:latest"
 FRR_VERSION = "10.5.1"
@@ -90,5 +90,20 @@ CA_CERT_CONTAINER_PATH = "/etc/swanctl/x509ca/ca-cert.pem"
 CERT_CONTAINER_PATH = "/etc/swanctl/x509/cert.pem"
 KEY_CONTAINER_PATH = "/etc/swanctl/private/key.pem"
 
-SWAN_CONF_FILENAME = "swanctl.conf"
-SWAN_CONF_CONTAINER_PATH = "/etc/swanctl/conf.d/maeto.conf"
+# containerlab prefixes container names with clab-<lab>-, so the nats url is
+# derived from the topology name rather than pinned in each service's defaults
+NATS_NODE_NAME = "nats"
+NATS_CLIENT_PORT = 4222
+
+# nats and the transit routers sit on the docker management bridge with pinned
+# addresses, so the cpe env and the return routes are derived, not discovered
+NATS_MGMT_ADDRESS = "3fff:172:20:20::800:11"
+TRANSIT_MGMT_BASE = "3fff:172:20:20::800:2"
+
+# the bridge has no path back to the cpe prefixes; without these the cpe reaches
+# nats but nats cannot answer
+MGMT_ROUTES_FILENAME = "mgmt_routes.sh"
+
+OTEL_SINK = "stdout"
+OTEL_ENDPOINT = "otel-collector:4318"
+

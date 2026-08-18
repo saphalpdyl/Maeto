@@ -21,6 +21,7 @@ type Customer struct {
 type Site struct {
 	CustomerID int
 	CPE        string
+	PortalID   string
 	Node       string
 	Prefix     netip.Prefix
 	Attach     string
@@ -34,6 +35,7 @@ type CustomerRepository interface {
 	Customer(id int) (*Customer, bool)
 	Customers() []*Customer
 	SiteByIdentity(identity string) (*Site, bool)
+	SiteByPortalID(portalID string) (*Site, bool)
 	SitesByPop(pop string) []*Site
 }
 
@@ -45,6 +47,7 @@ type rawCustomerDB struct {
 		VRFTable   int    `json:"vrf_table"`
 		Sites      []struct {
 			CPE        string `json:"cpe"`
+			PortalID   string `json:"portal_id"`
 			Node       string `json:"node"`
 			Prefix     string `json:"prefix"`
 			Attach     string `json:"attach"`
@@ -66,6 +69,7 @@ type JSONCustomerRepository struct {
 	mu         sync.RWMutex
 	byID       map[int]*Customer
 	byIdentity map[string]*Site
+	byPortalID map[string]*Site
 	byPop      map[string][]*Site
 }
 
@@ -76,6 +80,7 @@ func NewJSONCustomerRepository(cfg CustomerRepositoryConfig) *JSONCustomerReposi
 		config:     cfg,
 		byID:       map[int]*Customer{},
 		byIdentity: map[string]*Site{},
+		byPortalID: map[string]*Site{},
 		byPop:      map[string][]*Site{},
 	}
 }
@@ -99,6 +104,7 @@ func (r *JSONCustomerRepository) Load(_ context.Context) error {
 
 	byID := make(map[int]*Customer, len(raw.Customers))
 	byIdentity := map[string]*Site{}
+	byPortalID := map[string]*Site{}
 	byPop := map[string][]*Site{}
 	seenIfID := map[uint32]string{}
 
@@ -132,10 +138,14 @@ func (r *JSONCustomerRepository) Load(_ context.Context) error {
 			if _, taken := byIdentity[rs.Identity]; taken {
 				return fmt.Errorf("duplicate site identity %s", rs.Identity)
 			}
+			if owner, taken := byPortalID[rs.PortalID]; taken {
+				return fmt.Errorf("portal id %s used by both %s and %s", rs.PortalID, owner.Identity, rs.Identity)
+			}
 
 			site := &Site{
 				CustomerID: rc.ID,
 				CPE:        rs.CPE,
+				PortalID:   rs.PortalID,
 				Node:       rs.Node,
 				Prefix:     prefix,
 				Attach:     rs.Attach,
@@ -146,6 +156,7 @@ func (r *JSONCustomerRepository) Load(_ context.Context) error {
 
 			seenIfID[rs.IfID] = rs.Identity
 			byIdentity[rs.Identity] = site
+			byPortalID[rs.PortalID] = site
 			byPop[rs.Attach] = append(byPop[rs.Attach], site)
 			customer.Sites = append(customer.Sites, site)
 		}
@@ -157,6 +168,7 @@ func (r *JSONCustomerRepository) Load(_ context.Context) error {
 	defer r.mu.Unlock()
 	r.byID = byID
 	r.byIdentity = byIdentity
+	r.byPortalID = byPortalID
 	r.byPop = byPop
 
 	return nil
@@ -188,6 +200,14 @@ func (r *JSONCustomerRepository) SiteByIdentity(identity string) (*Site, bool) {
 	defer r.mu.RUnlock()
 
 	s, ok := r.byIdentity[identity]
+	return s, ok
+}
+
+func (r *JSONCustomerRepository) SiteByPortalID(portalID string) (*Site, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	s, ok := r.byPortalID[portalID]
 	return s, ok
 }
 

@@ -38,6 +38,13 @@ type RawTopologyData struct {
 			Peer    string `json:"peer"`
 			Address string `json:"address"`
 		} `json:"interfaces"`
+		// null on pops with no cpes, so a pointer distinguishes "no access side"
+		Access *struct {
+			Interface string `json:"interface"`
+			Address   string `json:"address"`
+			Aggregate string `json:"aggregate"`
+			Nexthop   string `json:"nexthop"`
+		} `json:"access"`
 	} `json:"pops"`
 	Cpes []struct {
 		ID            string `json:"id"`
@@ -230,4 +237,12 @@ func (c *ClabTopologyManager) Graph() *Graph {
 	defer c.mu.RUnlock()
 
 	return c.graph
+}
+
+func (c *ClabTopologyManager) GetNodeByID(nodeID NodeID) (*Node, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	node, exists := c.graph.nodes[nodeID]
+	return node, exists
 }

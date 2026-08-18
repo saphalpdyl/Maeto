@@ -26,6 +26,7 @@ func EnvKeys(v []string) slog.Attr {
 }
 
 func ListenAddress(v string) slog.Attr { return slog.String("listen_address", v) }
+func NodeID(v string) slog.Attr        { return slog.String("node.id", v) }
 
 func Err(err error) slog.Attr {
 	if err == nil {

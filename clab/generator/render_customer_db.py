@@ -24,6 +24,7 @@ def render_customer_db(topo):
         for cp in [x for x in topo.cpes if x.customer == c.id]:
             customer_data["sites"].append({
                 "cpe": cp.id,
+                "portal_id": cp.id,
                 "node": cp.node_name,
                 "prefix": cp.prefix,
                 "attach": cp.attach,

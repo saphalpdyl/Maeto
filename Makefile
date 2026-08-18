@@ -18,7 +18,8 @@ deploy:
 	topo="$$out/topology.yml"; \
 	if [ ! -f "$$topo" ]; then echo "missing $$topo; run 'make generate' first" >&2; exit 1; fi; \
 	sudo modprobe vrf; \
-	sudo clab deploy -t "$$topo" --reconfigure
+	sudo clab deploy -t "$$topo" --reconfigure; \
+	sudo sh "$$out/mgmt_routes.sh"
 
 lint:
 	golangci-lint run ./...

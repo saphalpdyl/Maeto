@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/avast/retry-go"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/saphalpdyl/maeto/libs/telemetry"
@@ -54,15 +55,33 @@ func main() {
 
 	logger.InfoContext(ctx, "starting control plane", log.ListenAddress(config.ListenAddress))
 
-	nc, err := nats.Connect(config.NatsConnectURL)
-	if err != nil {
-		logger.ErrorContext(ctx, "failed to connect to NATS", log.Err(err))
-		os.Exit(1)
-	}
+	var nc *nats.Conn
+	var js jetstream.JetStream
 
-	js, err := jetstream.New(nc)
+	err = retry.Do(func() error {
+		nc, err := nats.Connect(config.NatsConnectURL)
+		if err != nil {
+			logger.ErrorContext(ctx, "failed to connect to NATS", log.Err(err))
+			return err
+		}
+
+		js, err = jetstream.New(nc)
+		if err != nil {
+			logger.ErrorContext(ctx, "failed to create JetStream context", log.Err(err))
+			return err
+		}
+
+		return nil
+	},
+		retry.Context(ctx),
+		retry.Attempts(10),
+		retry.DelayType(retry.BackOffDelay),
+		retry.OnRetry(func(n uint, err error) {
+			logger.WarnContext(ctx, "retrying NATS connection", slog.Int("attempt", int(n)+1), log.Err(err))
+		}),
+	)
+
 	if err != nil {
-		logger.ErrorContext(ctx, "failed to create JetStream context", log.Err(err))
 		os.Exit(1)
 	}
 

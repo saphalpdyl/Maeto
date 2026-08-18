@@ -9,6 +9,8 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
 	"github.com/saphalpdyl/maeto/libs/telemetry"
 	maetoportal "github.com/saphalpdyl/maeto/services/maeto-portal"
 	"github.com/saphalpdyl/maeto/services/maeto-portal/log"
@@ -58,17 +60,22 @@ func main() {
 		log.PortalID(config.PortalID),
 	)
 
-	controlClient := maetoportal.NewNatsControlClient(
-		config.NatsConnectURL,
-		config.PortalID,
-		logger,
-	)
+	nc, err := nats.Connect(config.NatsConnectURL)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to connect to nats", log.Err(err))
+		os.Exit(1)
+	}
+
+	js, err := jetstream.New(nc)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to create jetstream context", log.Err(err))
+		os.Exit(1)
+	}
 
 	portal := maetoportal.NewPortal(
 		serviceInstanceId,
+		js,
 		config,
-		controlClient,
-		nil,
 		logger.With(log.Domain(log.DomainPortalLifecycle)),
 	)
 

@@ -1,17 +1,21 @@
 import yaml
 
+from .render_mgmt_routes import transit_mgmt_address
 from .constants import (
     CA_CERT_BIND,
     CA_CERT_CONTAINER_PATH,
     CERT_CONTAINER_PATH,
     CPE_IMAGE,
     KEY_CONTAINER_PATH,
-    SWAN_CONF_CONTAINER_PATH,
-    SWAN_CONF_FILENAME,
     NFT_CONTAINER_PATH,
     NFT_FILENAME,
+    NATS_CLIENT_PORT,
+    NATS_MGMT_ADDRESS,
+    NATS_NODE_NAME,
     NODE_CONTAINER_PATH,
     NODE_FILENAME,
+    OTEL_ENDPOINT,
+    OTEL_SINK,
     POP_IMAGE,
     TRANSIT_IMAGE,
 )
@@ -46,7 +50,36 @@ def _access_setup(a):
     return [f"sh -c '{steps}'"]
 
 
+def _nats_url(topo):
+    return f"nats://clab-{topo.name}-{NATS_NODE_NAME}:{NATS_CLIENT_PORT}"
+
+
+# a cpe has no management interface and so no resolver: it must be given the
+# address rather than the name
+def _nats_url_literal():
+    return f"nats://[{NATS_MGMT_ADDRESS}]:{NATS_CLIENT_PORT}"
+
+
+def _agent_env(nats_url):
+    return {
+        "NATS_CONNECT_URL": nats_url,
+        "MAETO_NODE_FILE": NODE_CONTAINER_PATH,
+        "OTEL_SINK": OTEL_SINK,
+        "OTEL_ENDPOINT": OTEL_ENDPOINT,
+    }
+
+
+def _portal_env(cpe):
+    return {
+        "NATS_CONNECT_URL": _nats_url_literal(),
+        "PORTAL_ID": cpe.id,
+        "OTEL_SINK": OTEL_SINK,
+        "OTEL_ENDPOINT": OTEL_ENDPOINT,
+    }
+
+
 def render_clab(topo, plan):
+    nats_url = _nats_url(topo)
     nodes = {}
     for pop in topo.pops:
         cmds = [
@@ -72,6 +105,7 @@ def render_clab(topo, plan):
             "kind": "linux",
             "image": POP_IMAGE,
             "binds": binds,
+            "env": _agent_env(nats_url),
             "exec": cmds,
             "labels": {"clab_label": pop.clab_label},
         }
@@ -92,6 +126,7 @@ def render_clab(topo, plan):
         nodes[transit.node_name] = {
             "kind": "linux",
             "image": TRANSIT_IMAGE,
+            "mgmt-ipv6": transit_mgmt_address(topo.pop_by_id(transit.id).index),
             "exec": cmds,
             "labels": {"clab_label": transit.clab_label},
         }
@@ -108,8 +143,8 @@ def render_clab(topo, plan):
                 f"{CA_CERT_BIND}:{CA_CERT_CONTAINER_PATH}",
                 f"conf/{cpe.node_name}/cert.pem:{CERT_CONTAINER_PATH}",
                 f"conf/{cpe.node_name}/key.pem:{KEY_CONTAINER_PATH}",
-                f"conf/{cpe.node_name}/{SWAN_CONF_FILENAME}:{SWAN_CONF_CONTAINER_PATH}",
             ],
+            "env": _portal_env(cpe),
             "exec": [
                 f"ip link set dev {cp.iface} up",
                 f"ip -6 addr replace {cp.address} dev {cp.iface}",
@@ -123,13 +158,13 @@ def render_clab(topo, plan):
         for l in plan.links
     ]
 
-    nodes["nats"] = {
+    nodes[NATS_NODE_NAME] = {
         "kind": "linux",
         "image": "nats:2.12.7",
         "cmd": "--http_port 8222 -js -sd /data",
         "labels": {"clab_label": "NATS JetStream Server"},
         "group": "control",
-        "mgmt-ipv6": "3fff:172:20:20::800:11"
+        "mgmt-ipv6": NATS_MGMT_ADDRESS
     }
 
     doc = {
