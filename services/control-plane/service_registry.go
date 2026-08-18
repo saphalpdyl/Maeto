@@ -2,6 +2,8 @@
 package controlplane
 
 import (
+	"context"
+	"fmt"
 	"sync"
 )
 
@@ -9,13 +11,71 @@ type ServiceRegistryConfig struct {
 }
 
 type ServiceRegistry struct {
-	config *ServiceRegistryConfig
+	config   *ServiceRegistryConfig
+	registry map[NodeID]*NodeIntent
 
-	mu sync.RWMutex //nolint:unused // guards desired state once it lands
+	publisher *IntentPublisher
+
+	mu sync.RWMutex // guards desired state
 }
 
-func NewServiceRegistry(config *ServiceRegistryConfig) *ServiceRegistry {
+type NodeIntent struct {
+	NodeID               NodeID          `json:"node_id"`
+	CustomerBasedIntents map[int]*Intent `json:"customer_based_intents"`
+}
+
+type Intent struct {
+	Gen   uint64 `json:"gen"`
+	Sites []Site `json:"sites"`
+}
+
+func NewServiceRegistry(config *ServiceRegistryConfig, intentPublisher *IntentPublisher) *ServiceRegistry {
 	return &ServiceRegistry{
-		config: config,
+		config:    config,
+		registry:  make(map[NodeID]*NodeIntent),
+		publisher: intentPublisher,
 	}
+}
+
+func (r *ServiceRegistry) SetIntentForCustomer(ctx context.Context, node NodeID, customerID int, intent *Intent) error {
+	r.mu.Lock()
+
+	if _, exists := r.registry[node]; !exists {
+		r.registry[node] = &NodeIntent{
+			NodeID:               node,
+			CustomerBasedIntents: make(map[int]*Intent),
+		}
+	}
+
+	r.registry[node].CustomerBasedIntents[customerID] = intent
+	r.mu.Unlock()
+
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	_, err := r.publisher.Publish(ctx, node, *r.registry[node])
+
+	return err
+}
+
+// Restore recreates the intent bucket and republishes every node's intent.
+func (r *ServiceRegistry) Restore(ctx context.Context) error {
+	if err := r.publisher.Ensure(ctx); err != nil {
+		return err
+	}
+
+	r.mu.RLock()
+	intents := make([]NodeIntent, 0, len(r.registry))
+	for _, intent := range r.registry {
+		intents = append(intents, *intent)
+	}
+	r.mu.RUnlock()
+
+	for _, intent := range intents {
+		if _, err := r.publisher.Publish(ctx, intent.NodeID, intent); err != nil {
+			return fmt.Errorf("republish intent for %s: %w", intent.NodeID, err)
+		}
+	}
+
+	return nil
 }

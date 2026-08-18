@@ -19,13 +19,11 @@ type Controller struct {
 	logger *slog.Logger
 	js     jetstream.JetStream
 
-	intentPublisher *IntentPublisher
-
-	topology  *ClabTopologyManager
-	inventory NodeInventory
-	customers CustomerRepository
-	registry  *ServiceRegistry
-	pce       *PCE
+	topology        *ClabTopologyManager
+	inventory       NodeInventory
+	customers       CustomerRepository
+	serviceRegistry *ServiceRegistry
+	pce             *PCE
 
 	ready bool
 }
@@ -91,13 +89,11 @@ func NewController(
 		logger: logger,
 		js:     js,
 
-		intentPublisher: intentPublisher,
-
-		topology:  topology,
-		inventory: inventory,
-		customers: customers,
-		registry:  NewServiceRegistry(&ServiceRegistryConfig{}),
-		pce:       NewPCE(),
+		topology:        topology,
+		inventory:       inventory,
+		customers:       customers,
+		serviceRegistry: NewServiceRegistry(&ServiceRegistryConfig{}, intentPublisher),
+		pce:             NewPCE(),
 
 		ready: false,
 	}, nil
@@ -106,6 +102,29 @@ func NewController(
 func (c *Controller) Start(ctx context.Context) {
 	c.logger.InfoContext(ctx, "controller starting", log.ListenAddress(c.config.ListenAddress))
 
+	// Load intents for PoP
+	c.serviceRegistry.mu.Lock()
+	for _, node := range c.inventory.Nodes() {
+		c.serviceRegistry.registry[node.ID] = &NodeIntent{
+			NodeID:               node.ID,
+			CustomerBasedIntents: make(map[int]*Intent),
+		}
+	}
+	c.serviceRegistry.mu.Unlock()
+
+	c.js.Conn().SetReconnectHandler(func(_ *nats.Conn) {
+		c.logger.WarnContext(ctx, "nats reconnected, restoring jetstream state",
+			log.Domain(log.DomainControlPlaneLifecycle),
+		)
+
+		if err := c.serviceRegistry.Restore(ctx); err != nil {
+			c.logger.ErrorContext(ctx, "failed to restore jetstream state",
+				log.Domain(log.DomainControlPlaneLifecycle),
+				log.Err(err),
+			)
+		}
+	})
+
 	go c.pce.Run(ctx, c.topology.Graph())
 
 	if err := c.setupHealthEndpoint(ctx); err != nil {
@@ -113,6 +132,10 @@ func (c *Controller) Start(ctx context.Context) {
 	}
 
 	if err := c.setupPortalAuthEndpoint(ctx); err != nil {
+		return
+	}
+
+	if err := c.setupPushTunnelInitiate(ctx); err != nil {
 		return
 	}
 
@@ -189,6 +212,83 @@ func (c *Controller) setupPortalAuthEndpoint(ctx context.Context) error {
 
 	if err != nil {
 		c.logger.ErrorContext(ctx, "failed to subscribe to maeto.control.portal.auth.identity", log.Err(err))
+		return err
+	}
+
+	return nil
+}
+
+func (c *Controller) setupPushTunnelInitiate(ctx context.Context) error {
+	_, err := c.js.Conn().Subscribe(controlapi.SubjectPushTunnelInitiate, func(msg *nats.Msg) {
+		var req controlapi.PushTunnelInitiateRequest
+		if err := json.Unmarshal(msg.Data, &req); err != nil {
+			c.logger.ErrorContext(ctx, "failed to unmarshal request", log.Err(err))
+			return
+		}
+
+		// Get customer
+		site, exists := c.customers.SiteByPortalID(req.PortalID)
+		if !exists {
+			c.logger.ErrorContext(ctx, "portal identity not found")
+			errResponse, err := json.Marshal(controlapi.PushTunnelInitiateResponse{Ok: false})
+			if err != nil {
+				c.logger.ErrorContext(ctx, "failed to marshal response", log.Err(err))
+				return
+			}
+			err = msg.Respond(errResponse)
+			if err != nil {
+				c.logger.ErrorContext(ctx, "failed to send response", log.Err(err))
+			}
+			return
+		}
+
+		customer, exists := c.customers.Customer(site.CustomerID)
+		if !exists {
+			c.logger.ErrorContext(ctx, "customer not found")
+			errResponse, err := json.Marshal(controlapi.PushTunnelInitiateResponse{Ok: false})
+			if err != nil {
+				c.logger.ErrorContext(ctx, "failed to marshal response", log.Err(err))
+				return
+			}
+			err = msg.Respond(errResponse)
+			if err != nil {
+				c.logger.ErrorContext(ctx, "failed to send response", log.Err(err))
+			}
+			return
+		}
+
+		siteCopy := *site
+		siteCopy.IfID = req.IfID
+
+		err := c.serviceRegistry.SetIntentForCustomer(ctx, NodeID(req.NodeID), customer.ID, &Intent{
+			Gen:   1,
+			Sites: []Site{siteCopy},
+		})
+		if err != nil {
+			c.logger.ErrorContext(ctx, "failed to set intent for customer", log.Err(err))
+			errResponse, err := json.Marshal(controlapi.PushTunnelInitiateResponse{Ok: false})
+			if err != nil {
+				c.logger.ErrorContext(ctx, "failed to marshal response", log.Err(err))
+				return
+			}
+			err = msg.Respond(errResponse)
+			if err != nil {
+				c.logger.ErrorContext(ctx, "failed to send response", log.Err(err))
+			}
+		}
+
+		successResponse, err := json.Marshal(controlapi.PushTunnelInitiateResponse{Ok: true})
+		if err != nil {
+			c.logger.ErrorContext(ctx, "failed to marshal response", log.Err(err))
+			return
+		}
+		err = msg.Respond(successResponse)
+		if err != nil {
+			c.logger.ErrorContext(ctx, "failed to send response", log.Err(err))
+		}
+	})
+	if err != nil {
+		c.logger.ErrorContext(ctx, "failed to subscribe to maeto.control.push.tunnel.initiate", log.Err(err))
 		return err
 	}
 

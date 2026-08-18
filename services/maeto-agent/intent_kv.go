@@ -5,7 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net/netip"
+	"time"
 
+	"github.com/avast/retry-go"
 	"github.com/nats-io/nats.go/jetstream"
 
 	"github.com/saphalpdyl/maeto/services/maeto-agent/log"
@@ -14,15 +17,51 @@ import (
 const IntentBucket = "maeto-intents"
 
 type NodeIntent struct {
-	Node     string
-	Gen      int32
-	Snapshot bool
-	Hash     string
-	Ops      []json.RawMessage
+	NodeID               string          `json:"node_id"`
+	CustomerBasedIntents map[int]*Intent `json:"customer_based_intents"`
+}
+
+type Site struct {
+	CustomerID int
+	CPE        string
+	PortalID   string
+	Node       string
+	Prefix     netip.Prefix
+	Attach     string
+	AttachNode string
+	IfID       uint32
+	Identity   string
+}
+
+type Intent struct {
+	Gen   uint64  `json:"gen"`
+	Sites []*Site `json:"sites"`
 }
 
 func (a *Agent) WatchIntents(ctx context.Context, js jetstream.JetStream) error {
-	kv, err := js.KeyValue(ctx, IntentBucket)
+	var kv jetstream.KeyValue
+	err := retry.Do(func() error {
+		var err error
+		kv, err = js.KeyValue(ctx, IntentBucket)
+		if err != nil {
+			return fmt.Errorf("failed to open kv bucket %s: %w", IntentBucket, err)
+		}
+
+		return nil
+	},
+		retry.Context(ctx),
+		retry.Attempts(200),
+		retry.Delay(2*time.Second),
+		retry.DelayType(retry.BackOffDelay),
+		retry.OnRetry(func(n uint, err error) {
+			a.logger.WarnContext(ctx, "intent bucket unavailable",
+				log.Domain(log.DomainControlPlane),
+				slog.String("bucket", IntentBucket),
+				log.Attempt(int(n)+1),
+				log.Err(err),
+			)
+		}),
+	)
 	if err != nil {
 		return fmt.Errorf("failed to open kv bucket %s: %w", IntentBucket, err)
 	}
@@ -80,9 +119,7 @@ func (a *Agent) WatchIntents(ctx context.Context, js jetstream.JetStream) error 
 			a.logger.InfoContext(ctx, "intent received",
 				log.Domain(log.DomainControlPlane),
 				slog.Uint64("revision", entry.Revision()),
-				slog.Int("gen", int(intent.Gen)),
-				slog.Bool("snapshot", intent.Snapshot),
-				slog.Int("ops", len(intent.Ops)),
+				slog.Any("intent", intent),
 			)
 		}
 	}

@@ -59,7 +59,19 @@ func main() {
 	var js jetstream.JetStream
 
 	err = retry.Do(func() error {
-		nc, err := nats.Connect(config.NatsConnectURL)
+		var err error
+
+		// the lab's nats is torn down and rebuilt by make ap, which can take
+		// longer than the default 60 x 2s before the client gives up for good
+		nc, err = nats.Connect(config.NatsConnectURL,
+			nats.MaxReconnects(-1),
+			nats.DisconnectErrHandler(func(_ *nats.Conn, err error) {
+				logger.WarnContext(ctx, "nats disconnected", log.Err(err))
+			}),
+			nats.ClosedHandler(func(_ *nats.Conn) {
+				logger.ErrorContext(ctx, "nats connection closed")
+			}),
+		)
 		if err != nil {
 			logger.ErrorContext(ctx, "failed to connect to NATS", log.Err(err))
 			return err

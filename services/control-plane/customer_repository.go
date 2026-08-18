@@ -26,7 +26,7 @@ type Site struct {
 	Prefix     netip.Prefix
 	Attach     string
 	AttachNode string
-	IfID       uint32
+	IfID       string
 	Identity   string
 }
 
@@ -52,7 +52,7 @@ type rawCustomerDB struct {
 			Prefix     string `json:"prefix"`
 			Attach     string `json:"attach"`
 			AttachNode string `json:"attach_node"`
-			IfID       uint32 `json:"if_id"`
+			IfID       string `json:"if_id"`
 			Identity   string `json:"identity"`
 		} `json:"sites"`
 	} `json:"customers"`
@@ -106,7 +106,7 @@ func (r *JSONCustomerRepository) Load(_ context.Context) error {
 	byIdentity := map[string]*Site{}
 	byPortalID := map[string]*Site{}
 	byPop := map[string][]*Site{}
-	seenIfID := map[uint32]string{}
+	seenIfID := map[string]string{}
 
 	for _, rc := range raw.Customers {
 		if _, exists := byID[rc.ID]; exists {
@@ -133,7 +133,7 @@ func (r *JSONCustomerRepository) Load(_ context.Context) error {
 				return fmt.Errorf("customer %d site %s prefix %s is outside allocation %s", rc.ID, rs.CPE, prefix, allocation)
 			}
 			if owner, taken := seenIfID[rs.IfID]; taken {
-				return fmt.Errorf("if_id %d used by both %s and %s", rs.IfID, owner, rs.Identity)
+				return fmt.Errorf("if_id %s used by both %s and %s", rs.IfID, owner, rs.Identity)
 			}
 			if _, taken := byIdentity[rs.Identity]; taken {
 				return fmt.Errorf("duplicate site identity %s", rs.Identity)

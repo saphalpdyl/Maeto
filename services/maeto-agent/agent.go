@@ -52,15 +52,15 @@ func (a *Agent) Run(ctx context.Context) {
 		slog.String("intent_key", a.node.IntentKey()),
 	)
 
-	// go func() {
-	// 	if err := a.WatchIntents(ctx, a.js); err != nil {
-	// 		a.logger.ErrorContext(ctx, "intent watch failed",
-	// 			log.Domain(log.DomainControlPlane),
-	// 			slog.String("intent_key", a.node.IntentKey()),
-	// 			log.Err(err),
-	// 		)
-	// 	}
-	// }()
+	go func() {
+		if err := a.WatchIntents(ctx, a.js); err != nil {
+			a.logger.ErrorContext(ctx, "intent watch failed",
+				log.Domain(log.DomainControlPlane),
+				slog.String("intent_key", a.node.IntentKey()),
+				log.Err(err),
+			)
+		}
+	}()
 
 	s, err := vici.NewSession()
 	if err != nil {
@@ -118,10 +118,37 @@ func (a *Agent) Run(ctx context.Context) {
 
 				portalID := sanParts[0]
 
-				_ = ifID
-				_ = portalID
-
 				a.logger.InfoContext(ctx, "got child updown event SAN", slog.Any("san", cpeSAN), slog.Any("if_id", ifID), slog.Any("portal_id", portalID))
+
+				var req controlapi.PushTunnelInitiateRequest
+				req.PortalID = portalID
+				req.IfID = ifID
+				req.NodeID = a.node.ID
+
+				data, err := json.Marshal(req)
+				if err != nil {
+					a.logger.ErrorContext(ctx, "failed to marshal request", log.Err(err))
+					continue
+				}
+
+				resp, err := a.js.Conn().Request(controlapi.SubjectPushTunnelInitiate, data, 5*time.Second)
+				if err != nil {
+					a.logger.ErrorContext(ctx, "failed to send push tunnel initiate request", log.Err(err))
+					continue
+				}
+
+				var pushResp controlapi.PushTunnelInitiateResponse
+				if err := json.Unmarshal(resp.Data, &pushResp); err != nil {
+					a.logger.ErrorContext(ctx, "failed to unmarshal push tunnel initiate response", log.Err(err))
+					continue
+				}
+
+				if !pushResp.Ok {
+					a.logger.ErrorContext(ctx, "push tunnel initiate request failed", slog.String("portal_id", portalID))
+					continue
+				}
+
+				a.logger.InfoContext(ctx, "successfully sent req", slog.Any("data", req))
 			}
 		}
 
