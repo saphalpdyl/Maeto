@@ -4,13 +4,14 @@ FROM golang:${GO_VERSION}-alpine AS build
 
 WORKDIR /src
 COPY go.mod go.sum* ./
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
+    go mod download
 
 COPY services/maeto-portal/ ./services/maeto-portal/
-COPY libs/common/ ./libs/common/
-COPY libs/telemetry/ ./libs/telemetry/
+COPY libs/ ./libs/
 
-RUN CGO_ENABLED=0 go build -o /bin/maeto-portal ./services/maeto-portal/cmd
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 go build -o /bin/maeto-portal ./services/maeto-portal/cmd
 
 # alpine 3.20 pins strongswan to 5.9.13, matching the frr-based pop image
 FROM alpine:3.20
