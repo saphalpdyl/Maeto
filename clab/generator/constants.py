@@ -1,6 +1,6 @@
 # static values shared across the generator
 
-GENERATOR_VERSION = "1.12.0"
+GENERATOR_VERSION = "1.14.0"
 
 POP_IMAGE = "maeto-pop:latest"
 FRR_VERSION = "10.5.1"
@@ -89,3 +89,6 @@ CA_CERT_BIND = "conf/shared/ca-cert.pem"
 CA_CERT_CONTAINER_PATH = "/etc/swanctl/x509ca/ca-cert.pem"
 CERT_CONTAINER_PATH = "/etc/swanctl/x509/cert.pem"
 KEY_CONTAINER_PATH = "/etc/swanctl/private/key.pem"
+
+SWAN_CONF_FILENAME = "swanctl.conf"
+SWAN_CONF_CONTAINER_PATH = "/etc/swanctl/conf.d/maeto.conf"

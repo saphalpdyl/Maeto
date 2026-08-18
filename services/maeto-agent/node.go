@@ -72,3 +72,7 @@ func (n *Node) IntentKey() string {
 func (n *Node) ReportSubject() string {
 	return fmt.Sprintf("maeto.agent.pop%s.report", n.ID)
 }
+
+func (n *Node) LocalSwanID() string {
+	return fmt.Sprintf("Pop%s.maeto.net", n.ID)
+}

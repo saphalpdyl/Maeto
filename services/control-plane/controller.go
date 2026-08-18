@@ -8,6 +8,7 @@ import (
 	"net/netip"
 
 	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
 
 	log "github.com/saphalpdyl/maeto/services/control-plane/log"
 )
@@ -15,7 +16,9 @@ import (
 type Controller struct {
 	config Config
 	logger *slog.Logger
-	nc     *nats.Conn
+	js     jetstream.JetStream
+
+	intentPublisher *IntentPublisher
 
 	topology  *ClabTopologyManager
 	customers CustomerRepository
@@ -43,7 +46,7 @@ type AdjacencySID struct {
 
 func NewController(
 	ctx context.Context,
-	nats *nats.Conn,
+	js jetstream.JetStream,
 	config Config,
 	logger *slog.Logger,
 ) (*Controller, error) {
@@ -67,10 +70,18 @@ func NewController(
 		slog.Int("customers", len(customers.Customers())),
 	)
 
+	// Intent KV
+	intentPublisher, err := NewIntentPublisher(ctx, js)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create intent publisher: %w", err)
+	}
+
 	return &Controller{
 		config: config,
 		logger: logger,
-		nc:     nats,
+		js:     js,
+
+		intentPublisher: intentPublisher,
 
 		topology:  topology,
 		customers: customers,
@@ -91,10 +102,11 @@ func (c *Controller) Start(ctx context.Context) {
 	}
 
 	c.ready = true
+
 }
 
 func (c *Controller) setupHealthEndpoint(ctx context.Context) error {
-	_, err := c.nc.Subscribe("maeto.control.health.ready", func(msg *nats.Msg) {
+	_, err := c.js.Conn().Subscribe("maeto.control.health.ready", func(msg *nats.Msg) {
 		isReady := "false"
 		if c.ready {
 			isReady = "true"

@@ -12,10 +12,18 @@ COPY libs/telemetry/ ./libs/telemetry/
 
 RUN CGO_ENABLED=0 go build -o /bin/maeto-portal ./services/maeto-portal/cmd
 
-FROM nicolaka/netshoot:latest
+# alpine 3.20 pins strongswan to 5.9.13, matching the frr-based pop image
+FROM alpine:3.20
 
-# Supervisord
-RUN apk add --no-cache supervisor strongswan
+RUN apk add --no-cache \
+      strongswan \
+      iproute2 \
+      supervisor \
+      tcpdump \
+      iputils \
+      netcat-openbsd \
+      curl
+
 RUN mkdir -p /var/log/supervisor
 COPY docker/conf/cpe/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 

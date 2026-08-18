@@ -36,7 +36,7 @@
           - jq
           - gnupg
           - lsb-release
-          - "linux-modules-extra-{{ ansible_kernel }}"
+          - linux-image-generic
           - make
           - strongswan
           - strongswan-pki

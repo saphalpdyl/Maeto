@@ -10,6 +10,7 @@ import (
 	"syscall"
 
 	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
 	"github.com/saphalpdyl/maeto/libs/telemetry"
 	controlplane "github.com/saphalpdyl/maeto/services/control-plane"
 	log "github.com/saphalpdyl/maeto/services/control-plane/log"
@@ -59,7 +60,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	cp, err := controlplane.NewController(ctx, nc, config, logger)
+	js, err := jetstream.New(nc)
+	if err != nil {
+		logger.ErrorContext(ctx, "failed to create JetStream context", log.Err(err))
+		os.Exit(1)
+	}
+
+	cp, err := controlplane.NewController(ctx, js, config, logger)
 	if err != nil {
 		logger.ErrorContext(ctx, "failed to initialize controller", log.Err(err))
 		os.Exit(1)
