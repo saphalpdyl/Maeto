@@ -34,14 +34,17 @@ cpes:
     attach: A
     customer: 273
     prefix: fd7a:3921:111:1::/64
+    portal_id: 83505cf19a08
   - id: cA2
     attach: A
     customer: 231
     prefix: fd7a:3921:e7:1::/64
+    portal_id: 48522cc7549b
   - id: cC
     attach: C
     customer: 273
     prefix: fd7a:3921:111:2::/64
+    portal_id: aa400723fee3
 
 links:
   - [A,B,2]

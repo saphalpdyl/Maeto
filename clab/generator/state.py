@@ -56,7 +56,7 @@ def write_output(topo, plan, digest, build_dir):
     copy_ca_cert(out)
 
     for cpe in topo.cpes:
-        render_cert(out, cpe.node_name, cpe_identity(cpe.id, cpe.customer))
+        render_cert(out, cpe.node_name, cpe_identity(cpe.portal_id))
 
     for pop in topo.pops:
         render_cert(out, pop.node_name, pop_identity(pop.node_name))

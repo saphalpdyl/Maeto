@@ -32,6 +32,7 @@ class Cpe:
     attach: str         # pop id
     customer: int
     prefix: str         # this site's lan
+    portal_id: str # LDevID equivalent
     data: dict = field(default_factory=dict)
 
 

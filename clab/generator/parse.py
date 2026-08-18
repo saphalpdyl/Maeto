@@ -159,6 +159,7 @@ def _parse_cpes(root, pop_ids, customers):
     seen = set()
     per_pop = {}
     per_customer = {}
+    seen_portal_ids = []
     for i, raw in enumerate(items):
         if not isinstance(raw, dict):
             raise TopologyError(f"cpes[{i}] must be a mapping")
@@ -190,6 +191,19 @@ def _parse_cpes(root, pop_ids, customers):
                 raise TopologyError(f"cpes[{i}].prefix {prefix} overlaps {other} on customer {cust}")
         per_customer[cust].append(prefix)
         node_name = f"Cpe{cid[1:]}"
+
+        portal_id = raw.get("portal_id", "")
+        if portal_id == "":
+            raise TopologyError(f"{node_name} is missing portal ID")
+
+        if portal_id in seen_portal_ids:
+            raise TopologyError(f"{portal_id} is a duplicate. Portal IDs must be unique")
+
+        if len(portal_id) != 12:
+            raise TopologyError(f"portal_id must be 12 character long")
+
+        seen_portal_ids.append(portal_id)
+
         cpes.append(Cpe(
             id=cid,
             customer=cust,
@@ -198,6 +212,7 @@ def _parse_cpes(root, pop_ids, customers):
             clab_label=_clab_label(raw, node_name, f"cpes[{i}]"),
             attach=attach,
             data=_data(raw, f"cpes[{i}]"),
+            portal_id=portal_id
         ))
     return cpes
 

@@ -72,7 +72,7 @@ def _agent_env(nats_url):
 def _portal_env(cpe):
     return {
         "NATS_CONNECT_URL": _nats_url_literal(),
-        "PORTAL_ID": cpe.id,
+        "PORTAL_ID": cpe.portal_id,
         "OTEL_SINK": OTEL_SINK,
         "OTEL_ENDPOINT": OTEL_ENDPOINT,
     }

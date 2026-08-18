@@ -1,6 +1,6 @@
 # static values shared across the generator
 
-GENERATOR_VERSION = "1.18.0"
+GENERATOR_VERSION = "1.20.0"
 
 POP_IMAGE = "maeto-pop:latest"
 FRR_VERSION = "10.5.1"
@@ -48,7 +48,7 @@ OVERRIDE_KEYS = {"clab_label"}
 TOP_LEVEL_KEYS = {"name", "defaults", "pops", "customers", "cpes", "links"}
 DEFAULT_KEYS = {"locator_prefix", "link_prefix", "edge_prefix"}
 POP_KEYS = {"id", "index", "data", "override"}
-CPE_KEYS = {"id", "attach", "customer", "prefix", "data", "override"}
+CPE_KEYS = {"id", "attach", "customer", "prefix", "portal_id", "data", "override"}
 CUSTOMER_KEYS = {"id", "allocation", "data"}
 
 FRR_DAEMONS = """zebra=yes

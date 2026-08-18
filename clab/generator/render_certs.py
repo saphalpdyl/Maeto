@@ -10,8 +10,8 @@ def pop_identity(node_name):
     return f"{node_name}.maeto.net"
 
 
-def cpe_identity(cpe_id, customer_id):
-    return f"cpe-{cpe_id}.cust-{customer_id}.cpe.maeto.net"
+def cpe_identity(portal_id):
+    return f"{portal_id}.cpe.maeto.net"
 
 
 def verify_ca_cert_exist():

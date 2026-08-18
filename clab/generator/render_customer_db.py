@@ -1,6 +1,7 @@
 import json
 
 from .constants import GENERATOR_VERSION
+from .render_certs import cpe_identity
 
 
 def render_customer_db(topo):
@@ -24,13 +25,13 @@ def render_customer_db(topo):
         for cp in [x for x in topo.cpes if x.customer == c.id]:
             customer_data["sites"].append({
                 "cpe": cp.id,
-                "portal_id": cp.id,
+                "portal_id": cp.portal_id,
                 "node": cp.node_name,
                 "prefix": cp.prefix,
                 "attach": cp.attach,
                 "attach_node": topo.pop_by_id(cp.attach).node_name,
                 "if_id": next_if_id,
-                "identity": f"cpe-{cp.id}.cust-{c.id}.cpe.maeto.net",
+                "identity": cpe_identity(cp.portal_id),
             })
             next_if_id += 1
 
