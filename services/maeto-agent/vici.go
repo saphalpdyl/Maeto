@@ -3,6 +3,7 @@ package maetoagent
 import (
 	"crypto/x509"
 	"fmt"
+	"strconv"
 
 	"github.com/strongswan/govici/vici"
 )
@@ -33,6 +34,21 @@ type ChildSA struct {
 
 	LocalTS  []string `vici:"local-ts"`
 	RemoteTS []string `vici:"remote-ts"`
+}
+
+// vici renders if-id as hex, and iproute2 parses if_id with base 0, so the
+// raw string must never reach `ip link` -- "00000010" would mean 8, not 16.
+func (c *ChildSA) IfID() (uint32, error) {
+	if c.IfIDIn != c.IfIDOut {
+		return 0, fmt.Errorf("if-id-in %q != if-id-out %q", c.IfIDIn, c.IfIDOut)
+	}
+
+	id, err := strconv.ParseUint(c.IfIDIn, 16, 32)
+	if err != nil {
+		return 0, fmt.Errorf("parse if-id %q: %w", c.IfIDIn, err)
+	}
+
+	return uint32(id), nil
 }
 
 // IKESA is the connection-named section carried by both ike-updown and

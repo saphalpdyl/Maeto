@@ -100,12 +100,11 @@ func (a *Agent) Run(ctx context.Context) {
 					continue
 				}
 
-				if cSa.IfIDIn != cSa.IfIDOut {
-					a.logger.ErrorContext(ctx, "expected if_id_in == if_id_out")
+				ifID, err := cSa.IfID()
+				if err != nil {
+					a.logger.ErrorContext(ctx, "invalid child sa if_id", log.Err(err))
 					continue
 				}
-
-				ifID := cSa.IfIDIn
 
 				// Assume a <portal_id>.cpe.maeto.net format
 				// *.cpe.maeto.net is already verified by strongswan, so we can trust the SAN

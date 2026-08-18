@@ -49,7 +49,7 @@ func runWithOutput(ctx context.Context, name string, args ...string) ([]byte, er
 	return out, nil
 }
 
-func (ls *LinuxShellDataplane) AddVRF(ctx context.Context, tableName string, tableId string, iface string, dtsid string) (err error) {
+func (ls *LinuxShellDataplane) AddVRF(ctx context.Context, tableName string, tableId string, iface string) (err error) {
 	if err := run(ctx, "ip", "link", "add", tableName, "type", "vrf", "table", tableId); err != nil {
 		return fmt.Errorf("create vrf device: %w", err)
 	}
@@ -74,12 +74,6 @@ func (ls *LinuxShellDataplane) AddVRF(ctx context.Context, tableName string, tab
 	// 	time a new VRF is added to the kernel and must be reset again
 	if err := run(ctx, "sysctl", "-w", "net.vrf.strict_mode=1"); err != nil {
 		return fmt.Errorf("enable vrf strict mode: %w", err)
-	}
-
-	if err := run(ctx, "ip", "-6", "route", "replace", dtsid,
-		"encap", "seg6local", "action", "End.DT6",
-		"vrftable", tableId, "dev", tableName, "proto", "200"); err != nil {
-		return fmt.Errorf("install End.DT6 decap route for %s: %w", dtsid, err)
 	}
 
 	return nil

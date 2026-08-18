@@ -18,7 +18,7 @@ type PortalAuthEndpointResponse struct {
 
 type PushTunnelInitiateRequest struct {
 	PortalID string `json:"portal_id"`
-	IfID     string `json:"if_id"`
+	IfID     uint32 `json:"if_id"`
 	NodeID   string `json:"node_id"`
 }
 
