@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/nats-io/nats.go/jetstream"
@@ -13,6 +14,12 @@ import (
 	"github.com/saphalpdyl/maeto/libs/swan"
 	"github.com/saphalpdyl/maeto/services/maeto-portal/log"
 	"github.com/strongswan/govici/vici"
+)
+
+const (
+	initiateTimeout    = 10 * time.Second
+	initiateBackoffMin = 1 * time.Second
+	initiateBackoffMax = 30 * time.Second
 )
 
 type Portal struct {
@@ -91,6 +98,10 @@ func (p *Portal) Run(ctx context.Context) error {
 
 	if err := p.loadConnection(ctx, s, swanConnOptsResp.AttachNodeAddr,
 		swanConnOptsResp.LocalSwanIdentity, swanConnOptsResp.RemoteSwanIdentity); err != nil {
+		return err
+	}
+
+	if err := p.initiateTunnel(ctx, s, "pop"); err != nil {
 		return err
 	}
 
@@ -220,7 +231,7 @@ func (p *Portal) loadConnection(ctx context.Context, s *vici.Session, remoteAddr
 					RemoteTS:    []string{"::/0"},
 					IfIDIn:      "%unique",
 					IfIDOut:     "%unique",
-					StartAction: "start",
+					StartAction: "none",
 				},
 			},
 		},
@@ -246,6 +257,50 @@ func (p *Portal) loadConnection(ctx context.Context, s *vici.Session, remoteAddr
 	p.logger.InfoContext(ctx, fmt.Sprintf("connection loaded successfully: %s", res.String()))
 
 	return nil
+}
+
+func (p *Portal) initiateTunnel(ctx context.Context, s *vici.Session, child string) error {
+	msg, err := vici.MarshalMessage(swan.InitiateRequest{
+		Child:   child,
+		Timeout: strconv.FormatInt(initiateTimeout.Milliseconds(), 10),
+	})
+	if err != nil {
+		p.logger.ErrorContext(ctx, "failed to marshal initiate request", log.Err(err))
+		return err
+	}
+
+	backoff := initiateBackoffMin
+
+	for attempt := 1; ; attempt++ {
+		res, err := s.Call(ctx, "initiate", msg)
+		if err == nil {
+			err = res.Err()
+		}
+
+		if err == nil {
+			p.logger.InfoContext(ctx, "tunnel initiated",
+				slog.String("child", child),
+				log.Attempt(attempt),
+			)
+			return nil
+		}
+
+		p.logger.WarnContext(ctx, "tunnel initiation failed",
+			slog.String("child", child),
+			log.Attempt(attempt),
+			log.Err(err),
+		)
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(backoff):
+		}
+
+		if backoff *= 2; backoff > initiateBackoffMax {
+			backoff = initiateBackoffMax
+		}
+	}
 }
 
 func (p *Portal) watchEvents(ctx context.Context, s *vici.Session) error {

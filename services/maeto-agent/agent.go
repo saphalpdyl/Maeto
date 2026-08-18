@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/nats-io/nats.go/jetstream"
@@ -68,49 +69,113 @@ func (a *Agent) Run(ctx context.Context) {
 	}
 	defer s.Close() // nolint:errcheck
 
-	if err := a.watchEvents(ctx, s); err != nil {
+	eventChan, err := a.watchEvents(ctx, s)
+	if err != nil {
 		return
 	}
 
-	if err := a.loadCredentials(ctx, s); err != nil {
-		return
-	}
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case e := <-eventChan:
+				if e.Event != "child-updown" {
+					continue
+				}
 
-	if err := a.loadConnection(ctx, s); err != nil {
-		return
+				if len(e.IKE.ChildSAs) != 1 {
+					a.logger.WarnContext(ctx, fmt.Sprintf("child-updown: expected 1 child SA, got %d", len(e.IKE.ChildSAs)))
+					continue
+				}
+
+				var cSa ChildSA
+				for _, v := range e.IKE.ChildSAs {
+					cSa = v
+				}
+
+				cert, err := e.RemoteCertificate()
+				if err != nil {
+					a.logger.ErrorContext(ctx, "failed to get remote certificate", log.Err(err))
+					continue
+				}
+
+				if cSa.IfIDIn != cSa.IfIDOut {
+					a.logger.ErrorContext(ctx, "expected if_id_in == if_id_out")
+					continue
+				}
+
+				ifID := cSa.IfIDIn
+
+				// Assume a <portal_id>.cpe.maeto.net format
+				// *.cpe.maeto.net is already verified by strongswan, so we can trust the SAN
+				cpeSAN := cert.DNSNames[0]
+				sanParts := strings.Split(cpeSAN, ".")
+				if len(sanParts) <= 0 {
+					a.logger.ErrorContext(ctx, "invalid SAN format", slog.String("san", cpeSAN))
+					continue
+				}
+
+				portalID := sanParts[0]
+
+				_ = ifID
+				_ = portalID
+
+				a.logger.InfoContext(ctx, "got child updown event SAN", slog.Any("san", cpeSAN), slog.Any("if_id", ifID), slog.Any("portal_id", portalID))
+			}
+		}
+
+	}()
+
+	if a.node.Access != nil {
+		if err := a.loadCredentials(ctx, s); err != nil {
+			return
+		}
+
+		if err := a.loadConnection(ctx, s); err != nil {
+			return
+		}
 	}
 
 	<-ctx.Done()
 }
 
-func (a *Agent) watchEvents(ctx context.Context, s *vici.Session) error {
-	ec := make(chan vici.Event, 16)
-	s.NotifyEvents(ec)
+func (a *Agent) watchEvents(ctx context.Context, s *vici.Session) (<-chan *UpDownEvent, error) {
+	viciEventChan := make(chan vici.Event, 16)
+	s.NotifyEvents(viciEventChan)
+
+	eventChan := make(chan *UpDownEvent, 32)
 
 	if err := s.Subscribe("ike-updown", "child-updown"); err != nil {
 		a.logger.WarnContext(ctx, "ike-updown EVENT failed to subscribe", log.Err(err))
-		return err
+		return nil, err
 	}
 
 	go func() {
-		defer s.StopEvents(ec)
+		defer s.StopEvents(viciEventChan)
 
 		for {
 			select {
 			case <-ctx.Done():
 				return
-			case e, ok := <-ec:
+			case e, ok := <-viciEventChan:
 				if !ok {
 					a.logger.InfoContext(ctx, "ike/child even not ok")
-					return
+					continue
 				}
 
-				a.logger.InfoContext(ctx, fmt.Sprintf("IKE/CHILD Event: %s", e.Message.String()))
+				parsedEvent, err := ParseUpDown(e.Name, e.Message)
+				if err != nil {
+					a.logger.ErrorContext(ctx, "failed to parse vici updown event", log.Err(err))
+					continue
+				}
+
+				eventChan <- parsedEvent
 			}
 		}
 	}()
 
-	return nil
+	return eventChan, nil
 }
 
 // charon runs as the ipsec user and cannot read the key itself, so the agent

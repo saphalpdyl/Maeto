@@ -32,3 +32,9 @@ type LoadKeyRequest struct {
 	Type string `vici:"type"`
 	Data string `vici:"data"`
 }
+
+type InitiateRequest struct {
+	Child   string `vici:"child"`
+	IKE     string `vici:"ike,omitempty"`
+	Timeout string `vici:"timeout,omitempty"`
+}
