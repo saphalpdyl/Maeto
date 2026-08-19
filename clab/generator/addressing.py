@@ -1,7 +1,9 @@
+import hashlib
 import ipaddress
 
 from .constants import (
     CPE_INSTANCE_BITS,
+    LAN_HOST_BITS,
     EDGE_AGGREGATE_PREFIXLEN,
     ISIS_AREA,
     LINK_INSTANCE_BITS,
@@ -63,6 +65,24 @@ def edge_aggregate(prefix, attach_idx):
     # the pop's whole slice of the edge prefix: its transit uplink plus every
     # cpe subnet behind that transit, so the pop needs one static route not n
     return str(_nth_subnet(prefix, EDGE_AGGREGATE_PREFIXLEN, attach_idx))
+
+
+def lan_addrs(prefix, seed):
+    # returns (subnet, cpe ::1/len, host <derived>/len, cpe ::1)
+    # the host sits at a digest-derived offset so it looks like real kit rather
+    # than ::2, while staying identical run to run
+    net = ipaddress.ip_network(prefix, strict=True)
+    if net.max_prefixlen - net.prefixlen <= LAN_HOST_BITS:
+        raise TopologyError(f"site prefix {prefix} is too small for a lan host")
+
+    digest = hashlib.sha256(seed.encode()).digest()
+    span = (1 << LAN_HOST_BITS) - 2
+    # ::0 is subnet-router anycast and ::1 is the cpe itself
+    offset = 2 + (int.from_bytes(digest[: LAN_HOST_BITS // 8], "big") % span)
+
+    gw = _host(net, 1)
+    return (str(net), f"{gw}/{net.prefixlen}",
+            f"{_host(net, offset)}/{net.prefixlen}", str(gw))
 
 
 def isis_net(idx):

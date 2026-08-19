@@ -6,6 +6,7 @@ from .constants import (
     CA_CERT_CONTAINER_PATH,
     CERT_CONTAINER_PATH,
     CPE_IMAGE,
+    HOST_IMAGE,
     KEY_CONTAINER_PATH,
     NFT_CONTAINER_PATH,
     NFT_FILENAME,
@@ -146,11 +147,31 @@ def render_clab(topo, plan):
             ],
             "env": _portal_env(cpe),
             "exec": [
+                # without forwarding the cpe answers for itself but drops
+                # anything its lan host sends toward the tunnel
+                "sysctl -w net.ipv6.conf.all.forwarding=1",
                 f"ip link set dev {cp.iface} up",
                 f"ip -6 addr replace {cp.address} dev {cp.iface}",
                 f"ip -6 route replace default via {cp.gateway}",
+                f"ip link set dev {cp.lan_iface} up",
+                f"ip -6 addr replace {cp.lan_address} dev {cp.lan_iface}",
             ],
             "labels": {"clab_label": cpe.clab_label},
+        }
+
+    for host in plan.hosts.values():
+        nodes[host.node_name] = {
+            "kind": "linux",
+            "image": HOST_IMAGE,
+            # like the cpe in front of it, no management interface: tenant
+            # traffic has exactly one way out
+            "network-mode": "none",
+            "exec": [
+                f"ip link set dev {host.iface} up",
+                f"ip -6 addr replace {host.address} dev {host.iface}",
+                f"ip -6 route replace default via {host.gateway} dev {host.iface}",
+            ],
+            "labels": {"clab_label": host.clab_label},
         }
 
     links = [

@@ -20,9 +20,22 @@ def render_data(topo, plan, digest):
         "pops": [_pop(topo.pop_by_id(p.id), plan.pops[p.id]) for p in topo.pops],
         "transits": [_transit(plan.transits[p.id]) for p in topo.pops if p.id in plan.transits],
         "cpes": [_cpe(c, plan.cpes[c.id]) for c in topo.cpes],
+        "hosts": [_host(plan.hosts[c.id]) for c in topo.cpes],
         "links": [_link(l) for l in plan.links],
     }
     return json.dumps(doc, indent=2) + "\n"
+
+
+def _host(h):
+    return {
+        "cpe": h.cpe_id,
+        "name": h.node_name,
+        "clab_label": h.clab_label,
+        "interface": h.iface,
+        "subnet": h.subnet,
+        "address": h.address,
+        "gateway": h.gateway,
+    }
 
 
 def _pop(pop, pp):

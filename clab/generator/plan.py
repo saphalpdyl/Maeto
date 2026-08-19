@@ -1,7 +1,13 @@
 from dataclasses import dataclass
 
 from . import addressing
-from .constants import CPE_IFACE, POP_TRANSIT_IFACE, TRANSIT_UPLINK_IFACE
+from .constants import (
+    CPE_IFACE,
+    CPE_LAN_IFACE,
+    HOST_IFACE,
+    POP_TRANSIT_IFACE,
+    TRANSIT_UPLINK_IFACE,
+)
 
 
 @dataclass
@@ -83,6 +89,22 @@ class CpePlan:
     gateway: str        # transit router address on this link
     iface: str          # eth1
     peer_iface: str     # transit side eth
+    lan_iface: str      # eth2, faces the tenant lan
+    lan_address: str    # ::1/64 out of the site prefix
+
+
+@dataclass
+class HostPlan:
+    # the tenant's own kit behind a cpe. it has no management interface, so the
+    # only way in or out is the cpe and, past that, the tunnel
+    cpe_id: str
+    node_name: str      # HostA2
+    clab_label: str
+    iface: str          # eth1
+    address: str        # digest-derived, inside the site prefix
+    gateway: str        # the cpe's lan address
+    subnet: str
+    peer_iface: str     # cpe side eth2
 
 
 @dataclass
@@ -90,7 +112,8 @@ class Plan:
     pops: dict          # pop id -> PopPlan
     transits: dict      # pop id -> TransitPlan, only for pops that have cpes
     cpes: dict          # cpe id -> CpePlan
-    links: list         # [PlannedLink], core first then transit then cpe
+    hosts: dict         # cpe id -> HostPlan, one lan host each
+    links: list         # [PlannedLink], core first then transit then cpe then lan
 
 
 def build_plan(topo):
@@ -143,6 +166,8 @@ def build_plan(topo):
 
     transits = {}
     cpes = {}
+    hosts = {}
+    lan_links = []      # kept separate so every lan link sorts after every cpe link
     for pop in topo.pops:
         # every cpe on a pop shares that pop's transit router; a second cpe
         # attaching to the same pop hangs off the transit router, it does not
@@ -168,18 +193,30 @@ def build_plan(topo):
             idx = addressing.edge_subnet_index(pop.index, cinst[cpe.id])
             subnet, transit_side, cpe_addr, gw, _ = addressing.edge_addrs(d.edge_prefix, idx)
             transit_ifaces.append(TransitIface(iface, "cpe", cpe.node_name, transit_side))
+
+            lan_subnet, lan_gw_addr, host_addr, lan_gw = addressing.lan_addrs(cpe.prefix, cpe.id)
             cpes[cpe.id] = CpePlan(cpe, pop.node_name, transit_node, cinst[cpe.id],
-                                   subnet, cpe_addr, gw, CPE_IFACE, iface)
+                                   subnet, cpe_addr, gw, CPE_IFACE, iface,
+                                   CPE_LAN_IFACE, lan_gw_addr)
             links.append(PlannedLink(
                 idx, "cpe", cinst[cpe.id], subnet,
                 Endpoint("transit", pop.id, transit_node, iface, transit_side),
                 Endpoint("cpe", cpe.id, cpe.node_name, CPE_IFACE, cpe_addr),
             ))
 
+            host_node = _host_node_name(cpe)
+            hosts[cpe.id] = HostPlan(cpe.id, host_node, f"Host {cpe.id}", HOST_IFACE,
+                                     host_addr, lan_gw, lan_subnet, CPE_LAN_IFACE)
+            lan_links.append(PlannedLink(
+                idx, "lan", cinst[cpe.id], lan_subnet,
+                Endpoint("cpe", cpe.id, cpe.node_name, CPE_LAN_IFACE, lan_gw_addr),
+                Endpoint("host", cpe.id, host_node, HOST_IFACE, host_addr),
+            ))
+
         transits[pop.id] = TransitPlan(pop.id, transit_node, f"Transit {pop.id}",
                                        pop.node_name, pop_gw, transit_ifaces)
 
-    return Plan(pops, transits, cpes, links)
+    return Plan(pops, transits, cpes, hosts, links + lan_links)
 
 
 def _peer(pop_id, link):
@@ -188,6 +225,11 @@ def _peer(pop_id, link):
 
 def _transit_node_name(pop):
     return f"Transit{pop.id}"
+
+
+def _host_node_name(cpe):
+    # CpeA2 -> HostA2, matching how cpe node names drop the leading marker
+    return f"Host{cpe.id[1:]}"
 
 
 def _attached_cpes(topo):

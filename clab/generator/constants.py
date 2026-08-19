@@ -1,12 +1,14 @@
 # static values shared across the generator
 
-GENERATOR_VERSION = "1.20.0"
+GENERATOR_VERSION = "1.21.0"
 
 POP_IMAGE = "maeto-pop:latest"
 FRR_VERSION = "10.5.1"
 CPE_IMAGE = "maeto-portal:latest"
 # transit models the unmanaged internet: not ours, so stock upstream
 TRANSIT_IMAGE = "nicolaka/netshoot:latest"
+# one lan host per cpe, standing in for the tenant's own kit
+HOST_IMAGE = "nicolaka/netshoot:latest"
 
 ISIS_AREA = "49.0000"
 ISIS_INSTANCE = "CORE"
@@ -32,6 +34,13 @@ MAX_CPES_PER_POP = (1 << CPE_INSTANCE_BITS) - 1
 POP_TRANSIT_IFACE = "eth1"
 TRANSIT_UPLINK_IFACE = "eth1"
 CPE_IFACE = "eth1"
+# eth1 on a cpe faces the transit router, so the tenant lan lands on eth2
+CPE_LAN_IFACE = "eth2"
+HOST_IFACE = "eth1"
+
+# bits of the site digest used to place the lan host inside its /64. the
+# generator is content addressed, so the pick has to be stable across runs
+LAN_HOST_BITS = 32
 
 # the access interface is isolated by a packet filter, not by a routing
 # construct. the rendered ruleset is bound in like frr.conf so it is reviewable

@@ -40,6 +40,11 @@ cpes:
     tenant: 231
     prefix: fd7a:3921:e7:1::/64
     portal_id: 48522cc7549b
+  - id: cA3
+    attach: A
+    tenant: 231
+    prefix: fd7a:3921:e7:2::/64
+    portal_id: 32522cc7549b
   - id: cC
     attach: C
     tenant: 273
