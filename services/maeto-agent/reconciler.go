@@ -60,7 +60,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, intent *NodeIntent) error {
 			}
 			r.logger.InfoContext(ctx, "inserted XFRM interface", slog.String("interfaceName", tunnelIface), slog.String("vrfTableName", vrfTableName))
 
-			if err := r.dp.InsertReturnPrefix(ctx, tunnelIface, vrfTableName, site.Prefix.String()); err != nil {
+			if err := r.dp.InsertReturnPrefix(ctx, tunnelIface, vrfTableName, site.Prefix); err != nil {
 				r.logger.ErrorContext(ctx, "failed to insert return prefix", log.Err(err))
 				continue
 			}

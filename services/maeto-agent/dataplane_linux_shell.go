@@ -1,11 +1,10 @@
 package maetoagent
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"os/exec"
+	"net/netip"
 	"strings"
 )
 
@@ -22,31 +21,6 @@ type LinuxShellDataplane struct{}
 
 func NewLinuxShellDataplane() *LinuxShellDataplane {
 	return &LinuxShellDataplane{}
-}
-
-func run(ctx context.Context, name string, args ...string) error {
-	//nolint:gosec // G204: Shell wrapper requires variable execution path
-	cmd := exec.CommandContext(ctx, name, args...)
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("%s %s: %w: %s", name, strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
-	}
-	return nil
-}
-
-func runWithOutput(ctx context.Context, name string, args ...string) ([]byte, error) {
-	//nolint:gosec // G204: Shell wrapper requires variable execution path
-	cmd := exec.CommandContext(ctx, name, args...)
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-
-	out, err := cmd.Output()
-	if err != nil {
-		return nil, fmt.Errorf("%s %s: %w: %s", name, strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
-	}
-
-	return out, nil
 }
 
 func (ls *LinuxShellDataplane) AddVRF(ctx context.Context, tableName string, tableId int) (err error) {
@@ -95,10 +69,10 @@ func (ls *LinuxShellDataplane) InsertXFRMInterface(ctx context.Context, interfac
 	return nil
 }
 
-func (ls *LinuxShellDataplane) InsertReturnPrefix(ctx context.Context, tunnelIface string, vrfTableName string, prefix string) error {
+func (ls *LinuxShellDataplane) InsertReturnPrefix(ctx context.Context, tunnelIface string, vrfTableName string, prefix netip.Prefix) error {
 	// ip -6 route replace fd7a:3921:e7:1::/64 dev xfrm-231-1 vrf vrf-tenant-231
 
-	if err := run(ctx, "ip", "-6", "route", "replace", prefix, "dev", tunnelIface, "vrf", vrfTableName); err != nil {
+	if err := run(ctx, "ip", "-6", "route", "replace", prefix.String(), "dev", tunnelIface, "vrf", vrfTableName); err != nil {
 		return fmt.Errorf("insert return prefix %s into vrf %s @ %s: %w", prefix, vrfTableName, tunnelIface, err)
 	}
 

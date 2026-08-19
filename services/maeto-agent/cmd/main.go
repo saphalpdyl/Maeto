@@ -87,7 +87,7 @@ func main() {
 	}()
 
 	// TODO: Change to VPP later
-	linuxDataplane := maetoagent.NewLinuxShellDataplane()
+	linuxDataplane := maetoagent.NewLinuxNetlinkDataplane()
 	agent := maetoagent.NewAgent(node, js, logger.With(log.Domain(log.DomainAgentLifecycle)), linuxDataplane)
 	agent.Run(ctx)
 }
