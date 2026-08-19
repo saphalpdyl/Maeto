@@ -77,7 +77,7 @@ func (ls *LinuxShellDataplane) AddVRF(ctx context.Context, tableName string, tab
 
 func (ls *LinuxShellDataplane) InsertXFRMInterface(ctx context.Context, interfaceName string, underLayIface string, ifID uint32, vrfTableName string) error {
 	// ip link add ipsec1 type xfrm dev eth1 if_id 1
-	// ip link set ipsec1 master vrf-cust-1
+	// ip link set ipsec1 master vrf-tenant-1
 	// ip link set ipsec1 up
 
 	if err := run(ctx, "ip", "link", "add", interfaceName, "type", "xfrm", "dev", underLayIface, "if_id", fmt.Sprint(ifID)); err != nil {
@@ -96,7 +96,7 @@ func (ls *LinuxShellDataplane) InsertXFRMInterface(ctx context.Context, interfac
 }
 
 func (ls *LinuxShellDataplane) InsertReturnPrefix(ctx context.Context, tunnelIface string, vrfTableName string, prefix string) error {
-	// ip -6 route replace fd7a:3921:e7:1::/64 dev xfrm-231-1 vrf vrf-cust-231
+	// ip -6 route replace fd7a:3921:e7:1::/64 dev xfrm-231-1 vrf vrf-tenant-231
 
 	if err := run(ctx, "ip", "-6", "route", "replace", prefix, "dev", tunnelIface, "vrf", vrfTableName); err != nil {
 		return fmt.Errorf("insert return prefix %s into vrf %s @ %s: %w", prefix, vrfTableName, tunnelIface, err)

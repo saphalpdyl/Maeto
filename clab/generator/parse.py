@@ -5,7 +5,7 @@ import yaml
 from . import addressing
 from .constants import (
     CPE_KEYS,
-    CUSTOMER_KEYS,
+    TENANT_KEYS,
     DEFAULT_KEYS,
     EDGE_AGGREGATE_PREFIXLEN,
     LINK_INSTANCE_BITS,
@@ -16,7 +16,7 @@ from .constants import (
     TOP_LEVEL_KEYS,
 )
 from .errors import TopologyError
-from .model import CoreLink, Cpe, Customer, Defaults, Pop, Topology
+from .model import CoreLink, Cpe, Tenant, Defaults, Pop, Topology
 
 
 def parse_topology(source):
@@ -29,10 +29,10 @@ def parse_topology(source):
     defaults = _parse_defaults(root)
     pops = _parse_pops(root)
     pop_index = {p.id: p.index for p in pops}
-    customers = _parse_customers(root)
-    cpes = _parse_cpes(root, set(pop_index), customers)
+    tenants = _parse_tenants(root)
+    cpes = _parse_cpes(root, set(pop_index), tenants)
     links = _parse_links(root, pop_index)
-    return Topology(name, defaults, pops, customers, cpes, links)
+    return Topology(name, defaults, pops, tenants, cpes, links)
 
 
 def _reject_unknown(d, allowed, where):
@@ -117,25 +117,25 @@ def _pop_index(raw, i, where):
     return n
 
 
-def _parse_customers(root):
-    items = root.get("customers") or []
+def _parse_tenants(root):
+    items = root.get("tenants") or []
     if not isinstance(items, list):
-        raise TopologyError("customers must be a list")
-    customers = []
+        raise TopologyError("tenants must be a list")
+    tenants = []
     seen = set()
     for i, raw in enumerate(items):
         if not isinstance(raw, dict):
-            raise TopologyError(f"customers[{i}] must be a mapping")
-        _reject_unknown(raw, CUSTOMER_KEYS, f"customers[{i}]")
+            raise TopologyError(f"tenants[{i}] must be a mapping")
+        _reject_unknown(raw, TENANT_KEYS, f"tenants[{i}]")
         cid = raw.get("id")
         if isinstance(cid, bool) or not isinstance(cid, int) or cid < 1:
-            raise TopologyError(f"customers[{i}].id must be a positive integer")
+            raise TopologyError(f"tenants[{i}].id must be a positive integer")
         if cid in seen:
-            raise TopologyError(f"duplicate customer id: {cid}")
+            raise TopologyError(f"duplicate tenant id: {cid}")
         seen.add(cid)
-        alloc = _require_network(raw.get("allocation"), f"customers[{i}].allocation")
-        customers.append(Customer(id=cid, allocation=str(alloc), data=_data(raw, f"customers[{i}]")))
-    return customers
+        alloc = _require_network(raw.get("allocation"), f"tenants[{i}].allocation")
+        tenants.append(Tenant(id=cid, allocation=str(alloc), data=_data(raw, f"tenants[{i}]")))
+    return tenants
 
 
 def _require_network(value, where):
@@ -150,15 +150,15 @@ def _require_network(value, where):
     return net
 
 
-def _parse_cpes(root, pop_ids, customers):
+def _parse_cpes(root, pop_ids, tenants):
     items = root.get("cpes") or []
     if not isinstance(items, list):
         raise TopologyError("cpes must be a list")
-    by_id = {c.id: c for c in customers}
+    by_id = {c.id: c for c in tenants}
     cpes = []
     seen = set()
     per_pop = {}
-    per_customer = {}
+    per_tenant = {}
     seen_portal_ids = []
     for i, raw in enumerate(items):
         if not isinstance(raw, dict):
@@ -178,18 +178,18 @@ def _parse_cpes(root, pop_ids, customers):
         per_pop[attach] = per_pop.get(attach, 0) + 1
         if per_pop[attach] > MAX_CPES_PER_POP:
             raise TopologyError(f"pop {attach} has more than {MAX_CPES_PER_POP} cpes attached")
-        cust = raw.get("customer")
+        cust = raw.get("tenant")
         if cust not in by_id:
-            raise TopologyError(f"cpes[{i}].customer must reference an existing customer id: {cust}")
+            raise TopologyError(f"cpes[{i}].tenant must reference an existing tenant id: {cust}")
         prefix = _require_network(raw.get("prefix"), f"cpes[{i}].prefix")
         alloc = ipaddress.ip_network(by_id[cust].allocation)
         if not prefix.subnet_of(alloc):
-            raise TopologyError(f"cpes[{i}].prefix {prefix} is outside customer {cust} allocation {alloc}")
-        # sites of one customer share a vrf, so overlapping prefixes break routing
-        for other in per_customer.setdefault(cust, []):
+            raise TopologyError(f"cpes[{i}].prefix {prefix} is outside tenant {cust} allocation {alloc}")
+        # sites of one tenant share a vrf, so overlapping prefixes break routing
+        for other in per_tenant.setdefault(cust, []):
             if prefix.overlaps(other):
-                raise TopologyError(f"cpes[{i}].prefix {prefix} overlaps {other} on customer {cust}")
-        per_customer[cust].append(prefix)
+                raise TopologyError(f"cpes[{i}].prefix {prefix} overlaps {other} on tenant {cust}")
+        per_tenant[cust].append(prefix)
         node_name = f"Cpe{cid[1:]}"
 
         portal_id = raw.get("portal_id", "")
@@ -206,7 +206,7 @@ def _parse_cpes(root, pop_ids, customers):
 
         cpes.append(Cpe(
             id=cid,
-            customer=cust,
+            tenant=cust,
             prefix=str(prefix),
             node_name=node_name,
             clab_label=_clab_label(raw, node_name, f"cpes[{i}]"),

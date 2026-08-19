@@ -17,9 +17,9 @@ def render_frr(pop_plan):
         " isis passive",
         "!",
     ]
-    # only core links reach frr. the customer-facing interface is deliberately
+    # only core links reach frr. the tenant-facing interface is deliberately
     # absent: it lives in the access vrf, configured by iproute2, so there is no
-    # stanza here that could advertise customer space into the backbone
+    # stanza here that could advertise tenant space into the backbone
     for i in p.interfaces:
         lines += [
             f"interface {i.name}",
@@ -49,7 +49,7 @@ def render_frr(pop_plan):
         " metric-style wide",
         " topology ipv6-unicast",
         # no redistribute: the backbone carries core prefixes and locators only,
-        # never anything learned from or about a customer
+        # never anything learned from or about a tenant
         " segment-routing srv6",
         "  locator CORE",
         " !",

@@ -45,11 +45,11 @@ NODE_CONTAINER_PATH = "/etc/maeto/node.json"
 # only key allowed inside a pop/cpe override block
 OVERRIDE_KEYS = {"clab_label"}
 
-TOP_LEVEL_KEYS = {"name", "defaults", "pops", "customers", "cpes", "links"}
+TOP_LEVEL_KEYS = {"name", "defaults", "pops", "tenants", "cpes", "links"}
 DEFAULT_KEYS = {"locator_prefix", "link_prefix", "edge_prefix"}
 POP_KEYS = {"id", "index", "data", "override"}
-CPE_KEYS = {"id", "attach", "customer", "prefix", "portal_id", "data", "override"}
-CUSTOMER_KEYS = {"id", "allocation", "data"}
+CPE_KEYS = {"id", "attach", "tenant", "prefix", "portal_id", "data", "override"}
+TENANT_KEYS = {"id", "allocation", "data"}
 
 FRR_DAEMONS = """zebra=yes
 isisd=yes

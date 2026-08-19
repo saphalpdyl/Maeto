@@ -17,12 +17,12 @@ import (
 const IntentBucket = "maeto-intents"
 
 type NodeIntent struct {
-	NodeID               string          `json:"node_id"`
-	CustomerBasedIntents map[int]*Intent `json:"customer_based_intents"`
+	NodeID        string          `json:"node_id"`
+	TenantIntents map[int]*Intent `json:"tenant_intents"`
 }
 
 type Site struct {
-	CustomerID int
+	TenantID   int
 	CPE        string
 	PortalID   string
 	Node       string

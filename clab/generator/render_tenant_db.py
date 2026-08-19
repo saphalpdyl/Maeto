@@ -4,26 +4,26 @@ from .constants import GENERATOR_VERSION
 from .render_certs import cpe_identity
 
 
-def render_customer_db(topo):
-    # seed data standing in for the control plane's customer store
+def render_tenant_db(topo):
+    # seed data standing in for the control plane's tenant store
     data = {
         "generator_version": GENERATOR_VERSION,
-        "customers": [],
+        "tenants": [],
     }
 
-    # per tunnel, never per customer -- two sites of one customer would collide
+    # per tunnel, never per tenant -- two sites of one tenant would collide
     next_if_id = 1
 
-    for c in sorted(topo.customers, key=lambda x: x.id):
-        customer_data = {
+    for c in sorted(topo.tenants, key=lambda x: x.id):
+        tenant_data = {
             "id": c.id,
             "allocation": c.allocation,
             "vrf_table": c.id,
             "sites": [],
         }
 
-        for cp in [x for x in topo.cpes if x.customer == c.id]:
-            customer_data["sites"].append({
+        for cp in [x for x in topo.cpes if x.tenant == c.id]:
+            tenant_data["sites"].append({
                 "cpe": cp.id,
                 "portal_id": cp.portal_id,
                 "node": cp.node_name,
@@ -35,6 +35,6 @@ def render_customer_db(topo):
             })
             next_if_id += 1
 
-        data["customers"].append(customer_data)
+        data["tenants"].append(tenant_data)
 
     return json.dumps(data, indent=2) + "\n"

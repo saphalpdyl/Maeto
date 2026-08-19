@@ -22,8 +22,8 @@ type ServiceRegistry struct {
 }
 
 type NodeIntent struct {
-	NodeID               NodeID          `json:"node_id"`
-	CustomerBasedIntents map[int]*Intent `json:"customer_based_intents"`
+	NodeID        NodeID          `json:"node_id"`
+	TenantIntents map[int]*Intent `json:"tenant_intents"`
 }
 
 type Intent struct {
@@ -39,17 +39,17 @@ func NewServiceRegistry(config *ServiceRegistryConfig, intentPublisher *IntentPu
 	}
 }
 
-func (r *ServiceRegistry) SetIntentForCustomer(ctx context.Context, node NodeID, customerID int, intent *Intent) error {
+func (r *ServiceRegistry) SetIntentForTenant(ctx context.Context, node NodeID, tenantID int, intent *Intent) error {
 	r.mu.Lock()
 
 	if _, exists := r.registry[node]; !exists {
 		r.registry[node] = &NodeIntent{
-			NodeID:               node,
-			CustomerBasedIntents: make(map[int]*Intent),
+			NodeID:        node,
+			TenantIntents: make(map[int]*Intent),
 		}
 	}
 
-	r.registry[node].CustomerBasedIntents[customerID] = intent
+	r.registry[node].TenantIntents[tenantID] = intent
 	r.mu.Unlock()
 
 	r.mu.RLock()

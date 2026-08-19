@@ -23,7 +23,7 @@ pops:
   - id: H
     index: 8
 
-customers:
+tenants:
   - id: 273
     allocation: fd7a:3921:111::/48
   - id: 231
@@ -32,17 +32,17 @@ customers:
 cpes:
   - id: cA
     attach: A
-    customer: 273
+    tenant: 273
     prefix: fd7a:3921:111:1::/64
     portal_id: 83505cf19a08
   - id: cA2
     attach: A
-    customer: 231
+    tenant: 231
     prefix: fd7a:3921:e7:1::/64
     portal_id: 48522cc7549b
   - id: cC
     attach: C
-    customer: 273
+    tenant: 273
     prefix: fd7a:3921:111:2::/64
     portal_id: aa400723fee3
 

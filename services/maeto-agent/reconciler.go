@@ -39,21 +39,21 @@ func (r *Reconciler) Start(ctx context.Context) error {
 }
 
 func (r *Reconciler) Reconcile(ctx context.Context, intent *NodeIntent) error {
-	for _, cust := range intent.CustomerBasedIntents {
+	for _, cust := range intent.TenantIntents {
 		if cust.Gen > 1 {
 			r.logger.ErrorContext(ctx, "reconciliation against existing states is not yet supported", slog.Any("intent", intent))
 			continue
 		}
 		for _, site := range cust.Sites {
-			vrfTableName := fmt.Sprintf("vrf-cust-%d", site.CustomerID)
+			vrfTableName := fmt.Sprintf("vrf-tenant-%d", site.TenantID)
 
-			if err := r.dp.AddVRF(ctx, vrfTableName, site.CustomerID+1000); err != nil {
+			if err := r.dp.AddVRF(ctx, vrfTableName, site.TenantID+1000); err != nil {
 				r.logger.ErrorContext(ctx, "failed to add VRF", log.Err(err))
 				continue
 			}
-			r.logger.InfoContext(ctx, "added VRF", slog.String("vrfTableName", vrfTableName), slog.Int("customerID", site.CustomerID))
+			r.logger.InfoContext(ctx, "added VRF", slog.String("vrfTableName", vrfTableName), slog.Int("tenantID", site.TenantID))
 
-			tunnelIface := fmt.Sprintf("xfrm-%d-%d", site.CustomerID, site.IfID)
+			tunnelIface := fmt.Sprintf("xfrm-%d-%d", site.TenantID, site.IfID)
 			if err := r.dp.InsertXFRMInterface(ctx, tunnelIface, "eth1", site.IfID, vrfTableName); err != nil {
 				r.logger.ErrorContext(ctx, "failed to insert xfrm interface", log.Err(err))
 				continue

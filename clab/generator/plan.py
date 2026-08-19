@@ -15,7 +15,7 @@ class Interface:
 
 @dataclass
 class AccessPlan:
-    # the customer-facing side of a pop, owned by iproute2 and nftables rather
+    # the tenant-facing side of a pop, owned by iproute2 and nftables rather
     # than frr: it stays out of isis so nothing it holds is advertised to the
     # core, and a forward-chain drop keeps anything arriving on it from being
     # forwarded anywhere at all
@@ -109,7 +109,7 @@ def build_plan(topo):
             # the cpes sit a hop further out, so the pop reaches them through one
             # aggregate handed to the transit router. it is never redistributed --
             # only this pop needs it, and advertising it would hand the whole
-            # backbone a route back into customer space
+            # backbone a route back into tenant space
             access = AccessPlan(POP_TRANSIT_IFACE, pop_addr,
                                 addressing.edge_aggregate(d.edge_prefix, pop.index), transit_addr)
 

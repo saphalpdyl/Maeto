@@ -21,7 +21,7 @@ type Controller struct {
 
 	topology        *ClabTopologyManager
 	inventory       NodeInventory
-	customers       CustomerRepository
+	tenants         TenantRepository
 	serviceRegistry *ServiceRegistry
 	pce             *PCE
 
@@ -66,16 +66,16 @@ func NewController(
 		return nil, fmt.Errorf("failed to load node inventory: %w", err)
 	}
 
-	customers := NewJSONCustomerRepository(CustomerRepositoryConfig{
+	tenants := NewJSONTenantRepository(TenantRepositoryConfig{
 		StatePath:       config.StatePath,
 		TopologyDirPath: config.DataDir,
 	})
-	if err := customers.Load(ctx); err != nil {
-		return nil, fmt.Errorf("failed to load customers: %w", err)
+	if err := tenants.Load(ctx); err != nil {
+		return nil, fmt.Errorf("failed to load tenants: %w", err)
 	}
 
 	logger.InfoContext(ctx, "controller initialized",
-		slog.Int("customers", len(customers.Customers())),
+		slog.Int("tenants", len(tenants.Tenants())),
 	)
 
 	// Intent KV
@@ -91,7 +91,7 @@ func NewController(
 
 		topology:        topology,
 		inventory:       inventory,
-		customers:       customers,
+		tenants:         tenants,
 		serviceRegistry: NewServiceRegistry(&ServiceRegistryConfig{}, intentPublisher),
 		pce:             NewPCE(),
 
@@ -106,8 +106,8 @@ func (c *Controller) Start(ctx context.Context) {
 	c.serviceRegistry.mu.Lock()
 	for _, node := range c.inventory.Nodes() {
 		c.serviceRegistry.registry[node.ID] = &NodeIntent{
-			NodeID:               node.ID,
-			CustomerBasedIntents: make(map[int]*Intent),
+			NodeID:        node.ID,
+			TenantIntents: make(map[int]*Intent),
 		}
 	}
 	c.serviceRegistry.mu.Unlock()
@@ -176,7 +176,7 @@ func (c *Controller) setupPortalAuthEndpoint(ctx context.Context) error {
 			return
 		}
 
-		site, exists := c.customers.SiteByPortalID(req.PortalID)
+		site, exists := c.tenants.SiteByPortalID(req.PortalID)
 		if !exists {
 			c.logger.ErrorContext(ctx, "portal identity not found")
 			return
@@ -226,8 +226,8 @@ func (c *Controller) setupPushTunnelInitiate(ctx context.Context) error {
 			return
 		}
 
-		// Get customer
-		site, exists := c.customers.SiteByPortalID(req.PortalID)
+		// Get tenant
+		site, exists := c.tenants.SiteByPortalID(req.PortalID)
 		if !exists {
 			c.logger.ErrorContext(ctx, "portal identity not found")
 			errResponse, err := json.Marshal(controlapi.PushTunnelInitiateResponse{Ok: false})
@@ -242,9 +242,9 @@ func (c *Controller) setupPushTunnelInitiate(ctx context.Context) error {
 			return
 		}
 
-		customer, exists := c.customers.Customer(site.CustomerID)
+		tenant, exists := c.tenants.Tenant(site.TenantID)
 		if !exists {
-			c.logger.ErrorContext(ctx, "customer not found")
+			c.logger.ErrorContext(ctx, "tenant not found")
 			errResponse, err := json.Marshal(controlapi.PushTunnelInitiateResponse{Ok: false})
 			if err != nil {
 				c.logger.ErrorContext(ctx, "failed to marshal response", log.Err(err))
@@ -260,12 +260,12 @@ func (c *Controller) setupPushTunnelInitiate(ctx context.Context) error {
 		siteCopy := *site
 		siteCopy.IfID = req.IfID
 
-		err := c.serviceRegistry.SetIntentForCustomer(ctx, NodeID(req.NodeID), customer.ID, &Intent{
+		err := c.serviceRegistry.SetIntentForTenant(ctx, NodeID(req.NodeID), tenant.ID, &Intent{
 			Gen:   1,
 			Sites: []Site{siteCopy},
 		})
 		if err != nil {
-			c.logger.ErrorContext(ctx, "failed to set intent for customer", log.Err(err))
+			c.logger.ErrorContext(ctx, "failed to set intent for tenant", log.Err(err))
 			errResponse, err := json.Marshal(controlapi.PushTunnelInitiateResponse{Ok: false})
 			if err != nil {
 				c.logger.ErrorContext(ctx, "failed to marshal response", log.Err(err))

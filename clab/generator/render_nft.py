@@ -7,7 +7,7 @@ ICMPV6_SCOPED = "packet-too-big, echo-request"
 
 def render_nft(access):
     # The access interface is host-terminated. IKE and ESP are addressed to the
-    # pop itself, so they land in input; decapsulated customer traffic re-enters
+    # pop itself, so they land in input; decapsulated tenant traffic re-enters
     # on an xfrm interface, never on this one. Nothing arriving here is ever
     # legitimately forwarded, in any direction, to anywhere -- which is a
     # forwarding property, and one forward-chain drop states it exactly. A vrf

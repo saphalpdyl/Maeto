@@ -136,7 +136,7 @@ def render_clab(topo, plan):
         nodes[cpe.node_name] = {
             "kind": "linux",
             "image": CPE_IMAGE,
-            # no management eth0: a cpe is a customer endpoint and must reach
+            # no management eth0: a cpe is a tenant endpoint and must reach
             # everything through its transit router, never out of band via docker
             "network-mode": "none",
             "binds": [
