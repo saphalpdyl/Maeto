@@ -121,6 +121,8 @@ func (a *Agent) WatchIntents(ctx context.Context, js jetstream.JetStream) error 
 				slog.Uint64("revision", entry.Revision()),
 				slog.Any("intent", intent),
 			)
+
+			a.intentFeed <- &intent
 		}
 	}
 }

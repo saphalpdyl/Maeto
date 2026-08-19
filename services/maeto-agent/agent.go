@@ -18,16 +18,27 @@ import (
 )
 
 type Agent struct {
-	js     jetstream.JetStream
-	node   *Node
-	logger *slog.Logger
+	js         jetstream.JetStream
+	node       *Node
+	logger     *slog.Logger
+	reconciler *Reconciler
+	dp         Dataplane // owned primarily by the Reconciler
+
+	// Intents pushed to by agent.WatchIntents (intent_kv.go) and read by Reconciler (reconciler.go)
+	intentFeed chan *NodeIntent
 }
 
-func NewAgent(node *Node, js jetstream.JetStream, logger *slog.Logger) *Agent {
+func NewAgent(node *Node, js jetstream.JetStream, logger *slog.Logger, dp Dataplane) *Agent {
+	intentFeed := make(chan *NodeIntent, 32)
+	reconciler := NewReconciler(dp, logger.With(log.Domain(log.DomainReconciler)), intentFeed)
+
 	return &Agent{
-		js:     js,
-		node:   node,
-		logger: logger,
+		js:         js,
+		node:       node,
+		logger:     logger,
+		reconciler: reconciler,
+		intentFeed: intentFeed,
+		dp:         dp,
 	}
 }
 
@@ -51,6 +62,8 @@ func (a *Agent) Run(ctx context.Context) {
 		log.Domain(log.DomainControlPlane),
 		slog.String("intent_key", a.node.IntentKey()),
 	)
+
+	go a.reconciler.Start(ctx) // nolint:errcheck
 
 	go func() {
 		if err := a.WatchIntents(ctx, a.js); err != nil {
@@ -94,6 +107,7 @@ func (a *Agent) Run(ctx context.Context) {
 					cSa = v
 				}
 
+				// X.509 cert of CPE to get SAN for portalID
 				cert, err := e.RemoteCertificate()
 				if err != nil {
 					a.logger.ErrorContext(ctx, "failed to get remote certificate", log.Err(err))
@@ -119,6 +133,10 @@ func (a *Agent) Run(ctx context.Context) {
 
 				a.logger.InfoContext(ctx, "got child updown event SAN", slog.Any("san", cpeSAN), slog.Any("if_id", ifID), slog.Any("portal_id", portalID))
 
+				// Push the connection event to the control plane
+				// 	The control plane then pushes to ServiceRegistry
+				// 	and delivers a new NodeIntent to reconcile on.
+				// So connection -> push_to_controller -> new intent -> reconcile -> FIB updated
 				var req controlapi.PushTunnelInitiateRequest
 				req.PortalID = portalID
 				req.IfID = ifID
@@ -154,10 +172,12 @@ func (a *Agent) Run(ctx context.Context) {
 	}()
 
 	if a.node.Access != nil {
+		// Loads private key from /etc/swanctl/private/key.pem and sends to charon via vici
 		if err := a.loadCredentials(ctx, s); err != nil {
 			return
 		}
 
+		// Loads connection from /etc/swanctl/x509/cert.pem and /etc/swanctl/x509ca/ca-cert.pem and sends to charon via vici
 		if err := a.loadConnection(ctx, s); err != nil {
 			return
 		}
@@ -302,6 +322,7 @@ func (a *Agent) loadConnection(ctx context.Context, s *vici.Session) error {
 	return nil
 }
 
+// Waits for the control plane to reach healthy status
 func (a *Agent) waitForReady(ctx context.Context) bool {
 	attempt := 0
 

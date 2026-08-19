@@ -48,6 +48,11 @@ func (c *ChildSA) IfID() (uint32, error) {
 		return 0, fmt.Errorf("parse if-id %q: %w", c.IfIDIn, err)
 	}
 
+	// strongswan uses 0 for "no if_id", and the kernel rejects it on a link
+	if id == 0 {
+		return 0, fmt.Errorf("if-id is zero, no xfrm interface can bind it")
+	}
+
 	return uint32(id), nil
 }
 

@@ -49,8 +49,8 @@ func runWithOutput(ctx context.Context, name string, args ...string) ([]byte, er
 	return out, nil
 }
 
-func (ls *LinuxShellDataplane) AddVRF(ctx context.Context, tableName string, tableId string, iface string) (err error) {
-	if err := run(ctx, "ip", "link", "add", tableName, "type", "vrf", "table", tableId); err != nil {
+func (ls *LinuxShellDataplane) AddVRF(ctx context.Context, tableName string, tableId int) (err error) {
+	if err := run(ctx, "ip", "link", "add", tableName, "type", "vrf", "table", fmt.Sprintf("%d", tableId)); err != nil {
 		return fmt.Errorf("create vrf device: %w", err)
 	}
 
@@ -65,15 +65,41 @@ func (ls *LinuxShellDataplane) AddVRF(ctx context.Context, tableName string, tab
 		return fmt.Errorf("install vrf catch-all for %s: %w", tableName, err)
 	}
 
-	if err := run(ctx, "ip", "link", "set", iface, "master", tableName); err != nil {
-		return fmt.Errorf("enslave interface %s to %s: %w", iface, tableName, err)
-	}
-
 	// https://onvox.net/2024/12/16/srv6-frr/#usid-caveat
 	// It is important to note that [net.vrf.strict_mode=1] setting gets reset any
 	// 	time a new VRF is added to the kernel and must be reset again
 	if err := run(ctx, "sysctl", "-w", "net.vrf.strict_mode=1"); err != nil {
 		return fmt.Errorf("enable vrf strict mode: %w", err)
+	}
+
+	return nil
+}
+
+func (ls *LinuxShellDataplane) InsertXFRMInterface(ctx context.Context, interfaceName string, underLayIface string, ifID uint32, vrfTableName string) error {
+	// ip link add ipsec1 type xfrm dev eth1 if_id 1
+	// ip link set ipsec1 master vrf-cust-1
+	// ip link set ipsec1 up
+
+	if err := run(ctx, "ip", "link", "add", interfaceName, "type", "xfrm", "dev", underLayIface, "if_id", fmt.Sprint(ifID)); err != nil {
+		return fmt.Errorf("create xfrm device: %w", err)
+	}
+
+	if err := run(ctx, "ip", "link", "set", interfaceName, "master", vrfTableName); err != nil {
+		return fmt.Errorf("set xfrm device master to vrf: %w", err)
+	}
+
+	if err := run(ctx, "ip", "link", "set", interfaceName, "up"); err != nil {
+		return fmt.Errorf("bring up xfrm device: %w", err)
+	}
+
+	return nil
+}
+
+func (ls *LinuxShellDataplane) InsertReturnPrefix(ctx context.Context, tunnelIface string, vrfTableName string, prefix string) error {
+	// ip -6 route replace fd7a:3921:e7:1::/64 dev xfrm-231-1 vrf vrf-cust-231
+
+	if err := run(ctx, "ip", "-6", "route", "replace", prefix, "dev", tunnelIface, "vrf", vrfTableName); err != nil {
+		return fmt.Errorf("insert return prefix %s into vrf %s @ %s: %w", prefix, vrfTableName, tunnelIface, err)
 	}
 
 	return nil

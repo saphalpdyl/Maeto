@@ -1,4 +1,6 @@
-// Holds information about desired FIB states
+// service_registry holds information about desired FIB states
+// We will try our best to not include detailed Linux-specific implementation details here,
+// so that we can eventually move this to a separate package and share it with the agent.
 package controlplane
 
 import (

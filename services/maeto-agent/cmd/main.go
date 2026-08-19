@@ -86,6 +86,8 @@ func main() {
 		}
 	}()
 
-	agent := maetoagent.NewAgent(node, js, logger.With(log.Domain(log.DomainAgentLifecycle)))
+	// TODO: Change to VPP later
+	linuxDataplane := maetoagent.NewLinuxShellDataplane()
+	agent := maetoagent.NewAgent(node, js, logger.With(log.Domain(log.DomainAgentLifecycle)), linuxDataplane)
 	agent.Run(ctx)
 }
