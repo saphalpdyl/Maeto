@@ -6,6 +6,7 @@ package controlplane
 import (
 	"context"
 	"fmt"
+	"sort"
 	"sync"
 )
 
@@ -49,7 +50,33 @@ func (r *ServiceRegistry) SetIntentForTenant(ctx context.Context, node NodeID, t
 		}
 	}
 
-	r.registry[node].TenantIntents[tenantID] = intent
+	existing, ok := r.registry[node].TenantIntents[tenantID]
+	if !ok {
+		r.registry[node].TenantIntents[tenantID] = &Intent{}
+	}
+
+	// a tenant can have several sites on one pop, so a push updates its own
+	// site rather than replacing the whole list
+	for _, site := range intent.Sites {
+		replaced := false
+		for i := range existing.Sites {
+			if existing.Sites[i].PortalID == site.PortalID {
+				existing.Sites[i] = site
+				replaced = true
+				break
+			}
+		}
+		if !replaced {
+			existing.Sites = append(existing.Sites, site)
+		}
+	}
+
+	// stable order so a repeated push does not churn the kv revision
+	sort.Slice(existing.Sites, func(i, j int) bool {
+		return existing.Sites[i].PortalID < existing.Sites[j].PortalID
+	})
+
+	existing.Gen = intent.Gen
 	r.mu.Unlock()
 
 	r.mu.RLock()
