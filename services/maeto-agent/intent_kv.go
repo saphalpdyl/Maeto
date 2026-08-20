@@ -34,8 +34,8 @@ type Site struct {
 }
 
 type Intent struct {
-	Gen   uint64  `json:"gen"`
-	Sites []*Site `json:"sites"`
+	Gen   uint64          `json:"gen"`
+	Sites map[string]Site `json:"sites"`
 }
 
 func (a *Agent) WatchIntents(ctx context.Context, js jetstream.JetStream) error {

@@ -39,12 +39,8 @@ func (r *Reconciler) Start(ctx context.Context) error {
 }
 
 func (r *Reconciler) Reconcile(ctx context.Context, intent *NodeIntent) error {
-	for _, cust := range intent.TenantIntents {
-		if cust.Gen > 1 {
-			r.logger.ErrorContext(ctx, "reconciliation against existing states is not yet supported", slog.Any("intent", intent))
-			continue
-		}
-		for _, site := range cust.Sites {
+	for _, tenant := range intent.TenantIntents {
+		for _, site := range tenant.Sites {
 			vrfTableName := fmt.Sprintf("vrf-tenant-%d", site.TenantID)
 
 			if err := r.dp.AddVRF(ctx, vrfTableName, site.TenantID+1000); err != nil {

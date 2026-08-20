@@ -6,7 +6,6 @@ package controlplane
 import (
 	"context"
 	"fmt"
-	"sort"
 	"sync"
 )
 
@@ -28,8 +27,21 @@ type NodeIntent struct {
 }
 
 type Intent struct {
-	Gen   uint64 `json:"gen"`
-	Sites []Site `json:"sites"`
+	Gen   uint64          `json:"gen"`
+	Sites map[string]Site `json:"sites"`
+}
+
+func (n *NodeIntent) clone() NodeIntent {
+	out := NodeIntent{NodeID: n.NodeID, TenantIntents: make(map[int]*Intent, len(n.TenantIntents))}
+	for tenantID, intent := range n.TenantIntents {
+		sites := make(map[string]Site, len(intent.Sites))
+		for portalID, site := range intent.Sites {
+			sites[portalID] = site
+		}
+		out.TenantIntents[tenantID] = &Intent{Gen: intent.Gen, Sites: sites}
+	}
+
+	return out
 }
 
 func NewServiceRegistry(config *ServiceRegistryConfig, intentPublisher *IntentPublisher) *ServiceRegistry {
@@ -40,49 +52,28 @@ func NewServiceRegistry(config *ServiceRegistryConfig, intentPublisher *IntentPu
 	}
 }
 
-func (r *ServiceRegistry) SetIntentForTenant(ctx context.Context, node NodeID, tenantID int, intent *Intent) error {
+func (r *ServiceRegistry) UpsertSite(ctx context.Context, node NodeID, tenantID int, site Site) error {
 	r.mu.Lock()
 
-	if _, exists := r.registry[node]; !exists {
-		r.registry[node] = &NodeIntent{
-			NodeID:        node,
-			TenantIntents: make(map[int]*Intent),
-		}
-	}
-
-	existing, ok := r.registry[node].TenantIntents[tenantID]
+	nodeIntent, ok := r.registry[node]
 	if !ok {
-		r.registry[node].TenantIntents[tenantID] = &Intent{}
+		nodeIntent = &NodeIntent{NodeID: node, TenantIntents: make(map[int]*Intent)}
+		r.registry[node] = nodeIntent
 	}
 
-	// a tenant can have several sites on one pop, so a push updates its own
-	// site rather than replacing the whole list
-	for _, site := range intent.Sites {
-		replaced := false
-		for i := range existing.Sites {
-			if existing.Sites[i].PortalID == site.PortalID {
-				existing.Sites[i] = site
-				replaced = true
-				break
-			}
-		}
-		if !replaced {
-			existing.Sites = append(existing.Sites, site)
-		}
+	intent, ok := nodeIntent.TenantIntents[tenantID]
+	if !ok {
+		intent = &Intent{Sites: make(map[string]Site)}
+		nodeIntent.TenantIntents[tenantID] = intent
 	}
 
-	// stable order so a repeated push does not churn the kv revision
-	sort.Slice(existing.Sites, func(i, j int) bool {
-		return existing.Sites[i].PortalID < existing.Sites[j].PortalID
-	})
+	intent.Sites[site.PortalID] = site
+	intent.Gen++
 
-	existing.Gen = intent.Gen
+	snapshot := nodeIntent.clone()
 	r.mu.Unlock()
 
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	_, err := r.publisher.Publish(ctx, node, *r.registry[node])
+	_, err := r.publisher.Publish(ctx, node, snapshot)
 
 	return err
 }
@@ -96,7 +87,7 @@ func (r *ServiceRegistry) Restore(ctx context.Context) error {
 	r.mu.RLock()
 	intents := make([]NodeIntent, 0, len(r.registry))
 	for _, intent := range r.registry {
-		intents = append(intents, *intent)
+		intents = append(intents, intent.clone())
 	}
 	r.mu.RUnlock()
 

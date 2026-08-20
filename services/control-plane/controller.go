@@ -260,10 +260,7 @@ func (c *Controller) setupPushTunnelInitiate(ctx context.Context) error {
 		siteCopy := *site
 		siteCopy.IfID = req.IfID
 
-		err := c.serviceRegistry.SetIntentForTenant(ctx, NodeID(req.NodeID), tenant.ID, &Intent{
-			Gen:   1,
-			Sites: []Site{siteCopy},
-		})
+		err := c.serviceRegistry.UpsertSite(ctx, NodeID(req.NodeID), tenant.ID, siteCopy)
 		if err != nil {
 			c.logger.ErrorContext(ctx, "failed to set intent for tenant", log.Err(err))
 			errResponse, err := json.Marshal(controlapi.PushTunnelInitiateResponse{Ok: false})
