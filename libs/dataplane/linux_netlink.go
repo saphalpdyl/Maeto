@@ -1,4 +1,4 @@
-package maetoagent
+package dataplane
 
 import (
 	"context"
@@ -13,20 +13,20 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-var _ Dataplane = (*LinuxNetlinkDataplane)(nil)
+var _ Dataplane = (*LinuxNetlink)(nil)
 
 // metric for the VRF catch-all, kept as a number rather than the shell string
 const vrfUnreachableMetricValue = 4278198272
 
 const vrfStrictModePath = "/proc/sys/net/vrf/strict_mode"
 
-type LinuxNetlinkDataplane struct{}
+type LinuxNetlink struct{}
 
-func NewLinuxNetlinkDataplane() *LinuxNetlinkDataplane {
-	return &LinuxNetlinkDataplane{}
+func NewLinuxNetlink() *LinuxNetlink {
+	return &LinuxNetlink{}
 }
 
-func (nl *LinuxNetlinkDataplane) AddVRF(_ context.Context, tableName string, tableId int) error {
+func (nl *LinuxNetlink) AddVRF(_ context.Context, tableName string, tableId int) error {
 	vrf := &netlink.Vrf{
 		LinkAttrs: netlink.LinkAttrs{Name: tableName},
 		Table:     uint32(tableId), // #nosec G115 -- table ids are small positive ints
@@ -83,7 +83,7 @@ func (nl *LinuxNetlinkDataplane) AddVRF(_ context.Context, tableName string, tab
 	return nil
 }
 
-func (nl *LinuxNetlinkDataplane) InsertXFRMInterface(_ context.Context, interfaceName string, underLayIface string, ifID uint32, vrfTableName string) error {
+func (nl *LinuxNetlink) InsertXFRMInterface(_ context.Context, interfaceName string, underLayIface string, ifID uint32, vrfTableName string) error {
 	underlay, err := netlink.LinkByName(underLayIface)
 	if err != nil {
 		return fmt.Errorf("lookup underlay %s: %w", underLayIface, err)
@@ -143,7 +143,7 @@ func (nl *LinuxNetlinkDataplane) InsertXFRMInterface(_ context.Context, interfac
 	return nil
 }
 
-func (nl *LinuxNetlinkDataplane) InsertReturnPrefix(_ context.Context, tunnelIface string, vrfTableName string, prefix netip.Prefix) error {
+func (nl *LinuxNetlink) InsertReturnPrefix(_ context.Context, tunnelIface string, vrfTableName string, prefix netip.Prefix) error {
 	vrfLink, err := netlink.LinkByName(vrfTableName)
 	if err != nil {
 		return fmt.Errorf("lookup vrf %s: %w", vrfTableName, err)
@@ -184,7 +184,7 @@ func (nl *LinuxNetlinkDataplane) InsertReturnPrefix(_ context.Context, tunnelIfa
 
 // nexthop objects (RTM_NEWNEXTHOP) have no binding in vishvananda/netlink, so
 // these two stay on iproute2. `replace` makes both idempotent already.
-func (nl *LinuxNetlinkDataplane) UpsertPolicy(ctx context.Context, nhid, dtsid, vrfTableId, vrfTableName string, sids []string) error {
+func (nl *LinuxNetlink) UpsertPolicy(ctx context.Context, nhid, dtsid, vrfTableId, vrfTableName string, sids []string) error {
 	segs := append(append([]string{}, sids...), dtsid)
 
 	if err := run(ctx, "ip", "-6", "nexthop", "replace", "id", nhid,
@@ -197,7 +197,7 @@ func (nl *LinuxNetlinkDataplane) UpsertPolicy(ctx context.Context, nhid, dtsid, 
 	return nil
 }
 
-func (nl *LinuxNetlinkDataplane) UpsertRouteToPolicy(ctx context.Context, dest, vrfTableId, nhid string) error {
+func (nl *LinuxNetlink) UpsertRouteToPolicy(ctx context.Context, dest, vrfTableId, nhid string) error {
 	if err := run(ctx, "ip", "-6", "route", "replace", dest,
 		"table", vrfTableId, "nhid", nhid); err != nil {
 		return fmt.Errorf("upsert route %s -> nhid %s in table %s: %w", dest, nhid, vrfTableId, err)
@@ -206,7 +206,7 @@ func (nl *LinuxNetlinkDataplane) UpsertRouteToPolicy(ctx context.Context, dest, 
 	return nil
 }
 
-func (nl *LinuxNetlinkDataplane) GetDefaultRouteAndDev(_ context.Context) (string, string, error) {
+func (nl *LinuxNetlink) GetDefaultRouteAndDev(_ context.Context) (string, string, error) {
 	routes, err := netlink.RouteListFiltered(netlink.FAMILY_V6,
 		&netlink.Route{Dst: nil}, netlink.RT_FILTER_DST)
 	if err != nil {

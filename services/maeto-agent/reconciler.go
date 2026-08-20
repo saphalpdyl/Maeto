@@ -5,18 +5,19 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/saphalpdyl/maeto/libs/dataplane"
 	"github.com/saphalpdyl/maeto/services/maeto-agent/log"
 )
 
 type Reconciler struct {
-	dp Dataplane
+	dp dataplane.Dataplane
 
 	intentFeed <-chan *NodeIntent
 
 	logger *slog.Logger
 }
 
-func NewReconciler(dp Dataplane, logger *slog.Logger, intentFeed <-chan *NodeIntent) *Reconciler {
+func NewReconciler(dp dataplane.Dataplane, logger *slog.Logger, intentFeed <-chan *NodeIntent) *Reconciler {
 	return &Reconciler{
 		dp:         dp,
 		intentFeed: intentFeed,

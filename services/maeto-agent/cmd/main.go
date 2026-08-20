@@ -12,6 +12,7 @@ import (
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 
+	"github.com/saphalpdyl/maeto/libs/dataplane"
 	"github.com/saphalpdyl/maeto/libs/telemetry"
 	maetoagent "github.com/saphalpdyl/maeto/services/maeto-agent"
 	"github.com/saphalpdyl/maeto/services/maeto-agent/log"
@@ -87,7 +88,7 @@ func main() {
 	}()
 
 	// TODO: Change to VPP later
-	linuxDataplane := maetoagent.NewLinuxNetlinkDataplane()
+	linuxDataplane := dataplane.NewLinuxNetlink()
 	agent := maetoagent.NewAgent(node, js, logger.With(log.Domain(log.DomainAgentLifecycle)), linuxDataplane)
 	agent.Run(ctx)
 }

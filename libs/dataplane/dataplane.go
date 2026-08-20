@@ -1,12 +1,12 @@
-package maetoagent
+package dataplane
 
 import (
 	"context"
 	"net/netip"
 )
 
-// Bare-minimum interface for data plane.
-// Initial versions will use linux kernel as the dataplane by shelling out
+// Bare-minimum interface for data plane. LinuxNetlink is the default;
+// LinuxShell is the original iproute2 implementation kept for comparison.
 type Dataplane interface {
 	AddVRF(ctx context.Context, tableName string, tableId int) error
 	InsertXFRMInterface(ctx context.Context, interfaceName string, underLayIface string, ifID uint32, vrfTableName string) error

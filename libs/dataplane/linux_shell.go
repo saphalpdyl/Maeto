@@ -1,4 +1,4 @@
-package maetoagent
+package dataplane
 
 import (
 	"context"
@@ -10,20 +10,20 @@ import (
 
 const vrfUnreachableMetric = "4278198272"
 
-var _ Dataplane = (*LinuxShellDataplane)(nil)
+var _ Dataplane = (*LinuxShell)(nil)
 
 type DefaultRouteOutput struct {
 	Gateway string `json:"gateway"`
 	Dev     string `json:"dev"`
 }
 
-type LinuxShellDataplane struct{}
+type LinuxShell struct{}
 
-func NewLinuxShellDataplane() *LinuxShellDataplane {
-	return &LinuxShellDataplane{}
+func NewLinuxShell() *LinuxShell {
+	return &LinuxShell{}
 }
 
-func (ls *LinuxShellDataplane) AddVRF(ctx context.Context, tableName string, tableId int) (err error) {
+func (ls *LinuxShell) AddVRF(ctx context.Context, tableName string, tableId int) (err error) {
 	if err := run(ctx, "ip", "link", "add", tableName, "type", "vrf", "table", fmt.Sprintf("%d", tableId)); err != nil {
 		return fmt.Errorf("create vrf device: %w", err)
 	}
@@ -49,7 +49,7 @@ func (ls *LinuxShellDataplane) AddVRF(ctx context.Context, tableName string, tab
 	return nil
 }
 
-func (ls *LinuxShellDataplane) InsertXFRMInterface(ctx context.Context, interfaceName string, underLayIface string, ifID uint32, vrfTableName string) error {
+func (ls *LinuxShell) InsertXFRMInterface(ctx context.Context, interfaceName string, underLayIface string, ifID uint32, vrfTableName string) error {
 	// ip link add ipsec1 type xfrm dev eth1 if_id 1
 	// ip link set ipsec1 master vrf-tenant-1
 	// ip link set ipsec1 up
@@ -69,7 +69,7 @@ func (ls *LinuxShellDataplane) InsertXFRMInterface(ctx context.Context, interfac
 	return nil
 }
 
-func (ls *LinuxShellDataplane) InsertReturnPrefix(ctx context.Context, tunnelIface string, vrfTableName string, prefix netip.Prefix) error {
+func (ls *LinuxShell) InsertReturnPrefix(ctx context.Context, tunnelIface string, vrfTableName string, prefix netip.Prefix) error {
 	// ip -6 route replace fd7a:3921:e7:1::/64 dev xfrm-231-1 vrf vrf-tenant-231
 
 	if err := run(ctx, "ip", "-6", "route", "replace", prefix.String(), "dev", tunnelIface, "vrf", vrfTableName); err != nil {
@@ -79,7 +79,7 @@ func (ls *LinuxShellDataplane) InsertReturnPrefix(ctx context.Context, tunnelIfa
 	return nil
 }
 
-func (ls *LinuxShellDataplane) UpsertPolicy(ctx context.Context, nhid string, dtsid string, vrfTableId string, vrfTableName string, sids []string) error {
+func (ls *LinuxShell) UpsertPolicy(ctx context.Context, nhid string, dtsid string, vrfTableId string, vrfTableName string, sids []string) error {
 	segs := append(append([]string{}, sids...), dtsid)
 
 	if err := run(ctx, "ip", "-6", "nexthop", "replace", "id", nhid,
@@ -92,7 +92,7 @@ func (ls *LinuxShellDataplane) UpsertPolicy(ctx context.Context, nhid string, dt
 	return nil
 }
 
-func (ls *LinuxShellDataplane) UpsertRouteToPolicy(ctx context.Context, dest string, vrfTableId string, nhid string) error {
+func (ls *LinuxShell) UpsertRouteToPolicy(ctx context.Context, dest string, vrfTableId string, nhid string) error {
 	if err := run(ctx, "ip", "-6", "route", "replace", dest,
 		"table", vrfTableId, "nhid", nhid); err != nil {
 		return fmt.Errorf("upsert route %s -> nhid %s in table %s: %w", dest, nhid, vrfTableId, err)
@@ -101,7 +101,7 @@ func (ls *LinuxShellDataplane) UpsertRouteToPolicy(ctx context.Context, dest str
 	return nil
 }
 
-func (ls *LinuxShellDataplane) GetDefaultRouteAndDev(ctx context.Context) (string, string, error) {
+func (ls *LinuxShell) GetDefaultRouteAndDev(ctx context.Context) (string, string, error) {
 	rawOutput, err := runWithOutput(ctx, "ip", "-6", "-j", "route", "show", "default")
 	if err != nil {
 		return "", "", fmt.Errorf("failed to get ip route default: %w", err)

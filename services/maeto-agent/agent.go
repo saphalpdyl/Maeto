@@ -13,6 +13,7 @@ import (
 	"github.com/strongswan/govici/vici"
 
 	"github.com/saphalpdyl/maeto/libs/controlapi"
+	"github.com/saphalpdyl/maeto/libs/dataplane"
 	"github.com/saphalpdyl/maeto/libs/swan"
 	"github.com/saphalpdyl/maeto/services/maeto-agent/log"
 )
@@ -22,13 +23,13 @@ type Agent struct {
 	node       *Node
 	logger     *slog.Logger
 	reconciler *Reconciler
-	dp         Dataplane // owned primarily by the Reconciler
+	dp         dataplane.Dataplane // owned primarily by the Reconciler
 
 	// Intents pushed to by agent.WatchIntents (intent_kv.go) and read by Reconciler (reconciler.go)
 	intentFeed chan *NodeIntent
 }
 
-func NewAgent(node *Node, js jetstream.JetStream, logger *slog.Logger, dp Dataplane) *Agent {
+func NewAgent(node *Node, js jetstream.JetStream, logger *slog.Logger, dp dataplane.Dataplane) *Agent {
 	intentFeed := make(chan *NodeIntent, 32)
 	reconciler := NewReconciler(dp, logger.With(log.Domain(log.DomainReconciler)), intentFeed)
 

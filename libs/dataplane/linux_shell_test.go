@@ -1,9 +1,9 @@
-package maetoagent
+package dataplane
 
 import "testing"
 
 func Test_GetDefaultRouteAndDev(t *testing.T) {
-	dp := NewLinuxShellDataplane()
+	dp := NewLinuxShell()
 
 	route, dev, err := dp.GetDefaultRouteAndDev(t.Context())
 	if err != nil {
