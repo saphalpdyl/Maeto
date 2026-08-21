@@ -43,21 +43,40 @@ func (r *Reconciler) Reconcile(ctx context.Context, intent *NodeIntent) error {
 	for _, tenant := range intent.TenantIntents {
 		for _, site := range tenant.Sites {
 			vrfTableName := fmt.Sprintf("vrf-tenant-%d", site.TenantID)
+			vrfTableID := site.TenantID + 1000
 
-			if err := r.dp.AddVRF(ctx, vrfTableName, site.TenantID+1000); err != nil {
+			if err := r.dp.UpsertVRF(vrfTableName, vrfTableID); err != nil {
 				r.logger.ErrorContext(ctx, "failed to add VRF", log.Err(err))
 				continue
 			}
 			r.logger.InfoContext(ctx, "added VRF", slog.String("vrfTableName", vrfTableName), slog.Int("tenantID", site.TenantID))
 
 			tunnelIface := fmt.Sprintf("xfrm-%d-%d", site.TenantID, site.IfID)
-			if err := r.dp.InsertXFRMInterface(ctx, tunnelIface, "eth1", site.IfID, vrfTableName); err != nil {
+			vrfLinks, err := r.dp.GetLinksByType("vrf")
+			if err != nil {
+				r.logger.ErrorContext(ctx, "failed to list vrf links", log.Err(err))
+				continue
+			}
+
+			masterIndex := -1
+			for _, l := range vrfLinks {
+				if l.Name == vrfTableName {
+					masterIndex = l.Index
+					break
+				}
+			}
+			if masterIndex == -1 {
+				r.logger.ErrorContext(ctx, "vrf link not found after upsert", slog.String("vrfTableName", vrfTableName))
+				continue
+			}
+
+			if err := r.dp.InsertXFRMInterface(tunnelIface, "eth1", site.IfID, &masterIndex); err != nil {
 				r.logger.ErrorContext(ctx, "failed to insert xfrm interface", log.Err(err))
 				continue
 			}
 			r.logger.InfoContext(ctx, "inserted XFRM interface", slog.String("interfaceName", tunnelIface), slog.String("vrfTableName", vrfTableName))
 
-			if err := r.dp.InsertReturnPrefix(ctx, tunnelIface, vrfTableName, site.Prefix); err != nil {
+			if err := r.dp.InsertPrefixRoute(tunnelIface, vrfTableID, site.Prefix); err != nil {
 				r.logger.ErrorContext(ctx, "failed to insert return prefix", log.Err(err))
 				continue
 			}
