@@ -109,25 +109,6 @@ func NewController(
 func (c *Controller) Start(ctx context.Context) {
 	c.logger.InfoContext(ctx, "controller starting", log.ListenAddress(c.config.ListenAddress))
 
-	// Load intents for PoP
-	c.serviceRegistry.mu.Lock()
-	for _, node := range c.inventory.Nodes() {
-		intent := dataplane.PEIntent{
-			NodeID:  string(node.ID),
-			Tenants: make(map[string]map[string]dataplane.PE_PortalIntent),
-		}
-
-		// TODO: Later fetch from the database instead
-		c.serviceRegistry.registry[string(node.ID)] = &dataplane.NodeIntent{
-			NodeType:   dataplane.NodeTypePE,
-			Intent:     &intent,
-			Timestamp:  time.Now(),
-			Generation: 1,
-			Version:    0,
-		}
-	}
-	c.serviceRegistry.mu.Unlock()
-
 	c.js.Conn().SetReconnectHandler(func(_ *nats.Conn) {
 		c.logger.WarnContext(ctx, "nats reconnected, restoring jetstream state",
 			log.Domain(log.DomainControlPlaneLifecycle),
@@ -275,94 +256,20 @@ func (c *Controller) setupPortalAuthEndpoint(ctx context.Context) error {
 // a new intent to the CPE
 func (c *Controller) setupCPETunnelUpdate(ctx context.Context) error {
 	_, err := c.js.Conn().Subscribe(controlapi.SubjectCPETunnelUpdate, func(msg *nats.Msg) {
-		var req controlapi.CPETunnelUpdateRequest
-		if err := json.Unmarshal(msg.Data, &req); err != nil {
-			c.logger.ErrorContext(ctx, "failed to unmarshal request", log.Err(err))
-			return
-		}
 
-		// Get tenant
-		site, exists := c.tenants.SiteByPortalID(req.PortalID)
-		if !exists {
-			c.logger.ErrorContext(ctx, "portal identity not found")
-			errResponse, err := json.Marshal(controlapi.TunnelUpdateResponse{Ok: false})
-			if err != nil {
-				c.logger.ErrorContext(ctx, "failed to marshal response", log.Err(err))
-				return
-			}
-			err = msg.Respond(errResponse)
-			if err != nil {
-				c.logger.ErrorContext(ctx, "failed to send response", log.Err(err))
-			}
-			return
-		}
-
-		tenant, exists := c.tenants.Tenant(site.TenantID)
-		if !exists {
-			c.logger.ErrorContext(ctx, "tenant not found")
-			errResponse, err := json.Marshal(controlapi.TunnelUpdateResponse{Ok: false})
-			if err != nil {
-				c.logger.ErrorContext(ctx, "failed to marshal response", log.Err(err))
-				return
-			}
-			err = msg.Respond(errResponse)
-			if err != nil {
-				c.logger.ErrorContext(ctx, "failed to send response", log.Err(err))
-			}
-			return
-		}
-
-		attachNode, exists := c.inventory.Node(NodeID(site.Attach))
-		if !exists {
-			c.logger.ErrorContext(ctx, "attach node not found in inventory", log.NodeID(site.Attach))
-			return
-		}
-
-		c.serviceRegistry.mu.Lock()
-		current, exists := c.serviceRegistry.registry[req.PortalID]
-		if !exists {
-			cpeIntent := dataplane.CPEIntent{
-				TunnelInterfaceID:    req.IfID,
-				TunnelPE:             site.AttachNode,
-				TunnelPEEndpointAddr: attachNode.Access.Address.Addr(),
-				TenantID:             fmt.Sprintf("%d", site.TenantID),
-				TenantPrefix:         tenant.Allocation,
-				SitePrefix:           site.Prefix,
-			}
-
-			c.serviceRegistry.registry[req.PortalID] = &dataplane.NodeIntent{
-				NodeType:   dataplane.NodeTypeCPE,
-				Intent:     &cpeIntent,
-				Timestamp:  time.Now(),
-				Generation: 0,
-				Version:    1,
-			}
-		} else {
-			intent, ok := current.Intent.(*dataplane.CPEIntent)
-			if !ok {
-				c.logger.ErrorContext(ctx, "registry holds a non-cpe intent for a portal",
-					slog.String("portal_id", req.PortalID))
-				c.serviceRegistry.mu.Unlock()
-
-				return
-			}
-
-			intent.TunnelInterfaceID = req.IfID
-			intent.SitePrefix = site.Prefix
-			intent.TunnelPE = site.AttachNode
-			intent.TenantPrefix = tenant.Allocation
-			intent.TenantID = fmt.Sprintf("%d", site.TenantID)
-		}
-
-		current.Generation++
-		current.Timestamp = time.Now()
-		c.serviceRegistry.mu.Unlock()
-
-		// TODO: Remember this race condition that might occur
-		_, err := c.serviceRegistry.publisher.Publish(ctx, intentkv.Key(intentkv.PrefixCPE, string(req.PortalID)), current)
+		err := c.handleCPETunnelUpdate(ctx, msg.Data)
 		if err != nil {
-			c.logger.ErrorContext(ctx, "failed to publish new intent to the intent KV")
+			c.logger.ErrorContext(ctx, "failed to generate new intent")
+		}
+
+		successResponse, err := json.Marshal(controlapi.TunnelUpdateResponse{Ok: err == nil})
+		if err != nil {
+			c.logger.ErrorContext(ctx, "failed to marshal response", log.Err(err))
 			return
+		}
+		err = msg.Respond(successResponse)
+		if err != nil {
+			c.logger.ErrorContext(ctx, "failed to send response", log.Err(err))
 		}
 	})
 
@@ -374,69 +281,61 @@ func (c *Controller) setupCPETunnelUpdate(ctx context.Context) error {
 	return nil
 }
 
+func (c *Controller) handleCPETunnelUpdate(ctx context.Context, data []byte) error {
+	var req controlapi.CPETunnelUpdateRequest
+	if err := json.Unmarshal(data, &req); err != nil {
+		c.logger.ErrorContext(ctx, "failed to unmarshal request", log.Err(err))
+		return fmt.Errorf("failed to unmarshal request")
+	}
+
+	// Get tenant
+	site, exists := c.tenants.SiteByPortalID(req.PortalID)
+	if !exists {
+		return fmt.Errorf("portal identity not found")
+	}
+
+	tenant, exists := c.tenants.Tenant(site.TenantID)
+	if !exists {
+		return fmt.Errorf("tenant identity not found")
+	}
+
+	attachNode, exists := c.inventory.Node(NodeID(site.Attach))
+	if !exists {
+		return fmt.Errorf("attach node not found in inventory")
+	}
+
+	cpeIntent := dataplane.CPEIntent{
+		TunnelInterfaceID:    req.IfID,
+		TunnelPE:             site.AttachNode,
+		TunnelPEEndpointAddr: attachNode.Access.Address.Addr(),
+		TenantID:             fmt.Sprintf("%d", site.TenantID),
+		TenantPrefix:         tenant.Allocation,
+		SitePrefix:           site.Prefix,
+		PortalID:             req.PortalID,
+	}
+
+	err := c.serviceRegistry.UpsertCPEIntentForSite(
+		ctx, fmt.Sprintf("%d", tenant.ID), req.PortalID, &cpeIntent,
+	)
+	if err != nil {
+		c.logger.ErrorContext(ctx, "failed to upsert CPE intent for site", log.Err(err))
+		return err
+	}
+
+	return nil
+}
+
 // This endpoint is basically the same as CPETunnelUpdate but for PEs
 // The endpoints are separated for the future where we have different NATS instances
 // for owned and unowned boundaries.
 func (c *Controller) setupPETunnelUpdate(ctx context.Context) error {
 	_, err := c.js.Conn().Subscribe(controlapi.SubjectPETunnelUpdate, func(msg *nats.Msg) {
-		var req controlapi.PETunnelUpdateRequest
-		if err := json.Unmarshal(msg.Data, &req); err != nil {
-			c.logger.ErrorContext(ctx, "failed to unmarshal request", log.Err(err))
-			return
-		}
-
-		// Get tenant
-		site, exists := c.tenants.SiteByPortalID(req.PortalID)
-		if !exists {
-			c.logger.ErrorContext(ctx, "portal identity not found")
-			errResponse, err := json.Marshal(controlapi.TunnelUpdateResponse{Ok: false})
-			if err != nil {
-				c.logger.ErrorContext(ctx, "failed to marshal response", log.Err(err))
-				return
-			}
-			err = msg.Respond(errResponse)
-			if err != nil {
-				c.logger.ErrorContext(ctx, "failed to send response", log.Err(err))
-			}
-			return
-		}
-
-		_, exists = c.tenants.Tenant(site.TenantID)
-		if !exists {
-			c.logger.ErrorContext(ctx, "tenant not found")
-			errResponse, err := json.Marshal(controlapi.TunnelUpdateResponse{Ok: false})
-			if err != nil {
-				c.logger.ErrorContext(ctx, "failed to marshal response", log.Err(err))
-				return
-			}
-			err = msg.Respond(errResponse)
-			if err != nil {
-				c.logger.ErrorContext(ctx, "failed to send response", log.Err(err))
-			}
-			return
-		}
-
-		_, exists = c.inventory.Node(NodeID(site.Attach))
-		if !exists {
-			c.logger.ErrorContext(ctx, "attach node not found in inventory", log.NodeID(site.Attach))
-			return
-		}
-
-		err := c.serviceRegistry.UpsertSite(ctx, req.NodeID, dataplane.NodeTypePE)
+		err := c.handlePETunnelUpdate(ctx, msg.Data)
 		if err != nil {
-			c.logger.ErrorContext(ctx, "failed to set intent for tenant", log.Err(err))
-			errResponse, err := json.Marshal(controlapi.TunnelUpdateResponse{Ok: false})
-			if err != nil {
-				c.logger.ErrorContext(ctx, "failed to marshal response", log.Err(err))
-				return
-			}
-			err = msg.Respond(errResponse)
-			if err != nil {
-				c.logger.ErrorContext(ctx, "failed to send response", log.Err(err))
-			}
+			c.logger.ErrorContext(ctx, "failed to generate new intent")
 		}
 
-		successResponse, err := json.Marshal(controlapi.TunnelUpdateResponse{Ok: true})
+		successResponse, err := json.Marshal(controlapi.TunnelUpdateResponse{Ok: err == nil})
 		if err != nil {
 			c.logger.ErrorContext(ctx, "failed to marshal response", log.Err(err))
 			return
@@ -449,6 +348,47 @@ func (c *Controller) setupPETunnelUpdate(ctx context.Context) error {
 	if err != nil {
 		c.logger.ErrorContext(ctx, "failed to subscribe to maeto.control.push.tunnel.initiate", log.Err(err))
 		return err
+	}
+
+	return nil
+}
+
+func (c *Controller) handlePETunnelUpdate(ctx context.Context, data []byte) error {
+	var req controlapi.PETunnelUpdateRequest
+	if err := json.Unmarshal(data, &req); err != nil {
+		c.logger.ErrorContext(ctx, "failed to unmarshal request", log.Err(err))
+		return fmt.Errorf("failed to unmarshal request: %w", err)
+	}
+
+	// Get tenant
+	site, exists := c.tenants.SiteByPortalID(req.PortalID)
+	if !exists {
+		return fmt.Errorf("portal identity not found")
+
+	}
+
+	tenant, exists := c.tenants.Tenant(site.TenantID)
+	if !exists {
+		return fmt.Errorf("tenant not found")
+	}
+
+	node, exists := c.inventory.Node(NodeID(site.Attach))
+	if !exists {
+		return fmt.Errorf("attach node not found in inventory")
+	}
+
+	peIntent := &dataplane.PE_PortalIntent{
+		HostFacingInterface: "eth1",
+		TunnelInterfaceID:   req.IfID,
+		SitePrefix:          site.Prefix,
+		TenantPrefix:        tenant.Allocation,
+	}
+
+	err := c.serviceRegistry.UpsertPEIntentForNode(
+		ctx, string(node.ID), fmt.Sprintf("%d", tenant.ID), req.PortalID, peIntent,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to set intent for tenant: %w", err)
 	}
 
 	return nil

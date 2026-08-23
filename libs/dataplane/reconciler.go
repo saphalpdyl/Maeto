@@ -8,7 +8,7 @@ import (
 	"net/netip"
 	"time"
 
-	"github.com/saphalpdyl/maeto/services/maeto-agent/log"
+	"github.com/saphalpdyl/maeto/libs/dataplane/log"
 	"golang.org/x/sys/unix"
 )
 
@@ -70,16 +70,66 @@ func (n *NodeIntent) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
+// Clone is on the interface so a new variant cannot forget to deep copy
+// whatever it holds.
 type Intent interface {
 	isIntent()
+	Clone() Intent
 }
 
 func (*CPEIntent) isIntent() {}
 func (*PEIntent) isIntent()  {}
 
+// Clone deep copies the intent so a publish can marshal outside the registry
+// lock without racing a concurrent mutation through the stored pointer.
+func (n *NodeIntent) Clone() *NodeIntent {
+	if n == nil {
+		return nil
+	}
+
+	out := *n
+	if n.Intent != nil {
+		out.Intent = n.Intent.Clone()
+	}
+
+	return &out
+}
+
+// every field is a value type, so the struct copy is the deep copy
+func (i *CPEIntent) Clone() Intent {
+	if i == nil {
+		return nil
+	}
+
+	out := *i
+
+	return &out
+}
+
+func (i *PEIntent) Clone() Intent {
+	if i == nil {
+		return nil
+	}
+
+	out := *i
+
+	// Tenants is two levels of map, and a struct copy would share both
+	out.Tenants = make(map[string]map[string]PE_PortalIntent, len(i.Tenants))
+	for tenantID, portals := range i.Tenants {
+		copied := make(map[string]PE_PortalIntent, len(portals))
+		for portalID, portal := range portals {
+			copied[portalID] = portal // PE_PortalIntent is all value types
+		}
+		out.Tenants[tenantID] = copied
+	}
+
+	return &out
+}
+
 // High-level intent instructions that get converted to dataplane instructions
 // by the reconciler
 type CPEIntent struct {
+	PortalID             string       `json:"portal_id"`
 	TunnelInterfaceID    uint32       `json:"tunnel_interface_id"`
 	TunnelPE             string       `json:"tunnel_pe"`
 	TunnelPEEndpointAddr netip.Addr   `json:"tunnel_pe_endpoint_addr"`
@@ -595,10 +645,15 @@ func (r *Reconciler) Reconcile(ctx context.Context, intent *NodeIntent) error {
 		}
 
 		if (len(result.Add) == 0) && (len(result.Remove) == 0) {
-			r.logger.InfoContext(ctx, fmt.Sprintf("converged on pass %d, where pass = 0 means first pass", pass))
+			r.logger.InfoContext(
+				ctx,
+				fmt.Sprintf("converged on pass %d, where pass = 0 means first pass", pass),
+				slog.Int("pass", pass),
+				slog.Int("desired", len(desired)),
+				slog.Int("current", len(current)),
+			)
 
 			r.current = intent
-
 			return nil // converged
 		}
 

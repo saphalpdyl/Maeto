@@ -38,16 +38,17 @@ func NewServiceRegistry(config *ServiceRegistryConfig, intentPublisher *intentkv
 	}
 }
 
-func (r *ServiceRegistry) UpsertPEIntentForNode(ctx context.Context, nodeID string, intent *dataplane.NodeIntent, intentInner *dataplane.PEIntent) error {
-	if intent.NodeType != dataplane.NodeTypePE {
-		return fmt.Errorf("trying to upsert non-PE intent in UpsertPEIntent")
-	}
+func (r *ServiceRegistry) UpsertPEIntentForNode(ctx context.Context, nodeID string, tenantID string, portalID string, intent *dataplane.PE_PortalIntent) error {
+	r.mu.Lock()
 
 	current, exists := r.registry[nodeID]
 	if !exists {
 		r.registry[nodeID] = &dataplane.NodeIntent{
-			NodeType:   dataplane.NodeTypePE,
-			Intent:     nil,
+			NodeType: dataplane.NodeTypePE,
+			Intent: &dataplane.PEIntent{
+				NodeID:  nodeID,
+				Tenants: make(map[string]map[string]dataplane.PE_PortalIntent),
+			},
 			Timestamp:  time.Now(),
 			Generation: 1,
 			Version:    1,
@@ -56,65 +57,87 @@ func (r *ServiceRegistry) UpsertPEIntentForNode(ctx context.Context, nodeID stri
 		current = r.registry[nodeID]
 	}
 
-	r.mu.Lock()
-	current.Intent = intentInner
+	peIntent, ok := current.Intent.(*dataplane.PEIntent)
+	if !ok {
+		r.logger.ErrorContext(ctx, "failed to cast Intent to PEIntent")
+		return fmt.Errorf("failed to cast Intent to PEIntent")
+	}
+
+	tenantIntent, exists := peIntent.Tenants[tenantID]
+	if !exists {
+		peIntent.Tenants[tenantID] = make(map[string]dataplane.PE_PortalIntent)
+		peIntent.Tenants[tenantID][portalID] = *intent
+	} else {
+		tenantIntent[portalID] = *intent
+	}
+
 	current.Timestamp = time.Now()
 	current.Generation++
+
+	snapshot := current.Clone()
+
 	r.mu.Unlock()
+
+	if _, err := r.publisher.Publish(ctx, intentkv.Key(intentkv.PrefixPE, nodeID), snapshot); err != nil {
+		return fmt.Errorf("publish pe intent for %s: %w", nodeID, err)
+	}
 
 	return nil
 }
 
-func (r *ServiceRegistry) UpsertSite(ctx context.Context, ID string, nodeType dataplane.NodeType) error {
-	// r.mu.Lock()
+func (r *ServiceRegistry) UpsertCPEIntentForSite(ctx context.Context, tenantID string, portalID string, intent *dataplane.CPEIntent) error {
+	r.mu.Lock()
+	current, exists := r.registry[portalID]
+	if !exists {
+		r.registry[portalID] = &dataplane.NodeIntent{
+			NodeType:   dataplane.NodeTypeCPE,
+			Intent:     intent,
+			Timestamp:  time.Now(),
+			Generation: 1,
+			Version:    1,
+		}
+	} else {
+		current.Intent = intent
+		current.Generation++
+		current.Timestamp = time.Now()
+	}
 
-	// nodeIntent, ok := r.registry[node]
-	// if !ok {
-	// 	nodeIntent = &dataplane.NodeIntent{
-	// 		NodeType:   "",
-	// 		Intent:     json.RawMessage{},
-	// 		Timestamp:  time.Time{},
-	// 		Generation: 0,
-	// 		Version:    0,
-	// 	}
-	// 	r.registry[node] = nodeIntent
-	// }
+	snapshot := current.Clone()
 
-	// intent, ok := nodeIntent.TenantIntents[tenantID]
-	// if !ok {
-	// 	intent = &Intent{Sites: make(map[string]Site)}
-	// 	nodeIntent.TenantIntents[tenantID] = intent
-	// }
+	r.mu.Unlock()
 
-	// intent.Sites[site.PortalID] = site
-	// intent.Gen++
-
-	// snapshot := nodeIntent.clone()
-	// r.mu.Unlock()
-
-	// _, err := r.publisher.Publish(ctx, intentkv.Key(intentkv.PrefixPE, string(node)), snapshot)
+	if _, err := r.publisher.Publish(ctx, intentkv.Key(intentkv.PrefixCPE, portalID), snapshot); err != nil {
+		return fmt.Errorf("failed to publish intent for portalID: %s, err = %w", portalID, err)
+	}
 
 	return nil
 }
 
 // Restore recreates the intent bucket and republishes every node's intent.
 func (r *ServiceRegistry) Restore(ctx context.Context) error {
-	// if err := r.publisher.Ensure(ctx); err != nil {
-	// 	return err
-	// }
+	if err := r.publisher.Ensure(ctx); err != nil {
+		return err
+	}
 
-	// r.mu.RLock()
-	// intents := make([]dataplane.NodeIntent, 0, len(r.registry))
-	// for _, intent := range r.registry {
-	// 	intents = append(intents, intent.clone())
-	// }
-	// r.mu.RUnlock()
+	r.mu.RLock()
+	intents := make([]dataplane.NodeIntent, 0, len(r.registry))
+	for _, intent := range r.registry {
+		intents = append(intents, *intent.Clone())
+	}
+	r.mu.RUnlock()
 
-	// for _, intent := range intents {
-	// 	if _, err := r.publisher.Publish(ctx, intentkv.Key(intentkv.PrefixPE, string(intent.NodeID)), intent); err != nil {
-	// 		return fmt.Errorf("republish intent for %s: %w", intent.NodeID, err)
-	// 	}
-	// }
+	for _, intent := range intents {
+		switch i := intent.Intent.(type) {
+		case *dataplane.CPEIntent:
+			if _, err := r.publisher.Publish(ctx, intentkv.Key(intentkv.PrefixCPE, i.PortalID), intent); err != nil {
+				return fmt.Errorf("republish intent for %s: %w", i.PortalID, err)
+			}
+		case *dataplane.PEIntent:
+			if _, err := r.publisher.Publish(ctx, intentkv.Key(intentkv.PrefixPE, i.NodeID), intent); err != nil {
+				return fmt.Errorf("republish intent for %s: %w", i.NodeID, err)
+			}
+		}
+	}
 
 	return nil
 }
