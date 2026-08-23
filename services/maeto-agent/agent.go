@@ -14,6 +14,7 @@ import (
 
 	"github.com/saphalpdyl/maeto/libs/controlapi"
 	"github.com/saphalpdyl/maeto/libs/dataplane"
+	"github.com/saphalpdyl/maeto/libs/intentkv"
 	"github.com/saphalpdyl/maeto/libs/swan"
 	"github.com/saphalpdyl/maeto/services/maeto-agent/log"
 )
@@ -22,16 +23,16 @@ type Agent struct {
 	js         jetstream.JetStream
 	node       *Node
 	logger     *slog.Logger
-	reconciler *Reconciler
+	reconciler *dataplane.Reconciler
 	dp         dataplane.Dataplane // owned primarily by the Reconciler
 
-	// Intents pushed to by agent.WatchIntents (intent_kv.go) and read by Reconciler (reconciler.go)
-	intentFeed chan *NodeIntent
+	// Intents pushed to by the intentkv watcher and read by the Reconciler
+	intentFeed chan *dataplane.NodeIntent
 }
 
 func NewAgent(node *Node, js jetstream.JetStream, logger *slog.Logger, dp dataplane.Dataplane) *Agent {
-	intentFeed := make(chan *NodeIntent, 32)
-	reconciler := NewReconciler(dp, logger.With(log.Domain(log.DomainReconciler)), intentFeed)
+	intentFeed := make(chan *dataplane.NodeIntent, 32)
+	reconciler := dataplane.NewReconciler(dp, dataplane.NodeTypePE, logger.With(log.Domain(log.DomainReconciler)), intentFeed)
 
 	return &Agent{
 		js:         js,
@@ -67,7 +68,8 @@ func (a *Agent) Run(ctx context.Context) {
 	go a.reconciler.Start(ctx) // nolint:errcheck
 
 	go func() {
-		if err := a.WatchIntents(ctx, a.js); err != nil {
+		if err := intentkv.Watch(ctx, a.js, a.logger.With(log.Domain(log.DomainControlPlane)),
+			intentkv.Key(intentkv.PrefixPE, a.node.ID), a.intentFeed); err != nil {
 			a.logger.ErrorContext(ctx, "intent watch failed",
 				log.Domain(log.DomainControlPlane),
 				slog.String("intent_key", a.node.IntentKey()),
@@ -138,7 +140,7 @@ func (a *Agent) Run(ctx context.Context) {
 				// 	The control plane then pushes to ServiceRegistry
 				// 	and delivers a new NodeIntent to reconcile on.
 				// So connection -> push_to_controller -> new intent -> reconcile -> FIB updated
-				var req controlapi.PushTunnelInitiateRequest
+				var req controlapi.PETunnelUpdateRequest
 				req.PortalID = portalID
 				req.IfID = ifID
 				req.NodeID = a.node.ID
@@ -149,13 +151,13 @@ func (a *Agent) Run(ctx context.Context) {
 					continue
 				}
 
-				resp, err := a.js.Conn().Request(controlapi.SubjectPushTunnelInitiate, data, 5*time.Second)
+				resp, err := a.js.Conn().Request(controlapi.SubjectPETunnelUpdate, data, 5*time.Second)
 				if err != nil {
 					a.logger.ErrorContext(ctx, "failed to send push tunnel initiate request", log.Err(err))
 					continue
 				}
 
-				var pushResp controlapi.PushTunnelInitiateResponse
+				var pushResp controlapi.TunnelUpdateResponse
 				if err := json.Unmarshal(resp.Data, &pushResp); err != nil {
 					a.logger.ErrorContext(ctx, "failed to unmarshal push tunnel initiate response", log.Err(err))
 					continue

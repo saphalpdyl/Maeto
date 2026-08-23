@@ -30,7 +30,12 @@ type DataplaneRoute struct {
 }
 
 // Links represents VRF tables and XFRM interfaces for current implementation
-type DataplaneLink struct {
+type DataplaneLink interface {
+	Type() string
+	Attrs() *DataplaneLinkAttrs
+}
+
+type DataplaneLinkAttrs struct {
 	Index        int
 	MTU          int
 	TxQLen       int // Transmit Queue Length
@@ -45,7 +50,28 @@ type DataplaneLink struct {
 	NumRxQueues  int
 	Group        uint32
 	PermHWAddr   net.HardwareAddr
+	ParentIndex  int
+	MasterIndex  int
 }
+
+type DataplaneVRF struct {
+	DataplaneLinkAttrs
+	TableID uint32
+}
+
+func (d *DataplaneVRF) Type() string               { return "vrf" }
+func (d *DataplaneVRF) Attrs() *DataplaneLinkAttrs { return &d.DataplaneLinkAttrs }
+
+type DataplaneXFRM struct {
+	DataplaneLinkAttrs
+	IfID uint32
+}
+
+func (d *DataplaneXFRM) Type() string               { return "xfrm" }
+func (d *DataplaneXFRM) Attrs() *DataplaneLinkAttrs { return &d.DataplaneLinkAttrs }
+
+var _ DataplaneLink = (*DataplaneVRF)(nil)
+var _ DataplaneLink = (*DataplaneXFRM)(nil)
 
 // Bare-minimum interface for data plane. LinuxNetlink is the default;
 // LinuxShell is the original iproute2 implementation kept for comparison.
@@ -58,10 +84,11 @@ type Dataplane interface {
 	GetLinksByType(ifaceType string) ([]DataplaneLink, error)
 
 	// masterVRFIndex == nil means no vrf master, which is the cpe case
-	InsertXFRMInterface(interfaceName string, underLayIface string, ifID uint32, masterVRFIndex *int) error
+	InsertXFRMInterface(interfaceName string, underLayIface string, ifID uint32, masterVRFName *string) error
 	RemoveXFRMInterface(linkIndex int) error
 
 	// tableID names the table directly; unix.RT_TABLE_MAIN on a cpe
+	// TODO: Rename tunnelIface to just dev
 	InsertPrefixRoute(tunnelIface string, tableID int, prefix netip.Prefix) error
 	RemovePrefixRoute(prefix netip.Prefix, tableID int) error
 	GetPrefixRoutes() ([]DataplaneRoute, error)

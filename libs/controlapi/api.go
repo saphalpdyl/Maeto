@@ -2,7 +2,8 @@ package controlapi
 
 const SubjectPortalAuthIdentity = "maeto.control.portal.auth.identity"
 const SubjectHealthReady = "maeto.control.health.ready"
-const SubjectPushTunnelInitiate = "maeto.control.report.push_tunnel_initiate"
+const SubjectPETunnelUpdate = "maeto.control.report.pe.tunnel_update"
+const SubjectCPETunnelUpdate = "maeto.control.report.cpe.tunnel_update"
 
 type PortalAuthEndpointRequest struct {
 	PortalID string `json:"portal_id"`
@@ -16,12 +17,17 @@ type PortalAuthEndpointResponse struct {
 	AttachNodeAddr     string `json:"attach_node_addr"`
 }
 
-type PushTunnelInitiateRequest struct {
+type PETunnelUpdateRequest struct {
 	PortalID string `json:"portal_id"`
 	IfID     uint32 `json:"if_id"`
 	NodeID   string `json:"node_id"`
 }
 
-type PushTunnelInitiateResponse struct {
+type CPETunnelUpdateRequest struct {
+	PortalID string `json:"portal_id"`
+	IfID     uint32 `json:"if_id"`
+}
+
+type TunnelUpdateResponse struct {
 	Ok bool `json:"ok"`
 }

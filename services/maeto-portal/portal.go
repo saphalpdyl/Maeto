@@ -105,8 +105,6 @@ func (p *Portal) Run(ctx context.Context) error {
 		return err
 	}
 
-	// Install the interfaces
-
 	<-ctx.Done()
 
 	return p.shutdown(ctx)

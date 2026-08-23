@@ -9,6 +9,7 @@ type LogDomain string
 const (
 	DomainControlPlaneLifecycle LogDomain = "CONTROL_PLANE_LIFECYCLE"
 	DomainConfig                LogDomain = "CONFIG"
+	DomainServiceRegistry       LogDomain = "SERVICE_REGISTRY"
 )
 
 func Domain(v LogDomain) slog.Attr { return slog.String("domain", string(v)) }

@@ -267,7 +267,7 @@ func (l *LinuxNetlink) GetLinksByType(ifaceType string) ([]DataplaneLink, error)
 
 	for _, l := range links {
 		if l.Attrs().Group == MaetoLinkGroup && l.Type() == ifaceType {
-			maetoLinks = append(maetoLinks, DataplaneLink{
+			dpLinkAttrs := DataplaneLinkAttrs{
 				Index:        l.Attrs().Index,
 				MTU:          l.Attrs().MTU,
 				TxQLen:       l.Attrs().TxQLen,
@@ -282,7 +282,37 @@ func (l *LinuxNetlink) GetLinksByType(ifaceType string) ([]DataplaneLink, error)
 				NumRxQueues:  l.Attrs().NumRxQueues,
 				Group:        l.Attrs().Group,
 				PermHWAddr:   l.Attrs().PermHWAddr,
-			})
+				ParentIndex:  l.Attrs().ParentIndex,
+				MasterIndex:  l.Attrs().MasterIndex,
+			}
+
+			if l.Type() == "xfrm" {
+				l, ok := l.(*netlink.Xfrmi)
+				if !ok {
+					return nil, fmt.Errorf("got type == xfrm, couldn't parse to Xfrmi")
+				}
+
+				maetoLinks = append(maetoLinks, &DataplaneXFRM{
+					DataplaneLinkAttrs: dpLinkAttrs,
+					IfID:               l.Ifid,
+				})
+
+				continue
+			}
+
+			if l.Type() == "vrf" {
+				vrf, ok := l.(*netlink.Vrf)
+				if !ok {
+					return nil, fmt.Errorf("got type == vrf, couldn't parse to Vrf")
+				}
+
+				maetoLinks = append(maetoLinks, &DataplaneVRF{
+					DataplaneLinkAttrs: dpLinkAttrs,
+					TableID:            vrf.Table,
+				})
+
+				continue
+			}
 		}
 	}
 
@@ -299,7 +329,7 @@ func (l *LinuxNetlink) InsertPrefixRoute(tunnelIface string, tableID int, prefix
 
 	// a route in a vrf table pointing at an interface outside that vrf would
 	// install cleanly and blackhole, so check enslavement when there is a vrf
-	if tableID != unix.RT_TABLE_MAIN {
+	if (tableID != unix.RT_TABLE_MAIN) && (tableID != 0) {
 		vrf, err := vrfByTable(tableID)
 		if err != nil {
 			return err
@@ -343,7 +373,7 @@ func vrfByTable(tableID int) (*netlink.Vrf, error) {
 
 // InsertXFRMInterface implements [Dataplane].
 // masterVRFIndex == nil means no vrf master, which is the cpe case
-func (l *LinuxNetlink) InsertXFRMInterface(interfaceName string, underLayIface string, ifID uint32, masterVRFIndex *int) error {
+func (l *LinuxNetlink) InsertXFRMInterface(interfaceName string, underLayIface string, ifID uint32, masterVRFName *string) error {
 	underlay, err := netlink.LinkByName(underLayIface)
 	if err != nil {
 		return fmt.Errorf("lookup underlay interface %s: %w", underLayIface, err)
@@ -366,10 +396,10 @@ func (l *LinuxNetlink) InsertXFRMInterface(interfaceName string, underLayIface s
 		return fmt.Errorf("xfrm device %s already exists", interfaceName)
 	}
 
-	if masterVRFIndex != nil {
-		vrf, err := netlink.LinkByIndex(*masterVRFIndex)
+	if masterVRFName != nil {
+		vrf, err := netlink.LinkByName(*masterVRFName)
 		if err != nil {
-			return fmt.Errorf("lookup vrf at index %d: %w", *masterVRFIndex, err)
+			return fmt.Errorf("lookup vrf with name %s: %w", *masterVRFName, err)
 		}
 
 		if err := netlink.LinkSetMaster(xfrm, vrf); err != nil {
