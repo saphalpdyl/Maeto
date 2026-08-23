@@ -11,6 +11,8 @@ import (
 
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/saphalpdyl/maeto/libs/controlapi"
+	"github.com/saphalpdyl/maeto/libs/dataplane"
+	"github.com/saphalpdyl/maeto/libs/intentkv"
 	"github.com/saphalpdyl/maeto/libs/swan"
 	"github.com/saphalpdyl/maeto/services/maeto-portal/log"
 	"github.com/strongswan/govici/vici"
@@ -27,6 +29,10 @@ type Portal struct {
 
 	js jetstream.JetStream
 
+	// Intents pushed to by the intentkv watcher and read by the Reconciler
+	intentFeed chan *dataplane.NodeIntent
+	reconciler *dataplane.Reconciler
+
 	config PortalConfig
 	logger *slog.Logger
 }
@@ -35,13 +41,24 @@ func NewPortal(
 	instanceId string,
 	js jetstream.JetStream,
 	config PortalConfig,
+	dp dataplane.Dataplane,
 	logger *slog.Logger,
 ) *Portal {
+	intentFeed := make(chan *dataplane.NodeIntent, 32)
+	reconciler := dataplane.NewReconciler(
+		dp,
+		dataplane.NodeTypeCPE,
+		logger.With(log.Domain(log.DomainReconciler)),
+		intentFeed,
+	)
+
 	return &Portal{
 		InstanceId: instanceId,
 		config:     config,
 		logger:     logger,
 		js:         js,
+		reconciler: reconciler,
+		intentFeed: intentFeed,
 	}
 }
 
@@ -62,9 +79,75 @@ func (p *Portal) Run(ctx context.Context) error {
 	}
 	defer s.Close() // nolint:errcheck
 
-	if err := p.watchEvents(ctx, s); err != nil {
+	eventChan, err := p.watchEvents(ctx, s)
+	if err != nil {
+		p.logger.ErrorContext(ctx, "failed to listen to vici child-updown event", log.Err(err))
 		return err
 	}
+
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case e := <-eventChan:
+				if len(e.IKE.ChildSAs) != 1 {
+					p.logger.WarnContext(ctx, fmt.Sprintf("child-updown: expected 1 child SA, got %d", len(e.IKE.ChildSAs)))
+					continue
+				}
+
+				var cSa ChildSA
+				for _, v := range e.IKE.ChildSAs {
+					cSa = v
+				}
+
+				ifID, err := cSa.IfID()
+				if err != nil {
+					p.logger.ErrorContext(ctx, "failed to parse IfID into uint32", log.Err(err))
+					continue
+				}
+
+				req := controlapi.CPETunnelUpdateRequest{
+					PortalID: p.config.PortalID,
+					IfID:     ifID,
+				}
+
+				data, err := json.Marshal(req)
+				if err != nil {
+					p.logger.ErrorContext(ctx, "failed to marshal cpe tunnel update request", log.Err(err))
+					continue
+				}
+
+				respData, err := p.js.Conn().Request(controlapi.SubjectCPETunnelUpdate, data, 5*time.Second)
+
+				if err != nil {
+					p.logger.ErrorContext(ctx, "failed to publish cpe tunnel update request", log.Err(err))
+					continue
+				}
+
+				p.logger.InfoContext(ctx, "cpe tunnel update request published",
+					log.PortalID(p.config.PortalID),
+					slog.Int("if_id", int(ifID)),
+				)
+
+				var resp controlapi.TunnelUpdateResponse
+				if err := json.Unmarshal(respData.Data, &resp); err != nil {
+					p.logger.ErrorContext(ctx, "failed to unmarshal cpe tunnel update response", log.Err(err))
+					continue
+				}
+
+				if !resp.Ok {
+					p.logger.ErrorContext(ctx, "cpe tunnel update failed")
+					continue
+				}
+
+				p.logger.InfoContext(ctx, "cpe tunnel update successful",
+					log.PortalID(p.config.PortalID),
+					slog.Int("if_id", int(ifID)),
+				)
+			}
+		}
+	}()
 
 	swanConnOptsReq := controlapi.PortalAuthEndpointRequest{
 		PortalID: p.config.PortalID,
@@ -104,6 +187,30 @@ func (p *Portal) Run(ctx context.Context) error {
 	if err := p.initiateTunnel(ctx, s, "pop"); err != nil {
 		return err
 	}
+
+	go func() {
+		err := p.reconciler.Start(ctx)
+		if err != nil {
+			p.logger.ErrorContext(ctx, "reconciler failed to start", log.Err(err))
+		}
+	}()
+
+	go func() {
+		err := intentkv.Watch(
+			ctx,
+			p.js,
+			p.logger.With(log.Domain(log.DomainControlPlane)),
+			intentkv.Key(intentkv.PrefixCPE, p.config.PortalID),
+			p.intentFeed,
+		)
+
+		if err != nil {
+			p.logger.ErrorContext(ctx, "intent watch failed",
+				log.Domain(log.DomainControlPlane),
+				log.Err(err),
+			)
+		}
+	}()
 
 	<-ctx.Done()
 
@@ -303,13 +410,15 @@ func (p *Portal) initiateTunnel(ctx context.Context, s *vici.Session, child stri
 	}
 }
 
-func (p *Portal) watchEvents(ctx context.Context, s *vici.Session) error {
+func (p *Portal) watchEvents(ctx context.Context, s *vici.Session) (<-chan *UpDownEvent, error) {
 	ec := make(chan vici.Event, 16)
 	s.NotifyEvents(ec)
 
-	if err := s.Subscribe("ike-updown", "child-updown"); err != nil {
+	outChan := make(chan *UpDownEvent, 16)
+
+	if err := s.Subscribe("child-updown"); err != nil {
 		p.logger.WarnContext(ctx, "ike-updown EVENT failed to subscribe", log.Err(err))
-		return err
+		return nil, err
 	}
 
 	go func() {
@@ -325,10 +434,16 @@ func (p *Portal) watchEvents(ctx context.Context, s *vici.Session) error {
 					return
 				}
 
-				p.logger.InfoContext(ctx, fmt.Sprintf("IKE/CHILD Event: %s", e.Message.String()))
+				parsedEvent, err := ParseUpDown(e.Name, e.Message)
+				if err != nil {
+					p.logger.ErrorContext(ctx, "failed to parse vici updown event", log.Err(err))
+					continue
+				}
+
+				outChan <- parsedEvent
 			}
 		}
 	}()
 
-	return nil
+	return outChan, nil
 }

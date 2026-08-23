@@ -228,6 +228,75 @@ func vrfCatchAll(tableID int) *netlink.Route {
 	}
 }
 
+func maetoRule(priority int, src netip.Prefix, tableID int) *netlink.Rule {
+	rule := netlink.NewRule()
+	rule.Family = netlink.FAMILY_V6
+	rule.Priority = priority
+	rule.Src = prefixToIPNet(src)
+	rule.Table = tableID
+	rule.Protocol = uint8(MaetoRouteProto)
+
+	return rule
+}
+
+// UpsertRule installs a policy rule. RuleAdd is not idempotent -- a second
+// identical add returns EEXIST rather than succeeding.
+func (l *LinuxNetlink) UpsertRule(priority int, src netip.Prefix, tableID int) error {
+	if err := netlink.RuleAdd(maetoRule(priority, src, tableID)); err != nil {
+		if errors.Is(err, unix.EEXIST) {
+			return nil // already there, and every field is part of its identity
+		}
+
+		return fmt.Errorf("add rule from %s lookup %d: %w", src, tableID, err)
+	}
+
+	return nil
+}
+
+// RemoveRule deletes a policy rule. Unlike routes, a missing rule reports
+// ENOENT rather than ESRCH.
+func (l *LinuxNetlink) RemoveRule(priority int, src netip.Prefix, tableID int) error {
+	if err := netlink.RuleDel(maetoRule(priority, src, tableID)); err != nil {
+		if errors.Is(err, unix.ENOENT) {
+			return nil // already gone
+		}
+
+		return fmt.Errorf("delete rule from %s lookup %d: %w", src, tableID, err)
+	}
+
+	return nil
+}
+
+// GetRules lists the rules maeto owns. The kernel's own rules carry
+// RTPROT_KERNEL, so the protocol tag separates ours from local/main/l3mdev.
+func (l *LinuxNetlink) GetRules() ([]DataplaneRule, error) {
+	rules, err := netlink.RuleList(netlink.FAMILY_V6)
+	if err != nil {
+		return nil, fmt.Errorf("list rules: %w", err)
+	}
+
+	out := make([]DataplaneRule, 0, len(rules))
+	for _, rule := range rules {
+		if rule.Protocol != uint8(MaetoRouteProto) || rule.Src == nil {
+			continue
+		}
+
+		src, ok := netip.AddrFromSlice(rule.Src.IP)
+		if !ok {
+			continue
+		}
+		ones, _ := rule.Src.Mask.Size()
+
+		out = append(out, DataplaneRule{
+			Priority: rule.Priority,
+			Src:      netip.PrefixFrom(src, ones),
+			Table:    rule.Table,
+		})
+	}
+
+	return out, nil
+}
+
 func (l *LinuxNetlink) GetDefaultRouteAndDev() (string, string, error) {
 	routes, err := netlink.RouteListFiltered(netlink.FAMILY_V6,
 		&netlink.Route{Dst: nil}, netlink.RT_FILTER_DST)
@@ -319,41 +388,64 @@ func (l *LinuxNetlink) GetLinksByType(ifaceType string) ([]DataplaneLink, error)
 	return maetoLinks, nil
 }
 
-// InsertPrefixRoute points prefix at tunnelIface in tableID. Pass
-// unix.RT_TABLE_MAIN on a cpe, where there is no vrf to speak of.
-func (l *LinuxNetlink) InsertPrefixRoute(tunnelIface string, tableID int, prefix netip.Prefix) error {
-	iface, err := netlink.LinkByName(tunnelIface)
-	if err != nil {
-		return fmt.Errorf("lookup tunnel interface %s: %w", tunnelIface, err)
-	}
-
-	// a route in a vrf table pointing at an interface outside that vrf would
-	// install cleanly and blackhole, so check enslavement when there is a vrf
-	if (tableID != unix.RT_TABLE_MAIN) && (tableID != 0) {
-		vrf, err := vrfByTable(tableID)
-		if err != nil {
-			return err
-		}
-
-		if iface.Attrs().MasterIndex != vrf.Attrs().Index {
-			return fmt.Errorf("%s is not enslaved to %s (table %d)",
-				tunnelIface, vrf.Attrs().Name, tableID)
-		}
-	}
-
+// InsertPrefixRoute installs prefix in tableID. A valid via makes it a gateway
+// route and the kernel resolves the outgoing device itself -- naming a device
+// the gateway is not on-link for is rejected outright. An invalid via makes it
+// a device route out tunnelIface, which is what a NOARP xfrm interface needs.
+// tableID unix.RT_TABLE_MAIN (or 0) is the main table, the cpe case.
+func (l *LinuxNetlink) InsertPrefixRoute(tunnelIface string, tableID int, prefix netip.Prefix, via netip.Addr) error {
 	route := &netlink.Route{
-		LinkIndex: iface.Attrs().Index,
-		Table:     tableID,
-		Family:    netlink.FAMILY_V6,
-		Protocol:  MaetoRouteProto,
-		Dst:       prefixToIPNet(prefix),
+		Table:    tableID,
+		Family:   netlink.FAMILY_V6,
+		Protocol: MaetoRouteProto,
+		Dst:      prefixToIPNet(prefix),
+	}
+
+	if via.IsValid() {
+		// LinkIndex stays unset: the kernel picks the device by looking up the
+		// gateway, which is more robust than pinning one that may change
+		route.Gw = net.IP(via.AsSlice())
+	} else {
+		iface, err := netlink.LinkByName(tunnelIface)
+		if err != nil {
+			return fmt.Errorf("lookup tunnel interface %s: %w", tunnelIface, err)
+		}
+
+		// a route in a vrf table pointing at an interface outside that vrf
+		// would install cleanly and blackhole, so check enslavement -- but only
+		// when a vrf actually owns the table. A cpe's tunnel table is a plain
+		// policy routing table with no vrf behind it.
+		if vrf := vrfByTableOrNil(tableID); vrf != nil {
+			if iface.Attrs().MasterIndex != vrf.Attrs().Index {
+				return fmt.Errorf("%s is not enslaved to %s (table %d)",
+					tunnelIface, vrf.Attrs().Name, tableID)
+			}
+		}
+
+		route.LinkIndex = iface.Attrs().Index
 	}
 
 	if err := netlink.RouteReplace(route); err != nil {
-		return fmt.Errorf("insert prefix route %s @ %s: %w", prefix, tunnelIface, err)
+		return fmt.Errorf("insert prefix route %s (via %v, dev %s, table %d): %w",
+			prefix, via, tunnelIface, tableID, err)
 	}
 
 	return nil
+}
+
+// vrfByTableOrNil returns the vrf bound to tableID, or nil when the table is
+// not a vrf table at all
+func vrfByTableOrNil(tableID int) *netlink.Vrf {
+	if tableID == unix.RT_TABLE_MAIN || tableID == 0 {
+		return nil
+	}
+
+	vrf, err := vrfByTable(tableID)
+	if err != nil {
+		return nil
+	}
+
+	return vrf
 }
 
 func vrfByTable(tableID int) (*netlink.Vrf, error) {

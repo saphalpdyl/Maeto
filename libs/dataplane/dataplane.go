@@ -29,6 +29,15 @@ type DataplaneRoute struct {
 	AdvMSS     int
 }
 
+// DataplaneRule is a policy routing rule: "traffic matching Src looks up Table".
+// It is what keeps the tunnel default out of the main table, so whatever owns
+// the wan (dhcp, ra, pppd) is never fought over.
+type DataplaneRule struct {
+	Priority int
+	Src      netip.Prefix
+	Table    int
+}
+
 // Links represents VRF tables and XFRM interfaces for current implementation
 type DataplaneLink interface {
 	Type() string
@@ -88,8 +97,12 @@ type Dataplane interface {
 	RemoveXFRMInterface(linkIndex int) error
 
 	// tableID names the table directly; unix.RT_TABLE_MAIN on a cpe
+	UpsertRule(priority int, src netip.Prefix, tableID int) error
+	RemoveRule(priority int, src netip.Prefix, tableID int) error
+	GetRules() ([]DataplaneRule, error)
+
 	// TODO: Rename tunnelIface to just dev
-	InsertPrefixRoute(tunnelIface string, tableID int, prefix netip.Prefix) error
+	InsertPrefixRoute(tunnelIface string, tableID int, prefix netip.Prefix, via netip.Addr) error
 	RemovePrefixRoute(prefix netip.Prefix, tableID int) error
 	GetPrefixRoutes() ([]DataplaneRoute, error)
 

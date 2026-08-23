@@ -68,8 +68,15 @@ func (a *Agent) Run(ctx context.Context) {
 	go a.reconciler.Start(ctx) // nolint:errcheck
 
 	go func() {
-		if err := intentkv.Watch(ctx, a.js, a.logger.With(log.Domain(log.DomainControlPlane)),
-			intentkv.Key(intentkv.PrefixPE, a.node.ID), a.intentFeed); err != nil {
+		err := intentkv.Watch(
+			ctx,
+			a.js,
+			a.logger.With(log.Domain(log.DomainControlPlane)),
+			intentkv.Key(intentkv.PrefixPE, a.node.ID),
+			a.intentFeed,
+		)
+
+		if err != nil {
 			a.logger.ErrorContext(ctx, "intent watch failed",
 				log.Domain(log.DomainControlPlane),
 				slog.String("intent_key", a.node.IntentKey()),

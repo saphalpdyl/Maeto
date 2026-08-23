@@ -11,6 +11,7 @@ import (
 
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
+	"github.com/saphalpdyl/maeto/libs/dataplane"
 	"github.com/saphalpdyl/maeto/libs/telemetry"
 	maetoportal "github.com/saphalpdyl/maeto/services/maeto-portal"
 	"github.com/saphalpdyl/maeto/services/maeto-portal/log"
@@ -72,10 +73,12 @@ func main() {
 		os.Exit(1)
 	}
 
+	dataplane := dataplane.NewLinuxNetlink()
 	portal := maetoportal.NewPortal(
 		serviceInstanceId,
 		js,
 		config,
+		dataplane,
 		logger.With(log.Domain(log.DomainPortalLifecycle)),
 	)
 

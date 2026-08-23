@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/saphalpdyl/maeto/libs/dataplane/log"
-	"golang.org/x/sys/unix"
 )
 
 type NodeType string
@@ -173,6 +172,7 @@ type Kind string
 
 const (
 	KindVRF   Kind = "vrf"
+	KindRule  Kind = "rule"
 	KindXFRM  Kind = "xfrm"
 	KindRoute Kind = "route"
 )
@@ -251,6 +251,41 @@ func (x *XFRM) CompareTo(actual Resource) Action {
 	return ActionReplace
 }
 
+// A cpe carries one tenant, so one table and one rule priority is enough. Both
+// are maeto's alone: main stays owned by whatever manages the wan.
+const (
+	CPETunnelTable  = 100
+	CPERulePriority = 100
+)
+
+// need for delete + create: a rule has no mutable field, every one identifies it
+type Rule struct {
+	Priority int          `rc:"id"`
+	Src      netip.Prefix `rc:"id"`
+	Table    int          `rc:"id"`
+}
+
+func (r *Rule) ID() ID {
+	return ID{
+		Kind: KindRule,
+		Key:  fmt.Sprintf("%d.%s.%d", r.Priority, r.Src.String(), r.Table),
+	}
+}
+
+func (r *Rule) Type() string { return "rule" }
+
+func (r *Rule) CompareTo(actual Resource) Action {
+	a, ok := actual.(*Rule)
+	if !ok {
+		return ActionReplace
+	}
+	if r.Priority != a.Priority || r.Src != a.Src || r.Table != a.Table {
+		return ActionReplace
+	}
+
+	return ActionNone
+}
+
 // Ideompotently replaced. no need for delete+create
 type Route struct {
 	Table  int          `rc:"id"`
@@ -317,21 +352,25 @@ func (r *Reconciler) Start(ctx context.Context) error {
 	}
 }
 
+// RenderCPEIntent builds the cpe side: one tunnel interface, a default route
+// into it in maeto's own table, and a rule sending this site's traffic there.
+//
+// Nothing is written to the main table. That table belongs to whatever manages
+// the wan -- dhcp, ra, pppd -- and esp packets plus the control plane
+// connection both source from the underlay address, so they never match the
+// rule and keep following the real default. That removes the need for endpoint
+// exclusions entirely, and with them the read of a route we were about to
+// replace.
 func (r *Reconciler) RenderCPEIntent(ctx context.Context, intent *CPEIntent) (map[string]Resource, error) {
 	resources := make(map[string]Resource)
-
-	dRoute, dDev, err := r.dp.GetDefaultRouteAndDev()
-	if err != nil {
-		return nil, fmt.Errorf("dataplane failure: couldn't retrieve default route and device")
-	}
-
-	// No VRF tables for CPE
-
-	// There is just one interface on cpe
 
 	if intent.TunnelInterfaceID == 0 {
 		r.logger.WarnContext(ctx, "tunnel iface id == 0: intent is not ready to be installed")
 		return resources, nil
+	}
+
+	if !intent.SitePrefix.IsValid() {
+		return nil, fmt.Errorf("cpe intent has no site prefix, nothing could select the tunnel")
 	}
 
 	xfrmTunnelName := fmt.Sprintf("xfrm-tenant-%s", intent.TenantID)
@@ -342,53 +381,23 @@ func (r *Reconciler) RenderCPEIntent(ctx context.Context, intent *CPEIntent) (ma
 		MasterVRF: "", // no VRF for CPE
 		Index:     0,  // observed kernel-assigned value
 	}
-
 	resources[xfrm.ID().Key] = xfrm
 
-	peEndpointAddrPrefix, err := intent.TunnelPEEndpointAddr.Prefix(128)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create prefix from PE endpoint addr: %w", err)
-	}
-
-	gwAddr, err := netip.ParseAddr(dRoute)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse default route addr: %w", err)
-	}
-
-	espExcludeRoute := &Route{
-		Table:  unix.RT_TABLE_MAIN, // TODO: Linux impl leak
-		Dst:    peEndpointAddrPrefix,
-		Dev:    dDev,
-		Via:    gwAddr,
-		Metric: 0,
-	}
-
-	resources[espExcludeRoute.ID().Key] = espExcludeRoute
-
-	// TODO: Exclude NATS endpoint as well
-	natsExcludePrefix, err := netip.ParsePrefix("3fff:172:20:20::800:11/128")
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse NATS exclude prefix: %w", err)
-	}
-
-	natsExcludeRoute := &Route{
-		Table:  0,
-		Dst:    natsExcludePrefix,
-		Dev:    dDev,
-		Via:    gwAddr,
-		Metric: 0,
-	}
-	resources[natsExcludeRoute.ID().Key] = natsExcludeRoute
-
-	defaultExcludeRoute := &Route{
-		Table:  0,
+	tunnelDefault := &Route{
+		Table:  CPETunnelTable,
 		Dst:    netip.PrefixFrom(netip.IPv6Unspecified(), 0), // ::/0
 		Dev:    xfrmTunnelName,
-		Via:    netip.Addr{},
+		Via:    netip.Addr{}, // device route: an xfrm interface is NOARP
 		Metric: 0,
 	}
+	resources[tunnelDefault.ID().Key] = tunnelDefault
 
-	resources[defaultExcludeRoute.ID().Key] = defaultExcludeRoute
+	siteRule := &Rule{
+		Priority: CPERulePriority,
+		Src:      intent.SitePrefix,
+		Table:    CPETunnelTable,
+	}
+	resources[siteRule.ID().Key] = siteRule
 
 	return resources, nil
 }
@@ -404,6 +413,7 @@ func (r *Reconciler) RenderFIB(
 	vrfLinks []*DataplaneVRF,
 	xfrmLinks []*DataplaneXFRM,
 	routes []DataplaneRoute,
+	rules []DataplaneRule,
 ) (map[string]Resource, error) {
 	resources := make(map[string]Resource)
 
@@ -443,6 +453,11 @@ func (r *Reconciler) RenderFIB(
 		}
 
 		resources[route.ID().Key] = route
+	}
+
+	for _, rule := range rules {
+		res := &Rule{Priority: rule.Priority, Src: rule.Src, Table: rule.Table}
+		resources[res.ID().Key] = res
 	}
 
 	return resources, nil
@@ -496,7 +511,12 @@ func (r *Reconciler) Plan(ctx context.Context, desired *NodeIntent) (map[string]
 
 	routes, err := r.dp.GetPrefixRoutes()
 	if err != nil {
-		return nil, nil, fmt.Errorf("dataplane failure: couldn't retrieve prefix routes")
+		return nil, nil, fmt.Errorf("dataplane failure: couldn't retrieve prefix routes: %w", err)
+	}
+
+	rules, err := r.dp.GetRules()
+	if err != nil {
+		return nil, nil, fmt.Errorf("dataplane failure: couldn't retrieve rules: %w", err)
 	}
 
 	currentResources, err := r.RenderFIB(
@@ -506,6 +526,7 @@ func (r *Reconciler) Plan(ctx context.Context, desired *NodeIntent) (map[string]
 		vrfLinks,
 		xfrmLinks,
 		routes,
+		rules,
 	)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to render FIB state: %w", err)
@@ -569,7 +590,7 @@ func (r *Reconciler) Apply(ctx context.Context, diff DiffResult) error {
 	// First of all, we remove shit
 	// We remove from bottom up i.e route -> xfrm -> vrf
 	// TODO: Later group by kind in a map so that we don't traverse everything everytime
-	for _, kind := range []Kind{KindRoute, KindXFRM, KindVRF} {
+	for _, kind := range []Kind{KindRule, KindRoute, KindXFRM, KindVRF} {
 		for _, resource := range diff.Remove {
 			if resource.ID().Kind != kind {
 				continue
@@ -590,12 +611,17 @@ func (r *Reconciler) Apply(ctx context.Context, diff DiffResult) error {
 				if err := r.dp.RemoveVRF(res.Index); err != nil {
 					r.logger.ErrorContext(ctx, "failed to remove vrf", log.Err(err))
 				}
+
+			case *Rule:
+				if err := r.dp.RemoveRule(res.Priority, res.Src, res.Table); err != nil {
+					r.logger.ErrorContext(ctx, "failed to remove rule", log.Err(err))
+				}
 			}
 		}
 	}
 
 	// Addition
-	for _, kind := range []Kind{KindVRF, KindXFRM, KindRoute} {
+	for _, kind := range []Kind{KindVRF, KindXFRM, KindRoute, KindRule} {
 		for _, resource := range diff.Add {
 			if resource.ID().Kind != kind {
 				continue
@@ -618,8 +644,13 @@ func (r *Reconciler) Apply(ctx context.Context, diff DiffResult) error {
 				}
 
 			case *Route:
-				if err := r.dp.InsertPrefixRoute(res.Dev, 0, res.Dst); err != nil {
+				if err := r.dp.InsertPrefixRoute(res.Dev, res.Table, res.Dst, res.Via); err != nil {
 					r.logger.ErrorContext(ctx, "failed to insert Route", log.Err(err))
+				}
+
+			case *Rule:
+				if err := r.dp.UpsertRule(res.Priority, res.Src, res.Table); err != nil {
+					r.logger.ErrorContext(ctx, "failed to upsert rule", log.Err(err))
 				}
 			}
 		}

@@ -60,7 +60,7 @@ func (t *TestDefaultRouteOnlyDataplane) GetPrefixRoutes() ([]dataplane.Dataplane
 	panic("unimplemented")
 }
 
-func (t *TestDefaultRouteOnlyDataplane) InsertPrefixRoute(tunnelIface string, tableID int, prefix netip.Prefix) error {
+func (t *TestDefaultRouteOnlyDataplane) InsertPrefixRoute(tunnelIface string, tableID int, prefix netip.Prefix, via netip.Addr) error {
 	panic("unimplemented")
 }
 
@@ -85,6 +85,18 @@ func (t *TestDefaultRouteOnlyDataplane) UpsertPolicy(nhid string, dtsid string, 
 }
 
 func (t *TestDefaultRouteOnlyDataplane) UpsertRouteToPolicy(dest string, vrfTableId string, nhid string) error {
+	panic("unimplemented")
+}
+
+func (t *TestDefaultRouteOnlyDataplane) UpsertRule(priority int, src netip.Prefix, tableID int) error {
+	panic("unimplemented")
+}
+
+func (t *TestDefaultRouteOnlyDataplane) RemoveRule(priority int, src netip.Prefix, tableID int) error {
+	panic("unimplemented")
+}
+
+func (t *TestDefaultRouteOnlyDataplane) GetRules() ([]dataplane.DataplaneRule, error) {
 	panic("unimplemented")
 }
 
