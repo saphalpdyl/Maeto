@@ -135,9 +135,15 @@ func (l *LinuxNetlink) GetPrefixRoutes() ([]DataplaneRoute, error) {
 		return nil, fmt.Errorf("list maeto routes: %w", err)
 	}
 
+	names, err := linkNames()
+	if err != nil {
+		return nil, err
+	}
+
 	routes := make([]DataplaneRoute, 0, len(netlinkRoutes))
 	for _, r := range netlinkRoutes {
 		route := DataplaneRoute{
+			Dev:        names[r.LinkIndex],
 			LinkIndex:  r.LinkIndex,
 			ILinkIndex: r.ILinkIndex,
 			Dst:        r.Dst,
@@ -226,6 +232,22 @@ func vrfCatchAll(tableID int) *netlink.Route {
 			Mask: net.CIDRMask(0, 128),
 		},
 	}
+}
+
+// linkNames maps every interface index to its name, so read methods can hand
+// back names instead of kernel indexes
+func linkNames() (map[int]string, error) {
+	links, err := netlink.LinkList()
+	if err != nil {
+		return nil, fmt.Errorf("list links: %w", err)
+	}
+
+	out := make(map[int]string, len(links))
+	for _, link := range links {
+		out[link.Attrs().Index] = link.Attrs().Name
+	}
+
+	return out, nil
 }
 
 func maetoRule(priority int, src netip.Prefix, tableID int) *netlink.Rule {
@@ -332,6 +354,11 @@ func (l *LinuxNetlink) GetLinksByType(ifaceType string) ([]DataplaneLink, error)
 	if err != nil {
 		return nil, err
 	}
+
+	names := make(map[int]string, len(links))
+	for _, link := range links {
+		names[link.Attrs().Index] = link.Attrs().Name
+	}
 	var maetoLinks []DataplaneLink
 
 	for _, l := range links {
@@ -353,6 +380,8 @@ func (l *LinuxNetlink) GetLinksByType(ifaceType string) ([]DataplaneLink, error)
 				PermHWAddr:   l.Attrs().PermHWAddr,
 				ParentIndex:  l.Attrs().ParentIndex,
 				MasterIndex:  l.Attrs().MasterIndex,
+				ParentName:   names[l.Attrs().ParentIndex],
+				MasterName:   names[l.Attrs().MasterIndex],
 			}
 
 			if l.Type() == "xfrm" {

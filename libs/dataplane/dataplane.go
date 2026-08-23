@@ -15,6 +15,9 @@ type Via struct {
 // For example: netlink creates netlink.Route with .Proto == MaetoRouteProto [211]
 // and netlink.Link with .LinkAttrs.Group == MaetoLinkGroup [211]
 type DataplaneRoute struct {
+	// Dev is the resolved name of LinkIndex. Desired state can only ever speak
+	// names, so the read side translates -- the reconciler has no way to.
+	Dev        string
 	LinkIndex  int
 	ILinkIndex int
 	Dst        *net.IPNet
@@ -61,6 +64,9 @@ type DataplaneLinkAttrs struct {
 	PermHWAddr   net.HardwareAddr
 	ParentIndex  int
 	MasterIndex  int
+	// resolved forms of the two indexes above
+	ParentName string
+	MasterName string
 }
 
 type DataplaneVRF struct {

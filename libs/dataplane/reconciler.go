@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"log/slog"
+	"math"
 	"net/netip"
 	"time"
 
@@ -402,14 +404,62 @@ func (r *Reconciler) RenderCPEIntent(ctx context.Context, intent *CPEIntent) (ma
 	return resources, nil
 }
 
+func StringToID(s string) uint32 {
+	const minVal uint64 = 300
+	const span uint64 = math.MaxUint32 - minVal + 1
+
+	h := fnv.New64a()
+	h.Write([]byte(s))
+	val64 := h.Sum64()
+
+	return uint32(minVal + (val64 % span))
+}
+
 func (r *Reconciler) RenderPE(ctx context.Context, intent *PEIntent) (map[string]Resource, error) {
-	return nil, nil
+	resources := make(map[string]Resource)
+
+	for tenantID, t := range intent.Tenants {
+		vrfTableName := fmt.Sprintf("maeto-vrf-%s", tenantID)
+		tableID := StringToID(tenantID)
+
+		vrf := &VRF{
+			Name:    vrfTableName,
+			TableID: tableID,
+			Index:   0,
+		}
+
+		resources[vrf.ID().Key] = vrf
+
+		for _, portalIntent := range t {
+			xfrmName := fmt.Sprintf("maeto-tun-%s-%d", tenantID, portalIntent.TunnelInterfaceID)
+
+			xfrm := &XFRM{
+				Name:      xfrmName,
+				IfID:      portalIntent.TunnelInterfaceID,
+				Parent:    portalIntent.HostFacingInterface,
+				MasterVRF: vrfTableName,
+				Index:     0,
+			}
+
+			resources[xfrm.ID().Key] = xfrm
+
+			route := &Route{
+				Table:  int(tableID),
+				Dst:    portalIntent.SitePrefix,
+				Dev:    xfrmName,
+				Via:    netip.Addr{},
+				Metric: 0,
+			}
+
+			resources[route.ID().Key] = route
+		}
+	}
+
+	return resources, nil
 }
 
 func (r *Reconciler) RenderFIB(
 	ctx context.Context,
-	dRoute string,
-	dDev string,
 	vrfLinks []*DataplaneVRF,
 	xfrmLinks []*DataplaneXFRM,
 	routes []DataplaneRoute,
@@ -431,8 +481,8 @@ func (r *Reconciler) RenderFIB(
 		xfrm := &XFRM{
 			Name:      l.Name,
 			IfID:      l.IfID,
-			Parent:    fmt.Sprint(l.ParentIndex),
-			MasterVRF: fmt.Sprint(l.MasterIndex),
+			Parent:    l.ParentName,
+			MasterVRF: l.MasterName,
 			Index:     l.Index,
 		}
 
@@ -447,7 +497,7 @@ func (r *Reconciler) RenderFIB(
 		route := &Route{
 			Table:  r.Table,
 			Dst:    netip.PrefixFrom(ip, ones),
-			Dev:    dDev,
+			Dev:    r.Dev,
 			Via:    viaip,
 			Metric: 0,
 		}
@@ -478,11 +528,6 @@ func (r *Reconciler) Plan(ctx context.Context, desired *NodeIntent) (map[string]
 	}
 
 	// Fetch FIB state
-	defaultRoute, defaultDev, err := r.dp.GetDefaultRouteAndDev()
-	if err != nil {
-		return nil, nil, fmt.Errorf("dataplane failure: couldn't retrieve default route and device")
-	}
-
 	rVrfs, err := r.dp.GetLinksByType("vrf")
 	if err != nil {
 		return nil, nil, fmt.Errorf("dataplane failure: couldn't retrieve vrf links")
@@ -521,8 +566,6 @@ func (r *Reconciler) Plan(ctx context.Context, desired *NodeIntent) (map[string]
 
 	currentResources, err := r.RenderFIB(
 		ctx,
-		defaultRoute,
-		defaultDev,
 		vrfLinks,
 		xfrmLinks,
 		routes,
@@ -639,7 +682,12 @@ func (r *Reconciler) Apply(ctx context.Context, diff DiffResult) error {
 					mVRF = &res.MasterVRF // During rendering, masterVRF is set to "" for CPEs
 				}
 
-				if err := r.dp.InsertXFRMInterface(res.Name, "lo", res.IfID, mVRF); err != nil {
+				parent := res.Parent
+				if parent == "" {
+					parent = "lo"
+				}
+
+				if err := r.dp.InsertXFRMInterface(res.Name, parent, res.IfID, mVRF); err != nil {
 					r.logger.ErrorContext(ctx, "failed to insert XFRM", log.Err(err))
 				}
 
@@ -664,6 +712,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, intent *NodeIntent) error {
 
 	for pass := 0; pass < maxPasses; pass++ {
 		current, desired, err := r.Plan(ctx, intent)
+		r.logger.InfoContext(ctx, "reconciling", slog.Any("current", current), slog.Any("desired", desired))
 		if err != nil {
 			r.logger.ErrorContext(ctx, "failed to plan reconciliation", log.Err(err))
 			return err
