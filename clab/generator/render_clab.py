@@ -1,3 +1,4 @@
+import os
 import yaml
 
 from .render_mgmt_routes import transit_mgmt_address
@@ -15,6 +16,7 @@ from .constants import (
     NATS_NODE_NAME,
     NODE_CONTAINER_PATH,
     NODE_FILENAME,
+    DLV_LISTEN,
     OTEL_ENDPOINT,
     OTEL_SINK,
     POP_IMAGE,
@@ -61,12 +63,20 @@ def _nats_url_literal():
     return f"nats://[{NATS_MGMT_ADDRESS}]:{NATS_CLIENT_PORT}"
 
 
+def _debug_env():
+    # MAETO_DEBUG=1 at generate time wires every node's delve listener
+    if os.environ.get("MAETO_DEBUG") != "1":
+        return {}
+    return {"MAETO_DLV_LISTEN": DLV_LISTEN}
+
+
 def _agent_env(nats_url):
     return {
         "NATS_CONNECT_URL": nats_url,
         "MAETO_NODE_FILE": NODE_CONTAINER_PATH,
         "OTEL_SINK": OTEL_SINK,
         "OTEL_ENDPOINT": OTEL_ENDPOINT,
+        **_debug_env(),
     }
 
 
@@ -76,6 +86,7 @@ def _portal_env(cpe):
         "PORTAL_ID": cpe.portal_id,
         "OTEL_SINK": OTEL_SINK,
         "OTEL_ENDPOINT": OTEL_ENDPOINT,
+        **_debug_env(),
     }
 
 
