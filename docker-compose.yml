@@ -34,6 +34,8 @@ services:
     build:
       context: .
       dockerfile: docker/maeto-control-plane.Dockerfile
+      args:
+        DEBUG: ${DEBUG:-0}
     environment:
       - OTEL_SINK=stdout
       - OTEL_ENDPOINT=otel-collector:4318
@@ -43,6 +45,10 @@ services:
       - MAETO_DB_URL=postgres://postgres:admin@db:5432/postgres?sslmode=disable
       - NATS_CONNECT_URL=nats://clab-eight-pop-nats:4222
       - AGENT_HEARTBEAT_INTERVAL=30s
+      # set MAETO_DLV_LISTEN=[::]:2345 to start under delve
+      - MAETO_DLV_LISTEN=${MAETO_DLV_LISTEN:-}
+    ports:
+      - "2345:2345"
     volumes:
       - ./build/:/app/data/
       - ./.state/:/app/state/

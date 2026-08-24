@@ -113,6 +113,10 @@ TRANSIT_MGMT_BASE = "3fff:172:20:20::800:2"
 # nats but nats cannot answer
 MGMT_ROUTES_FILENAME = "mgmt_routes.sh"
 
+# delve listens here when MAETO_DEBUG is set at generate time. Every node has a
+# distinct address, so one port is enough. Empty means "no debugger".
+DLV_LISTEN = "[::]:2345"
+
 OTEL_SINK = "stdout"
 OTEL_ENDPOINT = "otel-collector:4318"
 

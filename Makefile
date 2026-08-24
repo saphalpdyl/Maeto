@@ -3,6 +3,14 @@
 TOPOLOGY_YAML := clab/topologies/eight-pop.yaml
 TOPOLOGY_NAME := eight-pop
 
+# DEBUG=1 builds unoptimised images that ship delve, and makes the generator
+# put MAETO_DLV_LISTEN in every node's env. See docker/scripts/maeto-launch.sh
+DEBUG ?= 0
+ifeq ($(DEBUG),1)
+export MAETO_DEBUG := 1
+export MAETO_DLV_LISTEN := [::]:2345
+endif
+
 setup:
 	./scripts/hooks/install-hooks.sh
 
@@ -37,11 +45,14 @@ sync:
 # The services including NATS, DB etc. will run inside the VM as to
 # not fragment deployment during development and makes things simpler
 dev:
-	docker compose up -d --build maeto-control-plane
+	DEBUG=$(DEBUG) docker compose up -d --build maeto-control-plane
+
+ddbg: # dev debug
+	DEBUG=1 docker compsoe up --build maeto-control-plane
 
 build-vm:
-	docker build -t maeto-pop:latest -f docker/maeto-pop.Dockerfile .
-	docker build -t maeto-portal:latest -f docker/maeto-portal.Dockerfile .
+	docker build --build-arg DEBUG=$(DEBUG) -t maeto-pop:latest -f docker/maeto-pop.Dockerfile .
+	docker build --build-arg DEBUG=$(DEBUG) -t maeto-portal:latest -f docker/maeto-portal.Dockerfile .
 
 clean:
 	@if [ ! -f .state/latest.json ]; then echo "no .state/latest.json; run 'make generate' first" >&2; exit 1; fi; \
@@ -71,6 +82,12 @@ ap:
 	rm -rf build/
 	$(MAKE) generate
 	$(MAKE) apply
+
+apd:
+	-make clean
+	rm -rf build/
+	$(MAKE) generate
+	$(MAKE) DEBUG=1 apply
 
 ## Generators
 sqlc-gen:
