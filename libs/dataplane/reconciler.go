@@ -209,7 +209,7 @@ func (r *Reconciler) RenderFIB(
 		sid := &SID{
 			SIDType: SIDType(s.EncapType),
 			SID:     ip,
-			TableID: s.Table,
+			TableID: s.VrfTableID,
 			Metric:  0,
 		}
 

@@ -38,12 +38,13 @@ const (
 )
 
 type DataplaneSID struct {
-	Dev       string
-	Dst       *net.IPNet
-	Family    int
-	Table     int
-	Type      int
-	EncapType EncapType
+	Dev        string
+	Dst        *net.IPNet
+	Family     int
+	Table      int
+	Type       int
+	VrfTableID int
+	EncapType  EncapType
 }
 
 // DataplaneRule is a policy routing rule: "traffic matching Src looks up Table".

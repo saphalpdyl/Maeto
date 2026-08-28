@@ -14,10 +14,11 @@ const (
 
 // SID is basically a special route
 type SID struct {
-	SIDType SIDType
-	SID     netip.Addr
-	TableID int
-	Metric  int
+	SIDType    SIDType
+	SID        netip.Addr
+	TableID    int
+	Metric     int
+	VrfTableID int
 }
 
 func (s *SID) CompareTo(actual Resource) Action {
@@ -39,7 +40,7 @@ func (s *SID) CompareTo(actual Resource) Action {
 func (s *SID) ID() ID {
 	return ID{
 		Kind: KindSID,
-		Key:  fmt.Sprintf("%s.%s", s.SIDType, s.SID.String()),
+		Key:  fmt.Sprintf("%s.%s.%s", s.SIDType, s.SID.String(), fmt.Sprintf("%d", s.VrfTableID)),
 	}
 }
 

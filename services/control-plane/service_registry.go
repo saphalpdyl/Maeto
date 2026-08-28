@@ -27,9 +27,9 @@ type ServiceRegistry struct {
 	registry map[string]*dataplane.NodeIntent
 	// We are explicitly allowing SID specific here since, for a SRv6-based SD-WAN,
 	// SIDs are irrelevant for the underlying dataplane implementation
-	sidAllocationMap map[netip.Addr]bool // used to verify against collision
-	sidPortalMap     map[string]netip.Addr
-	sidCursor        uint16 // Sequential cursor that is used to generate the hex for SID
+	sidAllocationMap map[netip.Addr]bool   // used to verify against collision
+	sidTenantMap     map[string]netip.Addr // one tenant has exactly <=1 VRF per PE
+	sidCursor        uint16                // Sequential cursor that is used to generate the hex for SID
 
 	publisher *intentkv.Publisher
 
@@ -43,7 +43,7 @@ func NewServiceRegistry(config *ServiceRegistryConfig, intentPublisher *intentkv
 		config:           config,
 		registry:         make(map[string]*dataplane.NodeIntent),
 		sidAllocationMap: make(map[netip.Addr]bool),
-		sidPortalMap:     make(map[string]netip.Addr),
+		sidTenantMap:     make(map[string]netip.Addr),
 		publisher:        intentPublisher,
 		logger:           logger,
 		sidCursor:        0,
@@ -59,13 +59,14 @@ func withHextets(base netip.Prefix, offsetBits int, funcID uint16) netip.Addr {
 	return netip.AddrFrom16(b)
 }
 
-func (r *ServiceRegistry) GetOrGenerateSID(locatorPrefix netip.Prefix, portalID string, sidType dataplane.EncapType) (netip.Addr, error) {
+func (r *ServiceRegistry) GetOrGenerateSID(locatorPrefix netip.Prefix, tenantID string, sidType dataplane.EncapType) (netip.Addr, error) {
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	portalMapKey := fmt.Sprintf("%s.%s", portalID, string(sidType))
-	existingSID, exists := r.sidPortalMap[portalMapKey]
+	// We don't want sticky ID across PEs
+	tenantMapKey := fmt.Sprintf("%s.%s.%s", locatorPrefix.Addr().String(), tenantID, string(sidType))
+	existingSID, exists := r.sidTenantMap[tenantMapKey]
 	if exists {
 		r.sidAllocationMap[existingSID] = true
 	}
@@ -77,7 +78,7 @@ func (r *ServiceRegistry) GetOrGenerateSID(locatorPrefix netip.Prefix, portalID 
 		allocated, exists := r.sidAllocationMap[sid]
 		if !exists || !allocated {
 			r.sidCursor++
-			r.sidPortalMap[portalMapKey] = sid
+			r.sidTenantMap[tenantMapKey] = sid
 			r.sidAllocationMap[sid] = true
 			return sid, nil
 		}

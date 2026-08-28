@@ -663,12 +663,13 @@ func (l *LinuxNetlink) GetSIDs() ([]DataplaneSID, error) {
 		}
 
 		sid := DataplaneSID{
-			Dev:       names[r.LinkIndex],
-			Dst:       r.Dst,
-			Family:    r.Family,
-			Table:     r.Table,
-			Type:      r.Type,
-			EncapType: encapType,
+			Dev:        names[r.LinkIndex],
+			Dst:        r.Dst,
+			Family:     r.Family,
+			Table:      r.Table,
+			Type:       r.Type,
+			EncapType:  encapType,
+			VrfTableID: encap.VrfTable,
 		}
 
 		sids = append(sids, sid)
