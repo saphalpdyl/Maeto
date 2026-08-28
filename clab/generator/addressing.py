@@ -39,7 +39,7 @@ def _host(net, offset):
 
 
 def locator(prefix, idx):
-    # returns (blackhole /48, loopback ::1/128) for the pop
+    # returns (locator /48, loopback ::1/128) for the pop
     net = _nth_subnet(prefix, 48, idx)
     return str(net), f"{_host(net, 1)}/128"
 

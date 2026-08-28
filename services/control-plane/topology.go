@@ -1,6 +1,7 @@
 package controlplane
 
 import (
+	"net/netip"
 	"sync"
 	"time"
 )
@@ -41,6 +42,12 @@ type Prefix struct {
 	Attrs  map[string]string
 }
 
+type SRv6DomainMetadata struct {
+	LocatorPrefix netip.Prefix
+	LinkPrefix    netip.Prefix
+	EdgePrefix    netip.Prefix
+}
+
 type Graph struct {
 	mu       sync.RWMutex //nolint:unused // guards graph once concurrent access lands
 	nodes    map[NodeID]*Node
@@ -52,4 +59,7 @@ type Graph struct {
 type TopologyManager interface {
 	LoadTopology() error
 	IsReady() bool
+
+	// Get SRv6 domain metadata such as SRv6 domain prefix
+	GetDomainMetadata() SRv6DomainMetadata
 }

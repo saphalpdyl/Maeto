@@ -54,7 +54,7 @@ class PlannedLink:
 class PopPlan:
     pop: object
     isis_net: str
-    blackhole: str      # locator /48
+    locator_prefix: str # the pop's /48, sids are carved from it
     loopback: str       # ::1/128
     interfaces: list    # [Interface], core links only -- what frr owns
     access: object      # AccessPlan, or None on a pop with no cpes
@@ -150,8 +150,8 @@ def build_plan(topo):
             ifaces.append(Interface(name, "core", peer, addr, f"core link to {peer}"))
             iface_by_key[(pop.id, ("core", link.index))] = name
 
-        blackhole, loopback = addressing.locator(d.locator_prefix, pop.index)
-        pops[pop.id] = PopPlan(pop, addressing.isis_net(pop.index), blackhole, loopback, ifaces, access)
+        locator_prefix, loopback = addressing.locator(d.locator_prefix, pop.index)
+        pops[pop.id] = PopPlan(pop, addressing.isis_net(pop.index), locator_prefix, loopback, ifaces, access)
 
     links = []
     for link in sorted(topo.links, key=lambda l: l.index):

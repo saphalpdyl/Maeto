@@ -45,7 +45,7 @@ def _pop(pop, pp):
         "clab_label": pop.clab_label,
         "index": pop.index,
         "isis_net": pp.isis_net,
-        "locator": pp.blackhole,
+        "locator": pp.locator_prefix,
         "loopback": pp.loopback,
         "interfaces": [
             {

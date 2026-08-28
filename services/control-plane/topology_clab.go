@@ -3,6 +3,7 @@ package controlplane
 import (
 	"encoding/json"
 	"fmt"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"sync"
@@ -128,15 +129,18 @@ type ClabTopologyManager struct {
 	graph *Graph
 
 	config ClabTopologyConfig
+
+	domainMetadata SRv6DomainMetadata
 }
 
 var _ TopologyManager = (*ClabTopologyManager)(nil)
 
 func NewClabTopologyManager(cfg ClabTopologyConfig) *ClabTopologyManager {
 	return &ClabTopologyManager{
-		config: cfg,
-		ready:  false,
-		graph:  nil,
+		config:         cfg,
+		ready:          false,
+		graph:          nil,
+		domainMetadata: SRv6DomainMetadata{},
 	}
 }
 
@@ -216,9 +220,29 @@ func (c *ClabTopologyManager) LoadTopology() error {
 
 	graph := generateGraphFromRawTopology(rawTopoData)
 
+	locatorPrefix, err := netip.ParsePrefix(rawTopoData.Defaults.LocatorPrefix)
+	if err != nil {
+		return fmt.Errorf("failed to parse locator prefix: %w", err)
+	}
+
+	linkPrefix, err := netip.ParsePrefix(rawTopoData.Defaults.LinkPrefix)
+	if err != nil {
+		return fmt.Errorf("failed to parse link prefix: %w", err)
+	}
+
+	edgePrefix, err := netip.ParsePrefix(rawTopoData.Defaults.EdgePrefix)
+	if err != nil {
+		return fmt.Errorf("failed to parse edge prefix: %w", err)
+	}
+
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	c.domainMetadata = SRv6DomainMetadata{
+		LocatorPrefix: locatorPrefix,
+		LinkPrefix:    linkPrefix,
+		EdgePrefix:    edgePrefix,
+	}
 	c.graph = graph
 	c.ready = true
 
@@ -245,4 +269,8 @@ func (c *ClabTopologyManager) GetNodeByID(nodeID NodeID) (*Node, bool) {
 
 	node, exists := c.graph.nodes[nodeID]
 	return node, exists
+}
+
+func (c *ClabTopologyManager) GetDomainMetadata() SRv6DomainMetadata {
+	return c.domainMetadata
 }

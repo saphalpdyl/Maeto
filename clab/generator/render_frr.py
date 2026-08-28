@@ -35,7 +35,7 @@ def render_frr(pop_plan):
         " srv6",
         "  locators",
         "   locator CORE",
-       f"    prefix {p.blackhole} block-len 32 node-len 16 func-bits 16",
+       f"    prefix {p.locator_prefix} block-len 32 node-len 16 func-bits 16", # bbbb:bbbb:nnnn:ffff::
        f"    behavior usid",
         "   !",
         "  !",
