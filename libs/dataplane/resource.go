@@ -26,6 +26,7 @@ const (
 	KindRule  Kind = "rule"
 	KindXFRM  Kind = "xfrm"
 	KindRoute Kind = "route"
+	KindSID   Kind = "sid"
 )
 
 type ID struct {

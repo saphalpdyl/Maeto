@@ -144,7 +144,7 @@ func NewClabTopologyManager(cfg ClabTopologyConfig) *ClabTopologyManager {
 	}
 }
 
-func generateGraphFromRawTopology(rawTopoData *RawTopologyData) *Graph {
+func generateGraphFromRawTopology(rawTopoData *RawTopologyData) (*Graph, error) {
 	g := &Graph{
 		nodes:    make(map[NodeID]*Node),
 		edges:    make(map[EdgeID]*Edge),
@@ -153,13 +153,24 @@ func generateGraphFromRawTopology(rawTopoData *RawTopologyData) *Graph {
 	}
 
 	for _, p := range rawTopoData.Pops {
+
+		loopback, err := netip.ParsePrefix(p.Loopback)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse loopback as netip.Prefix: %s", p.Loopback)
+		}
+
+		locator, err := netip.ParsePrefix(p.Locator)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse locator as netip.Prefix: %s", p.Locator)
+		}
+
 		g.nodes[NodeID(p.ID)] = &Node{
 			ID:       NodeID(p.ID),
 			Name:     p.Name,
 			ASN:      0,
 			ISISNet:  "",
-			Loopback: p.Loopback,
-			Locator:  p.Locator,
+			Loopback: loopback,
+			Locator:  locator,
 			Attrs:    map[string]string{},
 		}
 	}
@@ -209,7 +220,7 @@ func generateGraphFromRawTopology(rawTopoData *RawTopologyData) *Graph {
 		g.adj[NodeID(l.B.ID)] = append(g.adj[NodeID(l.B.ID)], revEdgeId)
 	}
 
-	return g
+	return g, nil
 }
 
 func (c *ClabTopologyManager) LoadTopology() error {
@@ -218,19 +229,22 @@ func (c *ClabTopologyManager) LoadTopology() error {
 		return fmt.Errorf("failed to open and parse containerlab topology: %w, statepath: %s, topologydirpath: %s", err, c.config.StatePath, c.config.TopologyDirPath)
 	}
 
-	graph := generateGraphFromRawTopology(rawTopoData)
+	graph, err := generateGraphFromRawTopology(rawTopoData)
+	if err != nil {
+		return fmt.Errorf("failed to parse raw topology: %w", err)
+	}
 
-	locatorPrefix, err := netip.ParsePrefix(rawTopoData.Defaults.LocatorPrefix)
+	defaultLocatorPrefix, err := netip.ParsePrefix(rawTopoData.Defaults.LocatorPrefix)
 	if err != nil {
 		return fmt.Errorf("failed to parse locator prefix: %w", err)
 	}
 
-	linkPrefix, err := netip.ParsePrefix(rawTopoData.Defaults.LinkPrefix)
+	defaultLinkPrefix, err := netip.ParsePrefix(rawTopoData.Defaults.LinkPrefix)
 	if err != nil {
 		return fmt.Errorf("failed to parse link prefix: %w", err)
 	}
 
-	edgePrefix, err := netip.ParsePrefix(rawTopoData.Defaults.EdgePrefix)
+	defaultEdgePrefix, err := netip.ParsePrefix(rawTopoData.Defaults.EdgePrefix)
 	if err != nil {
 		return fmt.Errorf("failed to parse edge prefix: %w", err)
 	}
@@ -239,9 +253,9 @@ func (c *ClabTopologyManager) LoadTopology() error {
 	defer c.mu.Unlock()
 
 	c.domainMetadata = SRv6DomainMetadata{
-		LocatorPrefix: locatorPrefix,
-		LinkPrefix:    linkPrefix,
-		EdgePrefix:    edgePrefix,
+		LocatorPrefix: defaultLocatorPrefix,
+		LinkPrefix:    defaultLinkPrefix,
+		EdgePrefix:    defaultEdgePrefix,
 	}
 	c.graph = graph
 	c.ready = true

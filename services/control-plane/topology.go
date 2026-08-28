@@ -14,8 +14,8 @@ type Node struct {
 	Name     string
 	ASN      uint32
 	ISISNet  string
-	Loopback string
-	Locator  string
+	Loopback netip.Prefix
+	Locator  netip.Prefix
 	Attrs    map[string]string
 }
 

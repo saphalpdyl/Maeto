@@ -34,9 +34,9 @@ func TestGenerateGraph(t *testing.T) {
 		t.Fatalf("failed to read latest topology: %v", err)
 	}
 
-	g := generateGraphFromRawTopology(topoData)
-	if g == nil {
-		t.Fatalf("failed to generated graph from raw topology, is nil")
+	g, err := generateGraphFromRawTopology(topoData)
+	if (g == nil) || (err != nil) {
+		t.Fatalf("failed to generated graph from raw topology, is nil: %v", err)
 	}
 
 	if len(g.edges) != 36 {

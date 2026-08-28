@@ -9,6 +9,8 @@ type PE_PortalIntent struct {
 
 	SitePrefix   netip.Prefix `json:"site_prefix"`
 	TenantPrefix netip.Prefix `json:"tenant_prefix"`
+
+	DT46SID netip.Addr `json:"dt46_sid"`
 }
 
 type PEIntent struct {

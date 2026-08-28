@@ -5,8 +5,10 @@ package controlplane
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
 	"log/slog"
+	"net/netip"
 	"time"
 
 	"sync"
@@ -15,12 +17,18 @@ import (
 	"github.com/saphalpdyl/maeto/libs/intentkv"
 )
 
+const MaxSIDCollisionChecks = 5
+
 type ServiceRegistryConfig struct {
 }
 
 type ServiceRegistry struct {
 	config   *ServiceRegistryConfig
 	registry map[string]*dataplane.NodeIntent
+	// We are explicitly allowing SID specific here since, for a SRv6-based SD-WAN,
+	// SIDs are irrelevant for the underlying dataplane implementation
+	sidAllocationMap map[netip.Addr]bool // used to verify against collision
+	sidCursor        uint16              // Sequential cursor that is used to generate the hex for SID
 
 	publisher *intentkv.Publisher
 
@@ -31,11 +39,47 @@ type ServiceRegistry struct {
 
 func NewServiceRegistry(config *ServiceRegistryConfig, intentPublisher *intentkv.Publisher, logger *slog.Logger) *ServiceRegistry {
 	return &ServiceRegistry{
-		config:    config,
-		registry:  make(map[string]*dataplane.NodeIntent),
-		publisher: intentPublisher,
-		logger:    logger,
+		config:           config,
+		registry:         make(map[string]*dataplane.NodeIntent),
+		sidAllocationMap: make(map[netip.Addr]bool),
+		publisher:        intentPublisher,
+		logger:           logger,
+		sidCursor:        0,
 	}
+}
+
+func withHextets(base netip.Prefix, offsetBits int, funcID uint16) netip.Addr {
+	b := base.Addr().As16()
+	offset := offsetBits / 8
+
+	binary.BigEndian.PutUint16(b[offset:offset+2], funcID)
+
+	return netip.AddrFrom16(b)
+}
+
+func (r *ServiceRegistry) GenerateRandomSID(locatorPrefix netip.Prefix) (netip.Addr, error) {
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	for range MaxSIDCollisionChecks {
+		funcID := permute(r.sidCursor)
+		sid := withHextets(locatorPrefix, 48, funcID)
+
+		allocated, exists := r.sidAllocationMap[sid]
+		if !exists || !allocated {
+			r.sidCursor++
+			r.sidAllocationMap[sid] = true
+			return sid, nil
+		}
+
+		r.logger.Info("SID Collision: already is allocated", slog.String("sid", sid.String()))
+		r.sidCursor++
+		// TODO: uint16 might get exhausted
+	}
+
+	return netip.Addr{}, fmt.Errorf("couldn't generate SID: too many collisions, tried %d times", MaxSIDCollisionChecks)
+
 }
 
 func (r *ServiceRegistry) UpsertPEIntentForNode(ctx context.Context, nodeID string, tenantID string, portalID string, intent *dataplane.PE_PortalIntent) error {
