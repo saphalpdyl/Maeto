@@ -382,22 +382,21 @@ func (c *Controller) handlePETunnelUpdate(ctx context.Context, data []byte) erro
 		return fmt.Errorf("attach node not found in topology")
 	}
 
-	// Register for SID
-	dt46SID, err := c.serviceRegistry.GetOrGenerateSID(topologyNode.Locator, fmt.Sprintf("%d", tenant.ID), dataplane.EncapTypeDT46)
-	if err != nil {
-		return fmt.Errorf("failed to generate random SID: %w", err)
-	}
+	// // Register for SID
+	// dt46SID, err := c.serviceRegistry.GetOrGenerateSID(topologyNode.Locator, fmt.Sprintf("%d", tenant.ID), dataplane.EncapTypeDT46)
+	// if err != nil {
+	// 	return fmt.Errorf("failed to generate random SID: %w", err)
+	// }
 
 	peIntent := &dataplane.PE_PortalIntent{
 		HostFacingInterface: "eth1",
 		TunnelInterfaceID:   req.IfID,
 		SitePrefix:          site.Prefix,
 		TenantPrefix:        tenant.Allocation,
-		DT46SID:             dt46SID,
 	}
 
-	err = c.serviceRegistry.UpsertPEIntentForNode(
-		ctx, string(node.ID), fmt.Sprintf("%d", tenant.ID), req.PortalID, peIntent,
+	err := c.serviceRegistry.UpsertPEIntentForNode(
+		ctx, string(node.ID), fmt.Sprintf("%d", tenant.ID), req.PortalID, peIntent, topologyNode.Locator,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to set intent for tenant: %w", err)

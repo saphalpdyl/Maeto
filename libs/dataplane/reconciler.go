@@ -113,7 +113,7 @@ func (r *Reconciler) RenderPE(ctx context.Context, intent *PEIntent) (map[string
 
 		resources[vrf.ID().Key] = vrf
 
-		for _, portalIntent := range t {
+		for _, portalIntent := range t.PortalIntents {
 			xfrmName := fmt.Sprintf("maeto-tun-%s-%d", tenantID, portalIntent.TunnelInterfaceID)
 
 			xfrm := &XFRM{
@@ -138,7 +138,7 @@ func (r *Reconciler) RenderPE(ctx context.Context, intent *PEIntent) (map[string
 
 			dt46SID := &SID{
 				SIDType: SIDDT46,
-				SID:     portalIntent.DT46SID,
+				SID:     t.DT46SID,
 				TableID: int(tableID),
 				Metric:  0,
 			}

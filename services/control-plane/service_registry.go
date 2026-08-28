@@ -59,11 +59,8 @@ func withHextets(base netip.Prefix, offsetBits int, funcID uint16) netip.Addr {
 	return netip.AddrFrom16(b)
 }
 
-func (r *ServiceRegistry) GetOrGenerateSID(locatorPrefix netip.Prefix, tenantID string, sidType dataplane.EncapType) (netip.Addr, error) {
-
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
+// Call under lock
+func (r *ServiceRegistry) getOrGenerateSID(locatorPrefix netip.Prefix, tenantID string, sidType dataplane.EncapType) (netip.Addr, error) {
 	// We don't want sticky ID across PEs
 	tenantMapKey := fmt.Sprintf("%s.%s.%s", locatorPrefix.Addr().String(), tenantID, string(sidType))
 	existingSID, exists := r.sidTenantMap[tenantMapKey]
@@ -92,7 +89,15 @@ func (r *ServiceRegistry) GetOrGenerateSID(locatorPrefix netip.Prefix, tenantID 
 
 }
 
-func (r *ServiceRegistry) UpsertPEIntentForNode(ctx context.Context, nodeID string, tenantID string, portalID string, intent *dataplane.PE_PortalIntent) error {
+func (r *ServiceRegistry) UpsertPEIntentForNode(
+	ctx context.Context,
+	nodeID string,
+	tenantID string,
+	portalID string,
+	intent *dataplane.PE_PortalIntent,
+	locatorPrefix netip.Prefix,
+) error {
+
 	r.mu.Lock()
 
 	current, exists := r.registry[nodeID]
@@ -101,7 +106,7 @@ func (r *ServiceRegistry) UpsertPEIntentForNode(ctx context.Context, nodeID stri
 			NodeType: dataplane.NodeTypePE,
 			Intent: &dataplane.PEIntent{
 				NodeID:  nodeID,
-				Tenants: make(map[string]map[string]dataplane.PE_PortalIntent),
+				Tenants: make(map[string]dataplane.TenantIntent),
 			},
 			Timestamp:  time.Now(),
 			Generation: 1,
@@ -119,10 +124,19 @@ func (r *ServiceRegistry) UpsertPEIntentForNode(ctx context.Context, nodeID stri
 
 	tenantIntent, exists := peIntent.Tenants[tenantID]
 	if !exists {
-		peIntent.Tenants[tenantID] = make(map[string]dataplane.PE_PortalIntent)
-		peIntent.Tenants[tenantID][portalID] = *intent
+		// Register for SID
+		dt46SID, err := r.getOrGenerateSID(locatorPrefix, tenantID, dataplane.EncapTypeDT46)
+		if err != nil {
+			return fmt.Errorf("failed to generate random SID: %w", err)
+		}
+
+		peIntent.Tenants[tenantID] = dataplane.TenantIntent{
+			PortalIntents: make(map[string]dataplane.PE_PortalIntent),
+			DT46SID:       dt46SID,
+		}
+		peIntent.Tenants[tenantID].PortalIntents[portalID] = *intent
 	} else {
-		tenantIntent[portalID] = *intent
+		tenantIntent.PortalIntents[portalID] = *intent
 	}
 
 	current.Timestamp = time.Now()

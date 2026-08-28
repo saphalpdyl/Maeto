@@ -13,8 +13,13 @@ func TestNodeIntentCloneIsDeep(t *testing.T) {
 		Generation: 4,
 		Intent: &dataplane.PEIntent{
 			NodeID: "A",
-			Tenants: map[string]map[string]dataplane.PE_PortalIntent{
-				"273": {"48522cc7549b": {TunnelInterfaceID: 3}},
+			Tenants: map[string]dataplane.TenantIntent{
+				"273": {
+					PortalIntents: map[string]dataplane.PE_PortalIntent{
+						"48522cc7549b": {TunnelInterfaceID: 3},
+					},
+					DT46SID: netip.MustParseAddr("fc00:0:1:ff8c::"),
+				},
 			},
 		},
 	}
@@ -25,9 +30,9 @@ func TestNodeIntentCloneIsDeep(t *testing.T) {
 	orig.Generation = 99
 	pe := orig.Intent.(*dataplane.PEIntent) // nolint:errcheck
 	pe.NodeID = "B"
-	pe.Tenants["273"]["48522cc7549b"] = dataplane.PE_PortalIntent{TunnelInterfaceID: 99}
-	pe.Tenants["273"]["new-portal"] = dataplane.PE_PortalIntent{}
-	pe.Tenants["999"] = map[string]dataplane.PE_PortalIntent{}
+	pe.Tenants["273"].PortalIntents["48522cc7549b"] = dataplane.PE_PortalIntent{TunnelInterfaceID: 99}
+	pe.Tenants["273"].PortalIntents["new-portal"] = dataplane.PE_PortalIntent{}
+	pe.Tenants["999"] = dataplane.TenantIntent{}
 
 	got := clone.Intent.(*dataplane.PEIntent) // nolint:errcheck
 
@@ -40,11 +45,14 @@ func TestNodeIntentCloneIsDeep(t *testing.T) {
 	if n := len(got.Tenants); n != 1 {
 		t.Errorf("outer map has %d tenants, want 1 -- outer map is shared", n)
 	}
-	if n := len(got.Tenants["273"]); n != 1 {
-		t.Errorf("inner map has %d portals, want 1 -- inner map is shared", n)
+	if n := len(got.Tenants["273"].PortalIntents); n != 1 {
+		t.Errorf("portal map has %d portals, want 1 -- portal map is shared", n)
 	}
-	if id := got.Tenants["273"]["48522cc7549b"].TunnelInterfaceID; id != 3 {
+	if id := got.Tenants["273"].PortalIntents["48522cc7549b"].TunnelInterfaceID; id != 3 {
 		t.Errorf("TunnelInterfaceID = %d, want 3 -- value is shared", id)
+	}
+	if sid := got.Tenants["273"].DT46SID; sid.String() != "fc00:0:1:ff8c::" {
+		t.Errorf("DT46SID = %s, want fc00:0:1:ff8c:: -- dropped by the clone", sid)
 	}
 	if orig.Intent == clone.Intent {
 		t.Error("clone shares the Intent pointer with the original")
