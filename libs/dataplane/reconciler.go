@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"math"
 	"net/netip"
+	"time"
 
 	"github.com/saphalpdyl/maeto/libs/dataplane/log"
 )
@@ -18,7 +19,13 @@ type Reconciler struct {
 
 	intentFeed <-chan *NodeIntent
 
+	reporter StateReporter
+
 	logger *slog.Logger
+}
+
+func (r *Reconciler) SetStateReporter(reporter StateReporter) {
+	r.reporter = reporter
 }
 
 func NewReconciler(dp Dataplane, nodeType NodeType, logger *slog.Logger, intentFeed <-chan *NodeIntent) *Reconciler {
@@ -439,18 +446,31 @@ func (r *Reconciler) Apply(ctx context.Context, diff DiffResult) error {
 	return nil
 }
 
-func (r *Reconciler) Reconcile(ctx context.Context, intent *NodeIntent) error {
+func (r *Reconciler) Reconcile(ctx context.Context, intent *NodeIntent) (err error) {
 	const maxPasses = 3
 
+	var (
+		current, desired map[string]Resource
+		result           DiffResult
+		converged        bool
+		passes           int
+	)
+
+	defer func() {
+		r.report(ctx, intent, current, desired, result, converged, passes, err)
+	}()
+
 	for pass := 0; pass < maxPasses; pass++ {
-		current, desired, err := r.Plan(ctx, intent)
+		passes = pass + 1
+
+		current, desired, err = r.Plan(ctx, intent)
 		r.logger.InfoContext(ctx, "reconciling", slog.Any("current", current), slog.Any("desired", desired))
 		if err != nil {
 			r.logger.ErrorContext(ctx, "failed to plan reconciliation", log.Err(err))
 			return err
 		}
 
-		result, err := r.Diff(ctx, current, desired)
+		result, err = r.Diff(ctx, current, desired)
 		if err != nil {
 			r.logger.ErrorContext(ctx, "failed to diff reconciliation", log.Err(err))
 			return err
@@ -466,6 +486,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, intent *NodeIntent) error {
 			)
 
 			r.current = intent
+			converged = true
+
 			return nil // converged
 		}
 
@@ -477,4 +499,70 @@ func (r *Reconciler) Reconcile(ctx context.Context, intent *NodeIntent) error {
 	}
 
 	return fmt.Errorf("dataplane could not converged after %d passes", maxPasses)
+}
+
+func (r *Reconciler) report(
+	ctx context.Context,
+	intent *NodeIntent,
+	current, desired map[string]Resource,
+	result DiffResult,
+	converged bool,
+	passes int,
+	reconcileErr error,
+) {
+	if r.reporter == nil || current == nil {
+		return
+	}
+
+	state := &NodeState{
+		NodeType:   r.nodeType,
+		ReportedAt: time.Now(),
+		Converged:  converged,
+		Passes:     passes,
+	}
+
+	if intent != nil {
+		state.Generation = intent.Generation
+		state.NodeID = intentNodeID(intent)
+	}
+
+	if reconcileErr != nil {
+		state.Error = reconcileErr.Error()
+	}
+
+	var err error
+	if state.Current, err = ResourceStatesFromMap(current); err != nil {
+		r.logger.ErrorContext(ctx, "failed to encode current state", log.Err(err))
+		return
+	}
+
+	if state.Desired, err = ResourceStatesFromMap(desired); err != nil {
+		r.logger.ErrorContext(ctx, "failed to encode desired state", log.Err(err))
+		return
+	}
+
+	if state.Add, err = ResourceStates(result.Add); err != nil {
+		r.logger.ErrorContext(ctx, "failed to encode added state", log.Err(err))
+		return
+	}
+
+	if state.Remove, err = ResourceStates(result.Remove); err != nil {
+		r.logger.ErrorContext(ctx, "failed to encode removed state", log.Err(err))
+		return
+	}
+
+	if err := r.reporter.Report(ctx, state); err != nil {
+		r.logger.ErrorContext(ctx, "failed to report node state", log.Err(err))
+	}
+}
+
+func intentNodeID(intent *NodeIntent) string {
+	switch i := intent.Intent.(type) {
+	case *PEIntent:
+		return i.NodeID
+	case *CPEIntent:
+		return i.PortalID
+	default:
+		return ""
+	}
 }

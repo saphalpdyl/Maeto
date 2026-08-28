@@ -15,6 +15,7 @@ import (
 	"github.com/saphalpdyl/maeto/libs/controlapi"
 	"github.com/saphalpdyl/maeto/libs/dataplane"
 	"github.com/saphalpdyl/maeto/libs/intentkv"
+	"github.com/saphalpdyl/maeto/libs/statekv"
 	"github.com/saphalpdyl/maeto/libs/swan"
 	"github.com/saphalpdyl/maeto/services/maeto-agent/log"
 )
@@ -64,6 +65,19 @@ func (a *Agent) Run(ctx context.Context) {
 		log.Domain(log.DomainControlPlane),
 		slog.String("intent_key", a.node.IntentKey()),
 	)
+
+	if publisher, err := statekv.NewPublisher(ctx, a.js); err != nil {
+		a.logger.ErrorContext(ctx, "failed to open state bucket",
+			log.Domain(log.DomainControlPlane),
+			log.Err(err),
+		)
+	} else {
+		a.reconciler.SetStateReporter(&stateReporter{
+			publisher: publisher,
+			key:       statekv.Key(statekv.PrefixPE, a.node.ID),
+			nodeID:    a.node.ID,
+		})
+	}
 
 	go a.reconciler.Start(ctx) // nolint:errcheck
 
