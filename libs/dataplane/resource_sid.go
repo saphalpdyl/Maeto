@@ -9,14 +9,14 @@ type SIDType string
 
 const (
 	SIDDT46 SIDType = "dt46" // Ranges from locator:node:(f001->ffff)::
-	SIDDTB  SIDType = "dtb"  // unused
+	SIDB6   SIDType = "b6"   // unused
 )
 
 // SID is basically a special route
 type SID struct {
 	SIDType SIDType
 	SID     netip.Addr
-	Table   int
+	TableID int
 	Metric  int
 }
 

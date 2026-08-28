@@ -135,6 +135,15 @@ func (r *Reconciler) RenderPE(ctx context.Context, intent *PEIntent) (map[string
 			}
 
 			resources[route.ID().Key] = route
+
+			dt46SID := &SID{
+				SIDType: SIDDT46,
+				SID:     portalIntent.DT46SID,
+				TableID: int(tableID),
+				Metric:  0,
+			}
+
+			resources[dt46SID.ID().Key] = dt46SID
 		}
 	}
 
@@ -146,6 +155,7 @@ func (r *Reconciler) RenderFIB(
 	vrfLinks []*DataplaneVRF,
 	xfrmLinks []*DataplaneXFRM,
 	routes []DataplaneRoute,
+	sids []DataplaneSID,
 	rules []DataplaneRule,
 ) (map[string]Resource, error) {
 	resources := make(map[string]Resource)
@@ -188,9 +198,22 @@ func (r *Reconciler) RenderFIB(
 		resources[route.ID().Key] = route
 	}
 
-	for _, rule := range rules {
-		res := &Rule{Priority: rule.Priority, Src: rule.Src, Table: rule.Table}
-		resources[res.ID().Key] = res
+	for _, r := range rules {
+		rule := &Rule{Priority: r.Priority, Src: r.Src, Table: r.Table}
+		resources[rule.ID().Key] = rule
+	}
+
+	for _, s := range sids {
+		ip, _ := netip.AddrFromSlice(s.Dst.IP)
+
+		sid := &SID{
+			SIDType: SIDType(s.EncapType),
+			SID:     ip,
+			TableID: s.Table,
+			Metric:  0,
+		}
+
+		resources[sid.ID().Key] = sid
 	}
 
 	return resources, nil
@@ -247,11 +270,17 @@ func (r *Reconciler) Plan(ctx context.Context, desired *NodeIntent) (map[string]
 		return nil, nil, fmt.Errorf("dataplane failure: couldn't retrieve rules: %w", err)
 	}
 
+	sids, err := r.dp.GetSIDs()
+	if err != nil {
+		return nil, nil, fmt.Errorf("dataplane failure: couldn't retrieve sids: %w", err)
+	}
+
 	currentResources, err := r.RenderFIB(
 		ctx,
 		vrfLinks,
 		xfrmLinks,
 		routes,
+		sids,
 		rules,
 	)
 	if err != nil {
@@ -316,7 +345,7 @@ func (r *Reconciler) Apply(ctx context.Context, diff DiffResult) error {
 	// First of all, we remove shit
 	// We remove from bottom up i.e route -> xfrm -> vrf
 	// TODO: Later group by kind in a map so that we don't traverse everything everytime
-	for _, kind := range []Kind{KindRule, KindRoute, KindXFRM, KindVRF} {
+	for _, kind := range []Kind{KindRule, KindSID, KindRoute, KindXFRM, KindVRF} {
 		for _, resource := range diff.Remove {
 			if resource.ID().Kind != kind {
 				continue
@@ -326,28 +355,38 @@ func (r *Reconciler) Apply(ctx context.Context, diff DiffResult) error {
 			case *Route:
 				if err := r.dp.RemovePrefixRoute(res.Dst, res.Table); err != nil {
 					r.logger.ErrorContext(ctx, "failed to remove route", log.Err(err))
+					break
 				}
 
 			case *XFRM:
 				if err := r.dp.RemoveXFRMInterface(res.Index); err != nil {
 					r.logger.ErrorContext(ctx, "failed to remove xfrm interface", log.Err(err))
+					break
 				}
 
 			case *VRF:
 				if err := r.dp.RemoveVRF(res.Index); err != nil {
 					r.logger.ErrorContext(ctx, "failed to remove vrf", log.Err(err))
+					break
 				}
 
 			case *Rule:
 				if err := r.dp.RemoveRule(res.Priority, res.Src, res.Table); err != nil {
 					r.logger.ErrorContext(ctx, "failed to remove rule", log.Err(err))
+					break
+				}
+			case *SID:
+				if err := r.dp.RemoveSID(res.SID); err != nil {
+					r.logger.ErrorContext(ctx, "failed to remove sid", log.Err(err))
+					break
 				}
 			}
+
 		}
 	}
 
 	// Addition
-	for _, kind := range []Kind{KindVRF, KindXFRM, KindRoute, KindRule} {
+	for _, kind := range []Kind{KindVRF, KindXFRM, KindRoute, KindSID, KindRule} {
 		for _, resource := range diff.Add {
 			if resource.ID().Kind != kind {
 				continue
@@ -383,7 +422,17 @@ func (r *Reconciler) Apply(ctx context.Context, diff DiffResult) error {
 				if err := r.dp.UpsertRule(res.Priority, res.Src, res.Table); err != nil {
 					r.logger.ErrorContext(ctx, "failed to upsert rule", log.Err(err))
 				}
+
+			case *SID:
+				if res.SIDType != SIDDT46 {
+					r.logger.WarnContext(ctx, "SID Type is not supported", slog.String("sid_type", string(res.SIDType)))
+				}
+
+				if err := r.dp.UpsertDT46SID(res.SID, res.TableID); err != nil {
+					r.logger.ErrorContext(ctx, "failed to upsert DT46 SID", log.Err(err))
+				}
 			}
+
 		}
 	}
 

@@ -48,6 +48,21 @@ func TestLiveDataplaneRead(t *testing.T) {
 type TestDefaultRouteOnlyDataplane struct {
 }
 
+// GetSIDs implements [dataplane.Dataplane].
+func (t *TestDefaultRouteOnlyDataplane) GetSIDs() ([]dataplane.DataplaneSID, error) {
+	panic("unimplemented")
+}
+
+// RemoveSID implements [dataplane.Dataplane].
+func (t *TestDefaultRouteOnlyDataplane) RemoveSID(sid netip.Addr) error {
+	panic("unimplemented")
+}
+
+// UpsertDT46SID implements [dataplane.Dataplane].
+func (t *TestDefaultRouteOnlyDataplane) UpsertDT46SID(sid netip.Addr, vrfTableID int) error {
+	panic("unimplemented")
+}
+
 func (t *TestDefaultRouteOnlyDataplane) GetDefaultRouteAndDev() (string, string, error) {
 	return "fd00:0:0:100::1", "eth1", nil
 }

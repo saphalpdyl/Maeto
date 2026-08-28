@@ -10,10 +10,6 @@ type Via struct {
 	Addr       net.IP
 }
 
-// Categorizing Maeto installed routes should be done by implementations
-//
-// For example: netlink creates netlink.Route with .Proto == MaetoRouteProto [211]
-// and netlink.Link with .LinkAttrs.Group == MaetoLinkGroup [211]
 type DataplaneRoute struct {
 	// Dev is the resolved name of LinkIndex. Desired state can only ever speak
 	// names, so the read side translates -- the reconciler has no way to.
@@ -30,6 +26,24 @@ type DataplaneRoute struct {
 	MTU        int
 	Rtt        int
 	AdvMSS     int
+}
+
+type EncapType string
+
+const (
+	EncapTypeDT46 EncapType = "dt46"
+	EncapTypeB6   EncapType = "b6"
+	EncapTypeDT4  EncapType = "dt4"
+	EncapTypeDT6  EncapType = "dt6"
+)
+
+type DataplaneSID struct {
+	Dev       string
+	Dst       *net.IPNet
+	Family    int
+	Table     int
+	Type      int
+	EncapType EncapType
 }
 
 // DataplaneRule is a policy routing rule: "traffic matching Src looks up Table".
@@ -114,6 +128,10 @@ type Dataplane interface {
 
 	UpsertPolicy(nhid, dtsid, vrfTableId, vrfTableName string, sids []string) error
 	UpsertRouteToPolicy(dest, vrfTableId, nhid string) error
+
+	UpsertDT46SID(sid netip.Addr, vrfTableID int) error
+	RemoveSID(sid netip.Addr) error
+	GetSIDs() ([]DataplaneSID, error)
 
 	GetDefaultRouteAndDev() (string, string, error)
 }

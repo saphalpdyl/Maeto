@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"os"
 	"strings"
 
 	"github.com/vishvananda/netlink"
+	nl "github.com/vishvananda/netlink/nl"
 	"golang.org/x/sys/unix"
 )
 
@@ -15,13 +17,20 @@ var _ Dataplane = (*LinuxNetlink)(nil)
 
 // metric for the VRF catch-all, kept as a number rather than the shell string
 const vrfUnreachableMetricValue = 4278198272
+const vrfStrictModePath = "/proc/sys/net/vrf/strict_mode"
 
 // every link and route maeto installs carries these, so a reconcile can list
 // exactly what it owns and leave everything else alone
 const (
 	MaetoLinkGroup  uint32                = 211
 	MaetoRouteProto netlink.RouteProtocol = 211
+	// SIDs are basically Routes so we don't want them to get fetch during route fetch
+	MaetoSIDProto netlink.RouteProtocol = 212
 )
+
+// SEG6_LOCAL_ACTION_END_DT46 from uapi/linux/seg6_local.h. vishvananda/netlink
+// v1.3.1 stops its action enum at END_BPF, so this one is spelled out.
+const seg6LocalActionEndDT46 = 16
 
 type LinuxNetlink struct{}
 
@@ -186,25 +195,23 @@ func (l *LinuxNetlink) UpsertVRF(tableName string, tableId int) error {
 			return fmt.Errorf("create vrf device %s: %w", tableName, err)
 		}
 
-		{
-			existing, err := netlink.LinkByName(tableName)
-			if err != nil {
-				return fmt.Errorf("lookup existing vrf %s: %w", tableName, err)
-			}
-
-			current, ok := existing.(*netlink.Vrf)
-			if !ok {
-				return fmt.Errorf("%s exists but is %T, not a vrf", tableName, existing)
-			}
-
-			// a table change would silently strand every route already in the old
-			// table, so refuse rather than converge
-			if current.Table != vrf.Table {
-				return fmt.Errorf("vrf %s exists with table %d, wanted %d", tableName, current.Table, vrf.Table)
-			}
-
-			vrf = current
+		existing, err := netlink.LinkByName(tableName)
+		if err != nil {
+			return fmt.Errorf("lookup existing vrf %s: %w", tableName, err)
 		}
+
+		current, ok := existing.(*netlink.Vrf)
+		if !ok {
+			return fmt.Errorf("%s exists but is %T, not a vrf", tableName, existing)
+		}
+
+		// a table change would silently strand every route already in the old
+		// table, so refuse rather than converge
+		if current.Table != vrf.Table {
+			return fmt.Errorf("vrf %s exists with table %d, wanted %d", tableName, current.Table, vrf.Table)
+		}
+
+		vrf = current
 	}
 
 	if err := netlink.LinkSetUp(vrf); err != nil {
@@ -213,6 +220,13 @@ func (l *LinuxNetlink) UpsertVRF(tableName string, tableId int) error {
 
 	if err := netlink.RouteReplace(vrfCatchAll(tableId)); err != nil {
 		return fmt.Errorf("install vrf catch-all for %s: %w", tableName, err)
+	}
+
+	// https://onvox.net/2024/12/16/srv6-frr/#usid-caveat
+	// It is important to note that [net.vrf.strict_mode=1] setting gets reset any
+	// 	time a new VRF is added to the kernel and must be reset again
+	if err := os.WriteFile(vrfStrictModePath, []byte("1"), 0o644); err != nil { // #nosec G306 -- this is a sysctl, not a user file
+		return fmt.Errorf("enable vrf strict mode: %w", err)
 	}
 
 	return nil
@@ -557,4 +571,108 @@ func (l *LinuxNetlink) UpsertRouteToPolicy(dest string, vrfTableId string, nhid 
 	}
 
 	return nil
+}
+
+func (l *LinuxNetlink) UpsertDT46SID(sid netip.Addr, vrfTableID int) error {
+	vrf, err := vrfByTable(vrfTableID)
+	if err != nil {
+		return fmt.Errorf("lookup vrf by table %d: %w", vrfTableID, err)
+	}
+
+	// End.DT46 accepts only the vrftable attribute -- the kernel rejects the
+	// route outright if SEG6_LOCAL_TABLE is set alongside it
+	encap := &netlink.SEG6LocalEncap{
+		Action:   seg6LocalActionEndDT46,
+		VrfTable: vrfTableID,
+	}
+	encap.Flags[nl.SEG6_LOCAL_VRFTABLE] = true
+
+	route := &netlink.Route{
+		Dst: &net.IPNet{
+			IP:   net.IP(sid.AsSlice()),
+			Mask: net.CIDRMask(128, 128),
+		},
+		Table:     unix.RT_TABLE_MAIN,
+		Family:    netlink.FAMILY_V6,
+		Protocol:  MaetoSIDProto,
+		LinkIndex: vrf.Attrs().Index,
+		Encap:     encap,
+	}
+
+	if err := netlink.RouteReplace(route); err != nil {
+		return fmt.Errorf("upsert DT46 sid %s (vrftable %d, dev %s): %w",
+			sid, vrfTableID, vrf.Attrs().Name, err)
+	}
+
+	return nil
+}
+
+func (l *LinuxNetlink) RemoveSID(sid netip.Addr) error {
+	// convert netip.Addr to net.IPNet
+	parsedIPNet := &net.IPNet{
+		IP:   net.IP(sid.AsSlice()),
+		Mask: net.CIDRMask(128, 128),
+	}
+
+	err := netlink.RouteDel(&netlink.Route{
+		Dst:      parsedIPNet,
+		Table:    unix.RT_TABLE_MAIN,
+		Family:   netlink.FAMILY_V6,
+		Protocol: MaetoSIDProto,
+	})
+
+	if err != nil {
+		return fmt.Errorf("remove sid %s: %w", sid, err)
+	}
+
+	return nil
+}
+
+func (l *LinuxNetlink) GetSIDs() ([]DataplaneSID, error) {
+	netlinkRoutes, err := netlink.RouteListFiltered(netlink.FAMILY_ALL,
+		&netlink.Route{Table: unix.RT_TABLE_UNSPEC, Protocol: MaetoSIDProto},
+		netlink.RT_FILTER_TABLE|netlink.RT_FILTER_PROTOCOL)
+	if err != nil {
+		return nil, fmt.Errorf("list maeto sids: %w", err)
+	}
+
+	names, err := linkNames()
+	if err != nil {
+		return nil, err
+	}
+
+	sids := make([]DataplaneSID, 0, len(netlinkRoutes))
+	for _, r := range netlinkRoutes {
+		encap, ok := r.Encap.(*netlink.SEG6LocalEncap)
+		if !ok {
+			return nil, fmt.Errorf("failed to parse sid encap type as seg6localencap")
+		}
+
+		var encapType EncapType
+		switch encap.Action {
+		case nl.SEG6_LOCAL_ACTION_END_DT4:
+			encapType = EncapTypeDT4
+		case nl.SEG6_LOCAL_ACTION_END_DT6:
+			encapType = EncapTypeDT6
+		case seg6LocalActionEndDT46:
+			encapType = EncapTypeDT46
+		case nl.SEG6_LOCAL_ACTION_END_B6:
+			encapType = EncapTypeB6
+		default:
+			return nil, fmt.Errorf("unknown encap action type %d", encap.Action)
+		}
+
+		sid := DataplaneSID{
+			Dev:       names[r.LinkIndex],
+			Dst:       r.Dst,
+			Family:    r.Family,
+			Table:     r.Table,
+			Type:      r.Type,
+			EncapType: encapType,
+		}
+
+		sids = append(sids, sid)
+	}
+
+	return sids, nil
 }
