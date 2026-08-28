@@ -28,7 +28,8 @@ type ServiceRegistry struct {
 	// We are explicitly allowing SID specific here since, for a SRv6-based SD-WAN,
 	// SIDs are irrelevant for the underlying dataplane implementation
 	sidAllocationMap map[netip.Addr]bool // used to verify against collision
-	sidCursor        uint16              // Sequential cursor that is used to generate the hex for SID
+	sidPortalMap     map[string]netip.Addr
+	sidCursor        uint16 // Sequential cursor that is used to generate the hex for SID
 
 	publisher *intentkv.Publisher
 
@@ -42,6 +43,7 @@ func NewServiceRegistry(config *ServiceRegistryConfig, intentPublisher *intentkv
 		config:           config,
 		registry:         make(map[string]*dataplane.NodeIntent),
 		sidAllocationMap: make(map[netip.Addr]bool),
+		sidPortalMap:     make(map[string]netip.Addr),
 		publisher:        intentPublisher,
 		logger:           logger,
 		sidCursor:        0,
@@ -57,10 +59,16 @@ func withHextets(base netip.Prefix, offsetBits int, funcID uint16) netip.Addr {
 	return netip.AddrFrom16(b)
 }
 
-func (r *ServiceRegistry) GenerateRandomSID(locatorPrefix netip.Prefix) (netip.Addr, error) {
+func (r *ServiceRegistry) GetOrGenerateSID(locatorPrefix netip.Prefix, portalID string, sidType dataplane.EncapType) (netip.Addr, error) {
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
+	portalMapKey := fmt.Sprintf("%s.%s", portalID, string(sidType))
+	existingSID, exists := r.sidPortalMap[portalMapKey]
+	if exists {
+		r.sidAllocationMap[existingSID] = true
+	}
 
 	for range MaxSIDCollisionChecks {
 		funcID := permute(r.sidCursor)
@@ -69,6 +77,7 @@ func (r *ServiceRegistry) GenerateRandomSID(locatorPrefix netip.Prefix) (netip.A
 		allocated, exists := r.sidAllocationMap[sid]
 		if !exists || !allocated {
 			r.sidCursor++
+			r.sidPortalMap[portalMapKey] = sid
 			r.sidAllocationMap[sid] = true
 			return sid, nil
 		}

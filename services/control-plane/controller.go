@@ -383,7 +383,7 @@ func (c *Controller) handlePETunnelUpdate(ctx context.Context, data []byte) erro
 	}
 
 	// Register for SID
-	dt46SID, err := c.serviceRegistry.GenerateRandomSID(topologyNode.Locator)
+	dt46SID, err := c.serviceRegistry.GetOrGenerateSID(topologyNode.Locator, req.PortalID, dataplane.EncapTypeDT46)
 	if err != nil {
 		return fmt.Errorf("failed to generate random SID: %w", err)
 	}
