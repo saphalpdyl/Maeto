@@ -8,7 +8,6 @@
 import Config
 
 config :maeto_pane,
-  ecto_repos: [MaetoPane.Repo],
   generators: [timestamp_type: :utc_datetime]
 
 # Configure the endpoint

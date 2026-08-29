@@ -75,7 +75,7 @@ services:
       - PGPASSWORD=admin
       - PGDATABASE=maeto_pane_dev
     ports:
-      - "4000:4000"
+      - "5000:4000"
     volumes:
       - ./services/maeto-pane:/app
       - maeto-pane-build:/app/_build

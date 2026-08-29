@@ -9,9 +9,10 @@ defmodule MaetoPane.Application do
   def start(_type, _args) do
     children = [
       MaetoPaneWeb.Telemetry,
-      MaetoPane.Repo,
       {DNSCluster, query: Application.get_env(:maeto_pane, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: MaetoPane.PubSub},
+      MaetoPane.Nats,
+      MaetoPane.Fabric,
       # Start a worker by calling: MaetoPane.Worker.start_link(arg)
       # {MaetoPane.Worker, arg},
       # Start to serve requests, typically the last entry
