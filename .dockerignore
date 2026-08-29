@@ -4,3 +4,6 @@ docs/**
 Vagrantfile
 
 refs/**
+services/maeto-pane/deps/**
+services/maeto-pane/_build/**
+services/maeto-pane/.elixir_ls/**

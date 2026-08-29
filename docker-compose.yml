@@ -58,6 +58,38 @@ services:
       - default
       - clab
 
+  maeto-pane:
+    image: maeto-pane:latest
+    container_name: maeto-pane
+    build:
+      context: .
+      dockerfile: docker/maeto-pane.Dockerfile
+      args:
+        ELIXIR_VERSION: ${ELIXIR_VERSION:-1.19.5}
+        OTP_VERSION: ${OTP_VERSION:-28.5}
+        DEBIAN_VERSION: ${DEBIAN_VERSION:-trixie-20260421-slim}
+    environment:
+      - NATS_CONNECT_URL=nats://clab-eight-pop-nats:4222
+      - PGHOST=db
+      - PGUSER=postgres
+      - PGPASSWORD=admin
+      - PGDATABASE=maeto_pane_dev
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./services/maeto-pane:/app
+      - maeto-pane-build:/app/_build
+      - maeto-pane-deps:/app/deps
+    depends_on:
+      - db
+    networks:
+      - default
+      - clab
+
 networks:
   clab:
     external: true
+
+volumes:
+  maeto-pane-build:
+  maeto-pane-deps:

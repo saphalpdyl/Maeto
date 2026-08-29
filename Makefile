@@ -47,6 +47,9 @@ sync:
 dev:
 	DEBUG=$(DEBUG) docker compose up --build maeto-control-plane
 
+fe:
+	docker compose up --build maeto-pane
+
 ddbg: # dev debug
 	DEBUG=1 docker compsoe up --build maeto-control-plane
 
