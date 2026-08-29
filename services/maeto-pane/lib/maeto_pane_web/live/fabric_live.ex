@@ -33,12 +33,14 @@ defmodule MaetoPaneWeb.FabricLive do
   defp load(socket) do
     snapshot = Fabric.snapshot()
     nodes = Analysis.nodes(snapshot)
+    registry = Analysis.registry(snapshot)
 
     socket
     |> assign(:connected_to_nats, snapshot.connected)
     |> assign(:has_control, not is_nil(snapshot.control))
-    |> assign(:issues, Analysis.issues(nodes))
+    |> assign(:issues, Analysis.issues(nodes) ++ Analysis.drift(registry))
     |> assign(:graph, Analysis.graph(snapshot))
+    |> assign(:registry, registry)
     |> resolve()
   end
 
@@ -160,6 +162,85 @@ defmodule MaetoPaneWeb.FabricLive do
             <.panel selected={@selected} issues={@issues} />
           </aside>
         </div>
+
+        <section class="rounded border border-base-300 bg-base-100 p-4">
+          <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+            <h2 class="text-sm font-semibold uppercase tracking-wide text-base-content/60">
+              Service registry
+            </h2>
+            <span :if={!@registry.present?} class="text-xs text-base-content/60">
+              not reported
+            </span>
+            <span :if={@registry.present?} class="font-mono text-xs text-base-content/60">
+              sid cursor {@registry.cursor} &middot; {length(@registry.allocated)} sid(s) allocated
+            </span>
+          </div>
+
+          <div :if={@registry.present?} class="mt-3 grid grid-cols-1 gap-6 lg:grid-cols-2">
+            <div>
+              <h3 class="text-xs font-semibold uppercase tracking-wide text-base-content/50">
+                Allocations
+              </h3>
+              <table class="mt-1 w-full text-left text-xs">
+                <thead class="text-base-content/50">
+                  <tr>
+                    <th class="py-1">tenant</th>
+                    <th>type</th>
+                    <th>locator</th>
+                    <th>sid</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-base-200">
+                  <tr :for={allocation <- @registry.tenants}>
+                    <td class="py-1 font-semibold">{allocation.tenant}</td>
+                    <td>{allocation.type}</td>
+                    <td class="font-mono text-base-content/60">{allocation.locator}</td>
+                    <td class="font-mono">{allocation.sid}</td>
+                  </tr>
+                  <tr :if={@registry.tenants == []}>
+                    <td colspan="4" class="py-2 text-base-content/60">nothing allocated</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div>
+              <h3 class="text-xs font-semibold uppercase tracking-wide text-base-content/50">
+                Held intents
+              </h3>
+              <table class="mt-1 w-full text-left text-xs">
+                <thead class="text-base-content/50">
+                  <tr>
+                    <th class="py-1">node</th>
+                    <th>gen</th>
+                    <th>tenant</th>
+                    <th>sites</th>
+                    <th>dt46 sid</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-base-200">
+                  <%= for node <- @registry.nodes, tenant <- node.tenants do %>
+                    <tr class={tenant.drifted? && "bg-rose-50"}>
+                      <td class="py-1 font-semibold">{node.id}</td>
+                      <td class="text-base-content/60">{node.generation}</td>
+                      <td>{tenant.id}</td>
+                      <td class="text-base-content/60">{tenant.portals}</td>
+                      <td class="font-mono">
+                        {tenant.registry_sid}
+                        <span :if={tenant.drifted?} class="text-rose-700">
+                          (published {tenant.published_sid || "nothing"})
+                        </span>
+                      </td>
+                    </tr>
+                  <% end %>
+                  <tr :if={@registry.nodes == []}>
+                    <td colspan="5" class="py-2 text-base-content/60">no intents held</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
       </div>
     </Layouts.app>
     """

@@ -169,6 +169,71 @@ defmodule MaetoPaneWeb.FabricLiveTest do
     assert rendered =~ "no state reported"
   end
 
+  test "the registry is always visible without any selection", %{conn: conn} do
+    control =
+      Map.put(@control, "registry", %{
+        "sid_cursor" => 4,
+        "allocated_sids" => ["fc00:0:1:f4e0::", "fc00:0:1:fa36::", "fc00:0:1:ff8c::"],
+        "sids_by_tenant" => %{
+          "fc00:0:1::.231.dt46" => "fc00:0:1:fa36::",
+          "fc00:0:1::.273.dt46" => "fc00:0:1:ff8c::"
+        },
+        "nodes" => %{
+          "A" => %{
+            "node_type" => "pe",
+            "generation" => 12,
+            "intent" => %{
+              "node_id" => "A",
+              "tenants" => %{
+                "273" => %{"dt46_sid" => "fc00:0:1:ff8c::", "portals" => %{"c" => %{}}}
+              }
+            }
+          }
+        }
+      })
+
+    send(MaetoPane.Fabric, {:kv, :control, :key_added, "snapshot", Jason.encode!(control)})
+    :sys.get_state(MaetoPane.Fabric)
+
+    {:ok, _view, html} = live(conn, "/")
+
+    assert html =~ "Service registry"
+    assert html =~ "sid cursor 4"
+    assert html =~ "3 sid(s) allocated"
+    assert html =~ "fc00:0:1::"
+    assert html =~ "231"
+  end
+
+  test "registry drifting from the published intent is flagged", %{conn: conn} do
+    control =
+      Map.put(@control, "registry", %{
+        "sid_cursor" => 5,
+        "allocated_sids" => [],
+        "sids_by_tenant" => %{},
+        "nodes" => %{
+          "A" => %{
+            "node_type" => "pe",
+            "generation" => 13,
+            "intent" => %{
+              "node_id" => "A",
+              "tenants" => %{
+                "273" => %{"dt46_sid" => "fc00:0:1:aaaa::", "portals" => %{"c" => %{}}}
+              }
+            }
+          }
+        }
+      })
+
+    send(MaetoPane.Fabric, {:kv, :control, :key_added, "snapshot", Jason.encode!(control)})
+    :sys.get_state(MaetoPane.Fabric)
+
+    {:ok, _view, html} = live(conn, "/")
+
+    assert html =~ "intent_drift"
+    assert html =~ "registry holds fc00:0:1:aaaa:: for tenant 273"
+    assert html =~ "published intent says fc00:0:1:ff8c::"
+  end
+
   test "renders one circle per node and one line per node pair", %{conn: conn} do
     {:ok, _view, html} = live(conn, "/")
 

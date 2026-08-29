@@ -37,6 +37,88 @@ defmodule MaetoPane.Fabric.Analysis do
     }
   end
 
+  def registry(snapshot) do
+    control = Map.get(snapshot, :control) || %{}
+    raw = control["registry"] || %{}
+    intents = Map.get(snapshot, :intents) || %{}
+
+    %{
+      cursor: raw["sid_cursor"],
+      allocated: raw["allocated_sids"] || [],
+      tenants: tenant_allocations(raw["sids_by_tenant"] || %{}),
+      nodes: registry_nodes(raw["nodes"] || %{}, intents),
+      present?: not is_nil(control["registry"])
+    }
+  end
+
+  def drift(registry) do
+    for node <- registry.nodes, tenant <- node.tenants, tenant.drifted? do
+      %{
+        kind: :intent_drift,
+        node: node.id,
+        sid: tenant.registry_sid,
+        detail:
+          "registry holds #{tenant.registry_sid} for tenant #{tenant.id}, " <>
+            "published intent says #{tenant.published_sid || "nothing"}"
+      }
+    end
+  end
+
+  defp tenant_allocations(by_tenant) do
+    by_tenant
+    |> Enum.map(fn {key, sid} ->
+      {locator, tenant, type} = split_allocation_key(key)
+
+      %{locator: locator, tenant: tenant, type: type, sid: sid}
+    end)
+    |> Enum.sort_by(&{&1.tenant, &1.type})
+  end
+
+  defp split_allocation_key(key) do
+    case String.split(key, ".") do
+      parts when length(parts) >= 3 ->
+        [type, tenant | locator] = Enum.reverse(parts)
+
+        {locator |> Enum.reverse() |> Enum.join("."), tenant, type}
+
+      _ ->
+        {"", key, ""}
+    end
+  end
+
+  defp registry_nodes(nodes, intents) do
+    nodes
+    |> Enum.map(fn {id, held} ->
+      published = get_in(intents, ["pop.#{id}", "intent", "tenants"]) || %{}
+      tenants = get_in(held, ["intent", "tenants"]) || %{}
+
+      %{
+        id: id,
+        generation: held["generation"],
+        node_type: held["node_type"],
+        tenants: registry_tenants(tenants, published)
+      }
+    end)
+    |> Enum.sort_by(& &1.id)
+  end
+
+  defp registry_tenants(tenants, published) do
+    tenants
+    |> Enum.map(fn {tenant_id, tenant} ->
+      registry_sid = tenant["dt46_sid"]
+      published_sid = get_in(published, [tenant_id, "dt46_sid"])
+
+      %{
+        id: tenant_id,
+        portals: map_size(tenant["portals"] || %{}),
+        registry_sid: registry_sid,
+        published_sid: published_sid,
+        drifted?: not is_nil(registry_sid) and registry_sid != published_sid
+      }
+    end)
+    |> Enum.sort_by(& &1.id)
+  end
+
   def select(graph, {:node, id}), do: Enum.find(graph.nodes, &(&1.id == id))
 
   def select(graph, {:link, id}), do: Enum.find(graph.links, &(&1.id == id))
