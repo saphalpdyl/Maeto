@@ -68,6 +68,8 @@ defmodule MaetoPane.Fabric.Analysis do
 
   defp node_status(%{reporting?: false}, _faults), do: :silent
 
+  defp node_status(%{observed: false}, _faults), do: :blind
+
   defp node_status(_view, [_ | _]), do: :issue
 
   defp node_status(%{converged: true}, []), do: :ok
@@ -135,6 +137,7 @@ defmodule MaetoPane.Fabric.Analysis do
       generation: intent && intent["generation"],
       reported_generation: state && state["generation"],
       converged: state && state["converged"],
+      observed: is_nil(state) or Map.get(state, "observed", true),
       passes: state && state["passes"],
       reported_at: state && state["reported_at"],
       error: state && state["error"],

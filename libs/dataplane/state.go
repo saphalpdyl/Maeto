@@ -21,6 +21,7 @@ type NodeState struct {
 	NodeType   NodeType        `json:"node_type"`
 	ReportedAt time.Time       `json:"reported_at"`
 	Generation uint32          `json:"generation"`
+	Observed   bool            `json:"observed"`
 	Converged  bool            `json:"converged"`
 	Passes     int             `json:"passes"`
 	Error      string          `json:"error,omitempty"`

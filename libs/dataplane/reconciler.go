@@ -21,6 +21,10 @@ type Reconciler struct {
 
 	reporter StateReporter
 
+	// For reporting
+	lastCurrent map[string]Resource
+	lastDesired map[string]Resource
+
 	logger *slog.Logger
 }
 
@@ -510,13 +514,23 @@ func (r *Reconciler) report(
 	passes int,
 	reconcileErr error,
 ) {
-	if r.reporter == nil || current == nil {
+	if r.reporter == nil {
 		return
+	}
+
+	observed := current != nil
+	if observed {
+		r.lastCurrent = current
+		r.lastDesired = desired
+	} else {
+		current = r.lastCurrent
+		desired = r.lastDesired
 	}
 
 	state := &NodeState{
 		NodeType:   r.nodeType,
 		ReportedAt: time.Now(),
+		Observed:   observed,
 		Converged:  converged,
 		Passes:     passes,
 	}

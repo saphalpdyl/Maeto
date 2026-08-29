@@ -137,6 +137,38 @@ defmodule MaetoPaneWeb.FabricLiveTest do
     assert html =~ "no control snapshot yet"
   end
 
+  test "a node that reported but could not read the dataplane says so", %{conn: conn} do
+    blind = %{
+      "node_id" => "A",
+      "generation" => 12,
+      "observed" => false,
+      "converged" => false,
+      "passes" => 1,
+      "error" => "dataplane failure: couldn't retrieve vrf links",
+      "desired" => [],
+      "current" => []
+    }
+
+    send(MaetoPane.Fabric, {:kv, :states, :key_added, "pop.A", Jason.encode!(blind)})
+    :sys.get_state(MaetoPane.Fabric)
+
+    {:ok, view, _html} = live(conn, "/")
+
+    rendered = render_click(view, "select", %{"kind" => "node", "id" => "A"})
+
+    assert rendered =~ "could not read the dataplane"
+    assert rendered =~ "couldn&#39;t retrieve vrf links"
+    refute rendered =~ "no state reported"
+  end
+
+  test "a node with no state at all reports nothing", %{conn: conn} do
+    {:ok, view, _html} = live(conn, "/")
+
+    rendered = render_click(view, "select", %{"kind" => "node", "id" => "B"})
+
+    assert rendered =~ "no state reported"
+  end
+
   test "renders one circle per node and one line per node pair", %{conn: conn} do
     {:ok, _view, html} = live(conn, "/")
 

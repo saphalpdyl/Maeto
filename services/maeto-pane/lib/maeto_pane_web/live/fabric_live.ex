@@ -53,6 +53,7 @@ defmodule MaetoPaneWeb.FabricLive do
   defp stroke(:ok), do: "#059669"
   defp stroke(:converging), do: "#d97706"
   defp stroke(:issue), do: "#e11d48"
+  defp stroke(:blind), do: "#7c3aed"
   defp stroke(:silent), do: "#94a3b8"
 
   @impl true
@@ -200,13 +201,22 @@ defmodule MaetoPaneWeb.FabricLive do
           value={
             cond do
               is_nil(@selected.view) or not @selected.view.reporting? -> "no state reported"
+              not @selected.view.observed -> "reported, but could not read the dataplane"
               @selected.view.converged -> "converged in #{@selected.view.passes} pass(es)"
               true -> "not converged"
             end
           }
         />
         <.row label="generation" value={@selected.view && @selected.view.generation} />
+        <.row label="reported at" value={@selected.view && @selected.view.reported_at} />
       </dl>
+
+      <p
+        :if={@selected.view && @selected.view.error}
+        class="rounded bg-rose-50 px-2 py-1 font-mono text-xs text-rose-800"
+      >
+        {@selected.view.error}
+      </p>
 
       <section :if={@selected.faults != []}>
         <h3 class="text-xs font-semibold uppercase tracking-wide text-rose-700">Issues</h3>
