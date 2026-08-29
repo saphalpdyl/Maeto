@@ -24,6 +24,7 @@ type Config struct {
 	DataDir   string
 
 	AgentHeartbeatInterval time.Duration
+	SnapshotInterval       time.Duration
 
 	// DefaultedKeys lists the environment variables that were not set and
 	// therefore fell back to their compiled-in default.
@@ -39,6 +40,7 @@ const (
 	DefaultStatePath              = "/app/state/latest.json"
 	DefaultDataDir                = "/app/data"
 	DefaultAgentHeartbeatInterval = 30 * time.Second
+	DefaultSnapshotInterval       = 15 * time.Second
 )
 
 // resolver reads environment variables and remembers which ones fell back to a
@@ -116,6 +118,7 @@ func GetConfig() Config {
 		DataDir:   r.str("CONTROL_PLANE_DATA_DIR", DefaultDataDir, false),
 
 		AgentHeartbeatInterval: r.duration("AGENT_HEARTBEAT_INTERVAL", DefaultAgentHeartbeatInterval),
+		SnapshotInterval:       r.duration("CONTROL_PLANE_SNAPSHOT_INTERVAL", DefaultSnapshotInterval),
 	}
 
 	cfg.DefaultedKeys = r.defaulted

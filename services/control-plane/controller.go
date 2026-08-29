@@ -14,6 +14,7 @@ import (
 	"github.com/saphalpdyl/maeto/libs/controlapi"
 	"github.com/saphalpdyl/maeto/libs/dataplane"
 	"github.com/saphalpdyl/maeto/libs/intentkv"
+	"github.com/saphalpdyl/maeto/libs/statekv"
 	log "github.com/saphalpdyl/maeto/services/control-plane/log"
 )
 
@@ -123,6 +124,13 @@ func (c *Controller) Start(ctx context.Context) {
 	})
 
 	go c.pce.Run(ctx, c.topology.Graph())
+
+	if err := c.startSnapshotPublisher(ctx); err != nil {
+		c.logger.ErrorContext(ctx, "failed to start snapshot publisher",
+			log.Domain(log.DomainControlPlaneLifecycle),
+			log.Err(err),
+		)
+	}
 
 	if err := c.setupHealthEndpoint(ctx); err != nil {
 		return
@@ -401,6 +409,27 @@ func (c *Controller) handlePETunnelUpdate(ctx context.Context, data []byte) erro
 	if err != nil {
 		return fmt.Errorf("failed to set intent for tenant: %w", err)
 	}
+
+	return nil
+}
+
+func (c *Controller) startSnapshotPublisher(ctx context.Context) error {
+	publisher, err := statekv.NewPublisherFor(ctx, c.js, statekv.ControlState)
+	if err != nil {
+		return fmt.Errorf("create control snapshot publisher: %w", err)
+	}
+
+	snapshots := NewSnapshotPublisher(
+		publisher,
+		c.config.SnapshotInterval,
+		c.logger.With(log.Domain(log.DomainControlPlaneLifecycle)),
+		c.topology.Graph(),
+		c.topology.GetDomainMetadata(),
+		c.inventory,
+		c.serviceRegistry,
+	)
+
+	go snapshots.Run(ctx)
 
 	return nil
 }
