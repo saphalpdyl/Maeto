@@ -5,7 +5,8 @@
   "defaults": {
     "locator_prefix": "fc00:0::/32",
     "link_prefix": "fc00:1::/32",
-    "host_prefix": "fd00::/48"
+    "host_prefix": "fd00::/48",
+    "edge_prefix": "fd00:1::/32"
   },
   "pops": [
     {

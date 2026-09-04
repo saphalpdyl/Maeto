@@ -26,6 +26,8 @@ const (
 	MaetoRouteProto netlink.RouteProtocol = 211
 	// SIDs are basically Routes so we don't want them to get fetch during route fetch
 	MaetoSIDProto netlink.RouteProtocol = 212
+	// For encap seg6 routes; MaetoSIDProto is for seg6local routes
+	MaetoSIDSegsProto netlink.RouteProtocol = 213
 )
 
 // SEG6_LOCAL_ACTION_END_DT46 from uapi/linux/seg6_local.h. vishvananda/netlink

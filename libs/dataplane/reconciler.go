@@ -124,6 +124,17 @@ func (r *Reconciler) RenderPE(ctx context.Context, intent *PEIntent) (map[string
 
 		resources[vrf.ID().Key] = vrf
 
+		if t.DT46SID.IsValid() {
+			dt46SID := &SID{
+				SIDType: SIDDT46,
+				SID:     t.DT46SID,
+				TableID: int(tableID),
+				Metric:  0,
+			}
+
+			resources[dt46SID.ID().Key] = dt46SID
+		}
+
 		for _, portalIntent := range t.PortalIntents {
 			xfrmName := fmt.Sprintf("maeto-tun-%s-%d", tenantID, portalIntent.TunnelInterfaceID)
 
@@ -146,15 +157,6 @@ func (r *Reconciler) RenderPE(ctx context.Context, intent *PEIntent) (map[string
 			}
 
 			resources[route.ID().Key] = route
-
-			dt46SID := &SID{
-				SIDType: SIDDT46,
-				SID:     t.DT46SID,
-				TableID: int(tableID),
-				Metric:  0,
-			}
-
-			resources[dt46SID.ID().Key] = dt46SID
 		}
 	}
 

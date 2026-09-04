@@ -66,6 +66,7 @@ func (r *ServiceRegistry) getOrGenerateSID(locatorPrefix netip.Prefix, tenantID 
 	existingSID, exists := r.sidTenantMap[tenantMapKey]
 	if exists {
 		r.sidAllocationMap[existingSID] = true
+		return existingSID, nil
 	}
 
 	for range MaxSIDCollisionChecks {
@@ -89,6 +90,91 @@ func (r *ServiceRegistry) getOrGenerateSID(locatorPrefix netip.Prefix, tenantID 
 
 }
 
+// Must be done under a lock
+func (r *ServiceRegistry) getOrCreateRegistryEntryForPE(nodeID string) *dataplane.NodeIntent {
+	current, exists := r.registry[nodeID]
+	if !exists {
+		r.registry[nodeID] = &dataplane.NodeIntent{
+			NodeType: dataplane.NodeTypePE,
+			Intent: &dataplane.PEIntent{
+				NodeID:  nodeID,
+				Tenants: make(map[string]*dataplane.TenantIntent),
+			},
+			Timestamp:  time.Now(),
+			Generation: 1,
+			Version:    1,
+		}
+
+		current = r.registry[nodeID]
+	}
+
+	return current
+}
+
+func (r *ServiceRegistry) getOrCreateTenantIntentForPE(
+	tenantID string,
+	locatorPrefix netip.Prefix,
+	intent *dataplane.PEIntent,
+) (*dataplane.TenantIntent, error) {
+	tenantIntent, exists := intent.Tenants[tenantID]
+	if exists && tenantIntent != nil {
+		return tenantIntent, nil
+	}
+
+	dt46SID, err := r.getOrGenerateSID(locatorPrefix, tenantID, dataplane.EncapTypeDT46)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate random SID: %w", err)
+	}
+
+	tenantIntent = &dataplane.TenantIntent{
+		PortalIntents: make(map[string]dataplane.PE_PortalIntent),
+		DT46SID:       dt46SID,
+	}
+	intent.Tenants[tenantID] = tenantIntent
+
+	return tenantIntent, nil
+}
+
+func (r *ServiceRegistry) UpsertSIDSegsForTenantOnNode(
+	ctx context.Context,
+	tenantID string,
+	localNodeID string,
+	locatorPrefix netip.Prefix,
+	pathsInstallIntents []dataplane.PESIDInstallIntent,
+) error {
+	r.mu.Lock()
+	r.logger.InfoContext(ctx, fmt.Sprintf("got SID Install Intent for tenant %s on Node %s", tenantID, localNodeID), slog.Any("intents", pathsInstallIntents))
+
+	current := r.getOrCreateRegistryEntryForPE(localNodeID)
+	peIntent, ok := current.Intent.(*dataplane.PEIntent)
+	if !ok {
+		r.mu.Unlock()
+		return fmt.Errorf("failed to cast NodeIntent to PEIntent")
+	}
+
+	tenantIntent, err := r.getOrCreateTenantIntentForPE(
+		tenantID, locatorPrefix, peIntent,
+	)
+	if err != nil {
+		r.mu.Unlock()
+		return fmt.Errorf("failed to get or create tenant intent for pe: %w", err)
+	}
+
+	tenantIntent.InstallPaths = pathsInstallIntents
+
+	current.Timestamp = time.Now()
+	current.Generation++
+
+	snapshot := current.Clone()
+	r.mu.Unlock()
+
+	if _, err := r.publisher.Publish(ctx, intentkv.Key(intentkv.PrefixPE, localNodeID), snapshot); err != nil {
+		return fmt.Errorf("publish pe intent for %s: %w", localNodeID, err)
+	}
+
+	return nil
+}
+
 func (r *ServiceRegistry) UpsertPEIntentForNode(
 	ctx context.Context,
 	nodeID string,
@@ -99,45 +185,24 @@ func (r *ServiceRegistry) UpsertPEIntentForNode(
 ) error {
 
 	r.mu.Lock()
-
-	current, exists := r.registry[nodeID]
-	if !exists {
-		r.registry[nodeID] = &dataplane.NodeIntent{
-			NodeType: dataplane.NodeTypePE,
-			Intent: &dataplane.PEIntent{
-				NodeID:  nodeID,
-				Tenants: make(map[string]dataplane.TenantIntent),
-			},
-			Timestamp:  time.Now(),
-			Generation: 1,
-			Version:    1,
-		}
-
-		current = r.registry[nodeID]
-	}
-
+	current := r.getOrCreateRegistryEntryForPE(nodeID)
 	peIntent, ok := current.Intent.(*dataplane.PEIntent)
+
 	if !ok {
+		r.mu.Unlock()
 		r.logger.ErrorContext(ctx, "failed to cast Intent to PEIntent")
 		return fmt.Errorf("failed to cast Intent to PEIntent")
 	}
 
-	tenantIntent, exists := peIntent.Tenants[tenantID]
-	if !exists {
-		// Register for SID
-		dt46SID, err := r.getOrGenerateSID(locatorPrefix, tenantID, dataplane.EncapTypeDT46)
-		if err != nil {
-			return fmt.Errorf("failed to generate random SID: %w", err)
-		}
-
-		peIntent.Tenants[tenantID] = dataplane.TenantIntent{
-			PortalIntents: make(map[string]dataplane.PE_PortalIntent),
-			DT46SID:       dt46SID,
-		}
-		peIntent.Tenants[tenantID].PortalIntents[portalID] = *intent
-	} else {
-		tenantIntent.PortalIntents[portalID] = *intent
+	tenantIntent, err := r.getOrCreateTenantIntentForPE(
+		tenantID, locatorPrefix, peIntent,
+	)
+	if err != nil {
+		r.mu.Unlock()
+		return fmt.Errorf("failed to get or create tenant intent for pe: %w", err)
 	}
+
+	tenantIntent.PortalIntents[portalID] = *intent
 
 	current.Timestamp = time.Now()
 	current.Generation++

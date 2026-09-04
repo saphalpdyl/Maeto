@@ -45,6 +45,11 @@ cpes:
     tenant: 231
     prefix: fd7a:3921:e7:2::/64
     portal_id: 32522cc7549b
+  - id: cA4
+    attach: G
+    tenant: 231
+    prefix: fd7a:3921:e7:bb24::/64
+    portal_id: 32527fa75219
   - id: cC
     attach: C
     tenant: 273

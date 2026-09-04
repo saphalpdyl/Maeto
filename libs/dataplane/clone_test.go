@@ -13,12 +13,23 @@ func TestNodeIntentCloneIsDeep(t *testing.T) {
 		Generation: 4,
 		Intent: &dataplane.PEIntent{
 			NodeID: "A",
-			Tenants: map[string]dataplane.TenantIntent{
+			Tenants: map[string]*dataplane.TenantIntent{
 				"273": {
 					PortalIntents: map[string]dataplane.PE_PortalIntent{
 						"48522cc7549b": {TunnelInterfaceID: 3},
 					},
 					DT46SID: netip.MustParseAddr("fc00:0:1:ff8c::"),
+					InstallPaths: []dataplane.PESIDInstallIntent{
+						{
+							TenantID:     "273",
+							PrefixRoutes: []netip.Prefix{netip.MustParsePrefix("fd7a:3921:111:2::/64")},
+							Segments: []netip.Addr{
+								netip.MustParseAddr("fc00:0:2::"),
+								netip.MustParseAddr("fc00:0:3::"),
+							},
+							Color: 20,
+						},
+					},
 				},
 			},
 		},
@@ -32,7 +43,10 @@ func TestNodeIntentCloneIsDeep(t *testing.T) {
 	pe.NodeID = "B"
 	pe.Tenants["273"].PortalIntents["48522cc7549b"] = dataplane.PE_PortalIntent{TunnelInterfaceID: 99}
 	pe.Tenants["273"].PortalIntents["new-portal"] = dataplane.PE_PortalIntent{}
-	pe.Tenants["999"] = dataplane.TenantIntent{}
+	pe.Tenants["273"].InstallPaths[0].Segments[0] = netip.MustParseAddr("fc00:0:9::")
+	pe.Tenants["273"].InstallPaths[0].PrefixRoutes[0] = netip.MustParsePrefix("fd00::/64")
+	pe.Tenants["273"].InstallPaths[0].Color = 99
+	pe.Tenants["999"] = &dataplane.TenantIntent{}
 
 	got := clone.Intent.(*dataplane.PEIntent) // nolint:errcheck
 
@@ -53,6 +67,19 @@ func TestNodeIntentCloneIsDeep(t *testing.T) {
 	}
 	if sid := got.Tenants["273"].DT46SID; sid.String() != "fc00:0:1:ff8c::" {
 		t.Errorf("DT46SID = %s, want fc00:0:1:ff8c:: -- dropped by the clone", sid)
+	}
+	installed := got.Tenants["273"].InstallPaths
+	if len(installed) != 1 {
+		t.Fatalf("InstallPaths has %d entries, want 1", len(installed))
+	}
+	if sid := installed[0].Segments[0].String(); sid != "fc00:0:2::" {
+		t.Errorf("Segments[0] = %s, want fc00:0:2:: -- segment slice is shared", sid)
+	}
+	if route := installed[0].PrefixRoutes[0].String(); route != "fd7a:3921:111:2::/64" {
+		t.Errorf("PrefixRoutes[0] = %s, want fd7a:3921:111:2::/64 -- prefix slice is shared", route)
+	}
+	if installed[0].Color != 20 {
+		t.Errorf("Color = %d, want 20 -- entry is shared", installed[0].Color)
 	}
 	if orig.Intent == clone.Intent {
 		t.Error("clone shares the Intent pointer with the original")
