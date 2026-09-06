@@ -90,6 +90,13 @@ func (r *ServiceRegistry) getOrGenerateSID(locatorPrefix netip.Prefix, tenantID 
 
 }
 
+func (r *ServiceRegistry) GetOrGenerateSID(locatorPrefix netip.Prefix, tenantID string, sidType dataplane.EncapType) (netip.Addr, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	return r.getOrGenerateSID(locatorPrefix, tenantID, sidType)
+}
+
 // Must be done under a lock
 func (r *ServiceRegistry) getOrCreateRegistryEntryForPE(nodeID string) *dataplane.NodeIntent {
 	current, exists := r.registry[nodeID]
@@ -229,6 +236,10 @@ func (r *ServiceRegistry) UpsertCPEIntentForSite(ctx context.Context, tenantID s
 			Generation: 1,
 			Version:    1,
 		}
+		current.Intent = intent
+		current.Generation = 0
+		current.Timestamp = time.Now()
+		current.Version = 1
 	} else {
 		current.Intent = intent
 		current.Generation++

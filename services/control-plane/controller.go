@@ -552,7 +552,7 @@ func (c *Controller) startPCEUpdatesDispatcher(ctx context.Context) {
 							continue
 						}
 
-						dt46, err := c.serviceRegistry.getOrGenerateSID(
+						dt46, err := c.serviceRegistry.GetOrGenerateSID(
 							remoteNode.Locator,
 							fmt.Sprintf("%d", tenantID),
 							dataplane.EncapTypeDT46,
