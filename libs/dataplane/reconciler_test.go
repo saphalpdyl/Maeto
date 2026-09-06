@@ -48,6 +48,26 @@ func TestLiveDataplaneRead(t *testing.T) {
 type TestDefaultRouteOnlyDataplane struct {
 }
 
+// GetSRRoutes implements [dataplane.Dataplane].
+func (t *TestDefaultRouteOnlyDataplane) GetSRRoutes() ([]dataplane.DataplaneSRRoute, error) {
+	panic("unimplemented")
+}
+
+// GetSRRouteForPrefix implements [dataplane.Dataplane].
+func (t *TestDefaultRouteOnlyDataplane) GetSRRouteForPrefix() ([]dataplane.DataplaneSRRoute, error) {
+	panic("unimplemented")
+}
+
+// InsertSRRouteForPrefix implements [dataplane.Dataplane].
+func (t *TestDefaultRouteOnlyDataplane) InsertSRRouteForPrefix(prefix netip.Prefix, tabelID int, segments []netip.Addr, color int) error {
+	panic("unimplemented")
+}
+
+// RemoveSRRouteForPrefix implements [dataplane.Dataplane].
+func (t *TestDefaultRouteOnlyDataplane) RemoveSRRouteForPrefix(prefix netip.Prefix, tableID int) error {
+	panic("unimplemented")
+}
+
 // GetSIDs implements [dataplane.Dataplane].
 func (t *TestDefaultRouteOnlyDataplane) GetSIDs() ([]dataplane.DataplaneSID, error) {
 	panic("unimplemented")

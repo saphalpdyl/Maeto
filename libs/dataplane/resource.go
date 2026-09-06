@@ -22,11 +22,12 @@ const (
 type Kind string
 
 const (
-	KindVRF   Kind = "vrf"
-	KindRule  Kind = "rule"
-	KindXFRM  Kind = "xfrm"
-	KindRoute Kind = "route"
-	KindSID   Kind = "sid"
+	KindVRF     Kind = "vrf"
+	KindRule    Kind = "rule"
+	KindXFRM    Kind = "xfrm"
+	KindRoute   Kind = "route"
+	KindSID     Kind = "sid"
+	KindSRRoute Kind = "sr_route"
 )
 
 type ID struct {

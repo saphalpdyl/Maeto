@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"math"
 	"net/netip"
+	"slices"
 	"time"
 
 	"github.com/saphalpdyl/maeto/libs/dataplane/log"
@@ -158,6 +159,25 @@ func (r *Reconciler) RenderPE(ctx context.Context, intent *PEIntent) (map[string
 
 			resources[route.ID().Key] = route
 		}
+
+		// SRv6 Routes
+		for _, path := range t.InstallPaths {
+			// Netlink installs the routes backwards for some reason
+			// So reversing the routes during rendering
+			reverseSegments := slices.Clone(path.Segments)
+			slices.Reverse(reverseSegments)
+
+			for _, prefix := range path.PrefixRoutes {
+				srRoute := &SRRoute{
+					Prefix:   prefix,
+					Segments: reverseSegments,
+					Color:    0,
+					Table:    int(tableID),
+				}
+
+				resources[srRoute.ID().Key] = srRoute
+			}
+		}
 	}
 
 	return resources, nil
@@ -170,6 +190,7 @@ func (r *Reconciler) RenderFIB(
 	routes []DataplaneRoute,
 	sids []DataplaneSID,
 	rules []DataplaneRule,
+	srRoutes []DataplaneSRRoute,
 ) (map[string]Resource, error) {
 	resources := make(map[string]Resource)
 
@@ -227,6 +248,20 @@ func (r *Reconciler) RenderFIB(
 		}
 
 		resources[sid.ID().Key] = sid
+	}
+
+	for _, r := range srRoutes {
+		ip, _ := netip.AddrFromSlice(r.Dst.IP)
+		ones, _ := r.Dst.Mask.Size()
+
+		srRoute := &SRRoute{
+			Prefix:   netip.PrefixFrom(ip, ones),
+			Segments: r.Segments,
+			Color:    0,
+			Table:    r.Table,
+		}
+
+		resources[srRoute.ID().Key] = srRoute
 	}
 
 	return resources, nil
@@ -288,6 +323,11 @@ func (r *Reconciler) Plan(ctx context.Context, desired *NodeIntent) (map[string]
 		return nil, nil, fmt.Errorf("dataplane failure: couldn't retrieve sids: %w", err)
 	}
 
+	srRoutes, err := r.dp.GetSRRoutes()
+	if err != nil {
+		return nil, nil, fmt.Errorf("dataplane failure: couldn't retrieve sr routes: %w", err)
+	}
+
 	currentResources, err := r.RenderFIB(
 		ctx,
 		vrfLinks,
@@ -295,6 +335,7 @@ func (r *Reconciler) Plan(ctx context.Context, desired *NodeIntent) (map[string]
 		routes,
 		sids,
 		rules,
+		srRoutes,
 	)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to render FIB state: %w", err)
@@ -358,7 +399,7 @@ func (r *Reconciler) Apply(ctx context.Context, diff DiffResult) error {
 	// First of all, we remove shit
 	// We remove from bottom up i.e route -> xfrm -> vrf
 	// TODO: Later group by kind in a map so that we don't traverse everything everytime
-	for _, kind := range []Kind{KindRule, KindSID, KindRoute, KindXFRM, KindVRF} {
+	for _, kind := range []Kind{KindRule, KindSRRoute, KindSID, KindRoute, KindXFRM, KindVRF} {
 		for _, resource := range diff.Remove {
 			if resource.ID().Kind != kind {
 				continue
@@ -393,13 +434,18 @@ func (r *Reconciler) Apply(ctx context.Context, diff DiffResult) error {
 					r.logger.ErrorContext(ctx, "failed to remove sid", log.Err(err))
 					break
 				}
+			case *SRRoute:
+				if err := r.dp.RemoveSRRouteForPrefix(res.Prefix, res.Table); err != nil {
+					r.logger.ErrorContext(ctx, "failed to remove SR Route", log.Err(err))
+					break
+				}
 			}
 
 		}
 	}
 
 	// Addition
-	for _, kind := range []Kind{KindVRF, KindXFRM, KindRoute, KindSID, KindRule} {
+	for _, kind := range []Kind{KindVRF, KindXFRM, KindRoute, KindSID, KindSRRoute, KindRule} {
 		for _, resource := range diff.Add {
 			if resource.ID().Kind != kind {
 				continue
@@ -429,6 +475,11 @@ func (r *Reconciler) Apply(ctx context.Context, diff DiffResult) error {
 			case *Route:
 				if err := r.dp.InsertPrefixRoute(res.Dev, res.Table, res.Dst, res.Via); err != nil {
 					r.logger.ErrorContext(ctx, "failed to insert Route", log.Err(err))
+				}
+
+			case *SRRoute:
+				if err := r.dp.InsertSRRouteForPrefix(res.Prefix, res.Table, res.Segments, res.Color); err != nil {
+					r.logger.ErrorContext(ctx, "failed to insert SR Route", log.Err(err))
 				}
 
 			case *Rule:

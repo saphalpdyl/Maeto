@@ -28,6 +28,15 @@ type DataplaneRoute struct {
 	AdvMSS     int
 }
 
+type DataplaneSRRoute struct {
+	Dev       string
+	LinkIndex int
+	Dst       *net.IPNet
+	Table     int
+	Color     int
+	Segments  []netip.Addr
+}
+
 type EncapType string
 
 const (
@@ -126,6 +135,10 @@ type Dataplane interface {
 	InsertPrefixRoute(tunnelIface string, tableID int, prefix netip.Prefix, via netip.Addr) error
 	RemovePrefixRoute(prefix netip.Prefix, tableID int) error
 	GetPrefixRoutes() ([]DataplaneRoute, error)
+
+	InsertSRRouteForPrefix(prefix netip.Prefix, tableID int, segments []netip.Addr, color int) error
+	GetSRRoutes() ([]DataplaneSRRoute, error)
+	RemoveSRRouteForPrefix(prefix netip.Prefix, tableID int) error
 
 	UpsertPolicy(nhid, dtsid, vrfTableId, vrfTableName string, sids []string) error
 	UpsertRouteToPolicy(dest, vrfTableId, nhid string) error

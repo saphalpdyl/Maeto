@@ -679,3 +679,94 @@ func (l *LinuxNetlink) GetSIDs() ([]DataplaneSID, error) {
 
 	return sids, nil
 }
+
+func (l *LinuxNetlink) GetSRRoutes() ([]DataplaneSRRoute, error) {
+	netlinkRoutes, err := netlink.RouteListFiltered(netlink.FAMILY_ALL,
+		&netlink.Route{Table: unix.RT_TABLE_UNSPEC, Protocol: MaetoSIDSegsProto},
+		netlink.RT_FILTER_TABLE|netlink.RT_FILTER_PROTOCOL)
+	if err != nil {
+		return nil, fmt.Errorf("list maeto SR routes: %w", err)
+	}
+
+	srRoutes := make([]DataplaneSRRoute, 0, len(netlinkRoutes))
+	for _, r := range netlinkRoutes {
+		if r.Encap == nil {
+			continue
+		}
+
+		if encap, ok := r.Encap.(*netlink.SEG6Encap); ok {
+			netipSegments := make([]netip.Addr, 0, len(encap.Segments))
+			for _, seg := range encap.Segments {
+				netipSegments = append(netipSegments, netip.AddrFrom16([16]byte(seg.To16())))
+			}
+
+			srRoute := DataplaneSRRoute{
+				Dev:       "sr0", // TODO: Dummy interface but make it configurable
+				LinkIndex: r.LinkIndex,
+				Dst:       r.Dst,
+				Table:     r.Table,
+				Color:     0,
+				Segments:  netipSegments,
+			}
+
+			srRoutes = append(srRoutes, srRoute)
+		}
+	}
+
+	return srRoutes, nil
+}
+
+func (l *LinuxNetlink) InsertSRRouteForPrefix(prefix netip.Prefix, tableID int, segs []netip.Addr, color int) error {
+	if len(segs) == 0 {
+		return fmt.Errorf("insert srv6 encap route %s: no segments given", prefix)
+	}
+
+	encap := &netlink.SEG6Encap{
+		Mode:     nl.SEG6_IPTUN_MODE_ENCAP,
+		Segments: make([]net.IP, len(segs)),
+	}
+	for i, s := range segs {
+		if !s.Is6() {
+			return fmt.Errorf("insert srv6 encap route %s: segment %s is not IPv6", prefix, s)
+		}
+		encap.Segments[i] = net.IP(s.AsSlice())
+	}
+
+	iface, err := netlink.LinkByName("sr0")
+	if err != nil {
+		return fmt.Errorf("lookup tunnel interface %s: %w", "sr0", err)
+	}
+
+	route := &netlink.Route{
+		Table:     tableID,
+		Family:    netlink.FAMILY_V6,
+		Protocol:  MaetoSIDSegsProto,
+		Dst:       prefixToIPNet(prefix),
+		LinkIndex: iface.Attrs().Index,
+		Encap:     encap,
+	}
+
+	if err := netlink.RouteReplace(route); err != nil {
+		return fmt.Errorf("insert srv6 encap route %s (segs %v, dev %s, table %d): %w",
+			prefix, segs, "sr0", tableID, err)
+	}
+
+	return nil
+}
+
+func (l *LinuxNetlink) RemoveSRRouteForPrefix(prefix netip.Prefix, tableID int) error {
+	err := netlink.RouteDel(&netlink.Route{
+		Dst:      prefixToIPNet(prefix),
+		Table:    tableID,
+		Family:   netlink.FAMILY_V6,
+		Protocol: MaetoSIDSegsProto,
+	})
+	if err != nil {
+		if errors.Is(err, unix.ESRCH) {
+			return nil // already gone
+		}
+		return fmt.Errorf("delete sr prefix route %s from table %d: %w", prefix, tableID, err)
+	}
+
+	return nil
+}
