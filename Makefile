@@ -34,7 +34,7 @@ lint:
 
 # Enforce .editorconfig across the whole repo. Config: .editorconfig-checker.json.
 lint.editorconfig:
-	docker run --rm -v $(PWD):/check -w /check mstruebing/editorconfig-checker:latest ec
+	docker run --rm -v $(PWD):/check -w /check mstruebing/editorconfig-checker:latest editorconfig-checker
 
 # Personal
 sync:

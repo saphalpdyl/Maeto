@@ -8,7 +8,7 @@ editorconfig:
     name: mstruebing/editorconfig-checker:latest
     entrypoint: [""]
   script:
-    - ec
+    - editorconfig-checker
 
 lint:
   image: golangci/golangci-lint:latest
