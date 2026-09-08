@@ -8,6 +8,7 @@ import (
 	"math"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -40,6 +41,37 @@ func (ps PathSet) Set(src, dst NodeID, dim CostDimension, path *Path) {
 	}
 
 	byDim[dim] = path
+}
+
+type PathStore struct {
+	mu    sync.RWMutex
+	paths PathSet
+}
+
+func NewPathStore() *PathStore {
+	return &PathStore{paths: make(PathSet)}
+}
+
+func (s *PathStore) Store(paths PathSet) {
+	if s == nil {
+		return
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.paths = paths
+}
+
+func (s *PathStore) Load() PathSet {
+	if s == nil {
+		return nil
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	return s.paths
 }
 
 func (p *Path) LogValue() slog.Value {

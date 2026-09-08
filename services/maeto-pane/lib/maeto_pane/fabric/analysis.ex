@@ -1,11 +1,6 @@
 defmodule MaetoPane.Fabric.Analysis do
   @moduledoc "Derives per-node views and invariant violations from a fabric snapshot."
 
-  alias MaetoPane.Fabric.Layout
-
-  @arc_spacing 16
-  @node_radius 22
-
   def nodes(%{intents: intents, states: states}) do
     (Map.keys(intents) ++ Map.keys(states))
     |> Enum.uniq()
@@ -27,14 +22,29 @@ defmodule MaetoPane.Fabric.Analysis do
     faults = views |> issues() |> Enum.group_by(& &1.node)
 
     links = group_links(raw_edges)
-    positions = Layout.positions(Enum.map(raw_nodes, & &1["id"]), Enum.map(links, &{&1.a, &1.b}))
 
     %{
-      nodes: Enum.map(raw_nodes, &graph_node(&1, positions, inventory, by_id, faults)),
-      links: Enum.map(links, &place(&1, positions)),
+      nodes: Enum.map(raw_nodes, &graph_node(&1, inventory, by_id, faults)),
+      links: links,
+      edges: Enum.flat_map(links, &members/1),
       domain: get_in(control, ["topology", "domain"]) || %{},
       published_at: control["published_at"]
     }
+  end
+
+  # the graph renderer wants one element per physical link; the tables want them
+  # grouped by node pair, so both shapes ship
+  defp members(link) do
+    Enum.map(link.edges, fn edge ->
+      %{
+        id: edge["id"],
+        local: edge["local"],
+        remote: edge["remote"],
+        link: link.id,
+        up: edge["up"],
+        cost: edge["delay_ms"] || 0
+      }
+    end)
   end
 
   def registry(snapshot) do
@@ -125,9 +135,8 @@ defmodule MaetoPane.Fabric.Analysis do
 
   def select(_graph, _selection), do: nil
 
-  defp graph_node(raw, positions, inventory, views, faults) do
+  defp graph_node(raw, inventory, views, faults) do
     id = raw["id"]
-    {x, y} = Map.get(positions, id, {0.0, 0.0})
     view = Map.get(views, id)
     node_faults = Map.get(faults, id, [])
 
@@ -137,8 +146,6 @@ defmodule MaetoPane.Fabric.Analysis do
       name: raw["name"],
       locator: raw["locator"],
       loopback: raw["loopback"],
-      x: x,
-      y: y,
       view: view,
       inventory: Map.get(inventory, id),
       faults: node_faults,
@@ -173,43 +180,6 @@ defmodule MaetoPane.Fabric.Analysis do
     end)
     |> Enum.sort_by(& &1.id)
   end
-
-  defp place(link, positions) do
-    {x1, y1} = Map.get(positions, link.a, {0.0, 0.0})
-    {x2, y2} = Map.get(positions, link.b, {0.0, 0.0})
-    count = length(link.edges)
-
-    arcs =
-      link.edges
-      |> Enum.with_index()
-      |> Enum.map(fn {edge, index} ->
-        offset = (index - (count - 1) / 2) * @arc_spacing
-
-        %{id: edge["id"], up: edge["up"], d: arc({x1, y1}, {x2, y2}, offset)}
-      end)
-
-    Map.merge(link, %{x1: x1, y1: y1, x2: x2, y2: y2, arcs: arcs})
-  end
-
-  defp arc({x1, y1}, {x2, y2}, offset) do
-    dx = x2 - x1
-    dy = y2 - y1
-    span = max(:math.sqrt(dx * dx + dy * dy), 0.001)
-    ux = dx / span
-    uy = dy / span
-
-    sx = x1 + ux * @node_radius
-    sy = y1 + uy * @node_radius
-    ex = x2 - ux * @node_radius
-    ey = y2 - uy * @node_radius
-
-    cx = (sx + ex) / 2 - uy * offset * 2
-    cy = (sy + ey) / 2 + ux * offset * 2
-
-    "M #{round1(sx)} #{round1(sy)} Q #{round1(cx)} #{round1(cy)} #{round1(ex)} #{round1(ey)}"
-  end
-
-  defp round1(value), do: Float.round(value * 1.0, 1)
 
   defp build(key, intent, state) do
     tenants = tenants(intent, state)

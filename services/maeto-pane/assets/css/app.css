@@ -23,7 +23,7 @@
   on Elixir colors. Build your own at: https://daisyui.com/theme-generator/ */
 @plugin "../vendor/daisyui-theme" {
   name: "dark";
-  default: false;
+  default: true;
   prefersdark: true;
   color-scheme: "dark";
   --color-base-100: oklch(30.33% 0.016 252.42);
@@ -58,7 +58,7 @@
 
 @plugin "../vendor/daisyui-theme" {
   name: "light";
-  default: true;
+  default: false;
   prefersdark: false;
   color-scheme: "light";
   --color-base-100: oklch(98% 0 0);
@@ -89,6 +89,110 @@
   --border: 1.5px;
   --depth: 1;
   --noise: 0;
+}
+
+/* ---------------------------------------------------------------------------
+   maeto design tokens.
+
+   A flat dark console: near-black ground, panels that differ from it only by a
+   1px border, generous padding, and colour reserved for operational meaning.
+   The accent is maeto's own dark-mode leaf green from docs/images/colors.txt.
+
+   Declared with `@theme inline` so every utility resolves through the vars
+   below at runtime, which is what lets one [data-theme] block repaint
+   everything.
+   --------------------------------------------------------------------------- */
+@theme inline {
+  --color-canvas: var(--mt-canvas);
+  --color-rail: var(--mt-rail);
+  --color-surface: var(--mt-surface);
+  --color-sunken: var(--mt-sunken);
+  --color-line: var(--mt-line);
+  --color-line-strong: var(--mt-line-strong);
+  --color-ink: var(--mt-ink);
+  --color-muted: var(--mt-muted);
+  --color-faint: var(--mt-faint);
+  --color-accent: var(--mt-accent);
+  --color-accent-soft: var(--mt-accent-soft);
+  --color-ok: var(--mt-ok);
+  --color-ok-soft: var(--mt-ok-soft);
+  --color-warn: var(--mt-warn);
+  --color-warn-soft: var(--mt-warn-soft);
+  --color-bad: var(--mt-bad);
+  --color-bad-soft: var(--mt-bad-soft);
+  --color-idle: var(--mt-idle);
+  --color-idle-soft: var(--mt-idle-soft);
+
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", "Cascadia Mono", Menlo, monospace;
+}
+
+:root {
+  --mt-canvas: #1c1c1c;
+  --mt-rail: #171717;
+  --mt-surface: #1f1f1f;
+  --mt-sunken: #232323;
+  --mt-line: #2e2e2e;
+  --mt-line-strong: #3d3d3d;
+  --mt-ink: #ededed;
+  --mt-muted: #a0a0a0;
+  --mt-faint: #707070;
+  --mt-accent: #3ecf8e;
+  --mt-accent-soft: #16281f;
+  --mt-ok: #22c55e;
+  --mt-ok-soft: #14261a;
+  --mt-warn: #f59e0b;
+  --mt-warn-soft: #2a2110;
+  --mt-bad: #ef4444;
+  --mt-bad-soft: #2b1717;
+  --mt-idle: #a78bfa;
+  --mt-idle-soft: #201c31;
+}
+
+[data-theme="light"] {
+  --mt-canvas: #f7f8fa;
+  --mt-rail: #ffffff;
+  --mt-surface: #ffffff;
+  --mt-sunken: #f1f3f5;
+  --mt-line: #e4e7eb;
+  --mt-line-strong: #cbd2da;
+  --mt-ink: #141a24;
+  --mt-muted: #5b6472;
+  --mt-faint: #8b95a3;
+  --mt-accent: #16a34a;
+  --mt-accent-soft: #eafaf0;
+  --mt-ok: #16a34a;
+  --mt-ok-soft: #eafaf0;
+  --mt-warn: #b45309;
+  --mt-warn-soft: #fdf6e7;
+  --mt-bad: #dc2626;
+  --mt-bad-soft: #fdeeee;
+  --mt-idle: #7c3aed;
+  --mt-idle-soft: #f3effe;
+}
+
+body {
+  background-color: var(--mt-canvas);
+  color: var(--mt-ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+.mt-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--mt-line-strong) transparent;
+}
+
+.mt-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.mt-scroll::-webkit-scrollbar-thumb {
+  background: var(--mt-line-strong);
+  border-radius: 4px;
+}
+
+.mt-scroll::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 /* Add variants based on LiveView classes */

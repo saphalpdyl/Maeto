@@ -31,44 +31,66 @@ defmodule MaetoPaneWeb.Layouts do
     default: nil,
     doc: "the current [scope](https://hexdocs.pm/phoenix/scopes.html)"
 
+  slot :rail, doc: "section links down the sidebar"
+  slot :crumbs, doc: "context that sits inline with the brand in the top bar"
+  slot :status, doc: "liveness indicators pinned to the right of the top bar"
   slot :inner_block, required: true
 
   def app(assigns) do
     ~H"""
-    <header class="navbar px-4 sm:px-6 lg:px-8">
-      <div class="flex-1">
-        <a href="/" class="flex-1 flex w-fit items-center gap-2">
-          <img src={~p"/images/logo.svg"} width="36" />
-          <span class="text-sm font-semibold">v{Application.spec(:phoenix, :vsn)}</span>
+    <div class="flex min-h-dvh bg-canvas text-ink">
+      <aside class="sticky top-0 hidden h-dvh w-[212px] shrink-0 flex-col border-r border-line bg-rail lg:flex">
+        <a href="/" class="flex h-12 shrink-0 items-center gap-2 px-4">
+          <.mark />
+          <span class="text-[14px] font-semibold tracking-tight">
+            ma<span class="text-accent">e</span>to
+          </span>
         </a>
-      </div>
-      <div class="flex-none">
-        <ul class="flex flex-column px-1 space-x-4 items-center">
-          <li>
-            <a href="https://phoenixframework.org/" class="btn btn-ghost">Website</a>
-          </li>
-          <li>
-            <a href="https://github.com/phoenixframework/phoenix" class="btn btn-ghost">GitHub</a>
-          </li>
-          <li>
-            <.theme_toggle />
-          </li>
-          <li>
-            <a href="https://hexdocs.pm/phoenix/overview.html" class="btn btn-primary">
-              Get Started <span aria-hidden="true">&rarr;</span>
-            </a>
-          </li>
-        </ul>
-      </div>
-    </header>
 
-    <main class="px-4 py-20 sm:px-6 lg:px-8">
-      <div class="mx-auto max-w-2xl space-y-4">
-        {render_slot(@inner_block)}
+        <nav :if={@rail != []} class="mt-scroll flex-1 space-y-0.5 overflow-y-auto px-2 py-2">
+          {render_slot(@rail)}
+        </nav>
+
+        <div class="shrink-0 border-t border-line p-2">
+          <.theme_toggle />
+        </div>
+      </aside>
+
+      <div class="flex min-w-0 flex-1 flex-col">
+        <header class="sticky top-0 z-20 flex h-12 shrink-0 items-center gap-3 border-b border-line bg-canvas/95 px-4 backdrop-blur sm:px-6">
+          <a href="/" class="flex shrink-0 items-center gap-2 lg:hidden">
+            <.mark />
+            <span class="text-[14px] font-semibold">ma<span class="text-accent">e</span>to</span>
+          </a>
+
+          <div class="mt-scroll flex min-w-0 items-center gap-2 overflow-x-auto">
+            {render_slot(@crumbs)}
+          </div>
+
+          <div class="ml-auto flex shrink-0 items-center gap-2">
+            {render_slot(@status)}
+          </div>
+        </header>
+
+        <main class="min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-8">
+          <div class="mx-auto max-w-[1360px]">
+            {render_slot(@inner_block)}
+          </div>
+        </main>
       </div>
-    </main>
+    </div>
 
     <.flash_group flash={@flash} />
+    """
+  end
+
+  @doc "The maeto leaf mark, tinted from the active theme."
+  def mark(assigns) do
+    ~H"""
+    <svg viewBox="0 0 54 64" class="h-[18px] w-[15px] shrink-0" aria-hidden="true">
+      <path d="M6,60 C6,30 20,4 40,4 C34,20 34,42 6,60 Z" class="fill-muted" />
+      <path d="M18,60 C18,34 30,10 48,10 C44,26 42,46 18,60 Z" class="fill-accent" />
+    </svg>
     """
   end
 
@@ -122,31 +144,34 @@ defmodule MaetoPaneWeb.Layouts do
   """
   def theme_toggle(assigns) do
     ~H"""
-    <div class="card relative flex flex-row items-center border-2 border-base-300 bg-base-300 rounded-full">
-      <div class="absolute w-1/3 h-full rounded-full border-1 border-base-200 bg-base-100 brightness-200 left-0 [[data-theme=light]_&]:left-1/3 [[data-theme=dark]_&]:left-2/3 transition-[left]" />
+    <div class="relative flex flex-row items-center rounded-md border border-line bg-canvas">
+      <div class="absolute left-0 h-full w-1/3 rounded-md border border-line-strong bg-surface [[data-theme=dark]_&]:left-2/3 [[data-theme=light]_&]:left-1/3 transition-[left]" />
 
       <button
-        class="flex p-2 cursor-pointer w-1/3"
+        class="flex w-1/3 cursor-pointer justify-center p-1.5"
         phx-click={JS.dispatch("phx:set-theme")}
         data-phx-theme="system"
       >
-        <.icon name="hero-computer-desktop-micro" class="size-4 opacity-75 hover:opacity-100" />
+        <.icon
+          name="hero-computer-desktop-micro"
+          class="relative size-3.5 opacity-70 hover:opacity-100"
+        />
       </button>
 
       <button
-        class="flex p-2 cursor-pointer w-1/3"
+        class="flex w-1/3 cursor-pointer justify-center p-1.5"
         phx-click={JS.dispatch("phx:set-theme")}
         data-phx-theme="light"
       >
-        <.icon name="hero-sun-micro" class="size-4 opacity-75 hover:opacity-100" />
+        <.icon name="hero-sun-micro" class="relative size-3.5 opacity-70 hover:opacity-100" />
       </button>
 
       <button
-        class="flex p-2 cursor-pointer w-1/3"
+        class="flex w-1/3 cursor-pointer justify-center p-1.5"
         phx-click={JS.dispatch("phx:set-theme")}
         data-phx-theme="dark"
       >
-        <.icon name="hero-moon-micro" class="size-4 opacity-75 hover:opacity-100" />
+        <.icon name="hero-moon-micro" class="relative size-3.5 opacity-70 hover:opacity-100" />
       </button>
     </div>
     """

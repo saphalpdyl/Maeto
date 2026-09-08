@@ -3,6 +3,16 @@ defmodule MaetoPaneWeb.FabricLiveTest do
 
   import Phoenix.LiveViewTest
 
+  # the topology is rendered by cytoscape, so its contract is the json the hook reads
+  defp graph_payload(html) do
+    html
+    |> LazyHTML.from_fragment()
+    |> LazyHTML.query_by_id("topology")
+    |> LazyHTML.attribute("data-graph")
+    |> List.first()
+    |> Jason.decode!()
+  end
+
   @control %{
     "published_at" => "2026-08-29T00:00:00Z",
     "topology" => %{
@@ -134,7 +144,7 @@ defmodule MaetoPaneWeb.FabricLiveTest do
 
     {:ok, _view, html} = live(conn, "/")
 
-    assert html =~ "no control snapshot yet"
+    assert html =~ "no snapshot"
   end
 
   test "a node that reported but could not read the dataplane says so", %{conn: conn} do
@@ -169,7 +179,7 @@ defmodule MaetoPaneWeb.FabricLiveTest do
     assert rendered =~ "no state reported"
   end
 
-  test "the registry is always visible without any selection", %{conn: conn} do
+  test "the registry section exposes allocations and held intents", %{conn: conn} do
     control =
       Map.put(@control, "registry", %{
         "sid_cursor" => 4,
@@ -195,11 +205,13 @@ defmodule MaetoPaneWeb.FabricLiveTest do
     send(MaetoPane.Fabric, {:kv, :control, :key_added, "snapshot", Jason.encode!(control)})
     :sys.get_state(MaetoPane.Fabric)
 
-    {:ok, _view, html} = live(conn, "/")
+    {:ok, view, _html} = live(conn, "/")
+
+    html = view |> element("#nav-registry") |> render_click()
 
     assert html =~ "Service registry"
-    assert html =~ "sid cursor 4"
-    assert html =~ "3 sid(s) allocated"
+    assert html =~ "SID cursor 4"
+    assert html =~ "3 allocated"
     assert html =~ "fc00:0:1::"
     assert html =~ "231"
   end
@@ -234,20 +246,22 @@ defmodule MaetoPaneWeb.FabricLiveTest do
     assert html =~ "published intent says fc00:0:1:ff8c::"
   end
 
-  test "renders one circle per node and one line per node pair", %{conn: conn} do
+  test "hands the renderer every pop and every member link", %{conn: conn} do
     {:ok, _view, html} = live(conn, "/")
 
-    assert length(Regex.scan(~r/<circle/, html)) == 2
-    assert length(Regex.scan(~r/<path/, html)) == 2
+    graph = graph_payload(html)
+
+    assert Enum.map(graph["nodes"], & &1["id"]) == ["A", "B"]
+    # two parallel links between A and B, each its own element, grouped under one link id
+    assert Enum.map(graph["edges"], & &1["id"]) == ["A:eth1-B:eth1", "A:eth2-B:eth2"]
+    assert Enum.uniq(Enum.map(graph["edges"], & &1["link"])) == ["A|B"]
+    assert Enum.all?(graph["edges"], & &1["up"])
   end
 
   test "selecting a node shows its detail panel", %{conn: conn} do
     {:ok, view, _html} = live(conn, "/")
 
-    rendered =
-      view
-      |> element(~s{circle[phx-value-kind="node"][phx-value-id="A"]})
-      |> render_click()
+    rendered = render_click(view, "select", %{"kind" => "node", "id" => "A"})
 
     assert rendered =~ "PopA"
     assert rendered =~ "fc00:0:1::/48"
@@ -258,11 +272,9 @@ defmodule MaetoPaneWeb.FabricLiveTest do
   test "selecting a link lists its parallel edges", %{conn: conn} do
     {:ok, view, _html} = live(conn, "/")
 
-    assert view |> has_element?(~s{path[phx-value-id="A|B"]})
-
     rendered = render_click(view, "select", %{"kind" => "link", "id" => "A|B"})
 
-    assert rendered =~ "2 parallel link"
+    assert rendered =~ "2 member link"
     assert rendered =~ "A:eth1-B:eth1"
     assert rendered =~ "A:eth2-B:eth2"
     assert rendered =~ "fc00:1:1:201::/64"
@@ -271,10 +283,10 @@ defmodule MaetoPaneWeb.FabricLiveTest do
   test "clearing the selection returns to the issue list", %{conn: conn} do
     {:ok, view, _html} = live(conn, "/")
 
-    selected = view |> element(~s{circle[phx-value-id="A"]}) |> render_click()
+    selected = render_click(view, "select", %{"kind" => "node", "id" => "A"})
     assert selected =~ "49.0000.0000.0000.0001.00"
 
-    cleared = view |> element("svg") |> render_click()
+    cleared = render_click(view, "clear", %{})
 
     refute cleared =~ "49.0000.0000.0000.0001.00"
     assert cleared =~ "installed in vrf table 4112525701"

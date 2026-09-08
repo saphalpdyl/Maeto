@@ -84,11 +84,41 @@ type RegistrySnapshot struct {
 	AllocatedSIDs []string                         `json:"allocated_sids"`
 }
 
+type SiteSnapshot struct {
+	TenantID   int    `json:"tenant_id"`
+	CPE        string `json:"cpe"`
+	PortalID   string `json:"portal_id"`
+	Node       string `json:"node"`
+	Prefix     string `json:"prefix"`
+	Attach     string `json:"attach"`
+	AttachNode string `json:"attach_node"`
+	IfID       uint32 `json:"if_id"`
+	Identity   string `json:"identity"`
+}
+
+type TenantSnapshot struct {
+	ID         int            `json:"id"`
+	Allocation string         `json:"allocation"`
+	VRFTable   int            `json:"vrf_table"`
+	Sites      []SiteSnapshot `json:"sites"`
+}
+
+type PathSnapshot struct {
+	Source    string   `json:"source"`
+	Dest      string   `json:"dest"`
+	Dimension string   `json:"dimension"`
+	Nodes     []string `json:"nodes"`
+	Edges     []string `json:"edges"`
+	Cost      float64  `json:"cost"`
+}
+
 type ControlSnapshot struct {
 	PublishedAt time.Time               `json:"published_at"`
 	Topology    TopologySnapshot        `json:"topology"`
 	Inventory   []InventoryNodeSnapshot `json:"inventory"`
 	Registry    RegistrySnapshot        `json:"registry"`
+	Tenants     []TenantSnapshot        `json:"tenants"`
+	Paths       []PathSnapshot          `json:"paths"`
 }
 
 func SnapshotTopology(graph *Graph, domain SRv6DomainMetadata) TopologySnapshot {
@@ -246,6 +276,87 @@ func (r *ServiceRegistry) Snapshot() RegistrySnapshot {
 	}
 }
 
+func SnapshotTenants(tenants TenantRepository) []TenantSnapshot {
+	out := []TenantSnapshot{}
+	if tenants == nil {
+		return out
+	}
+
+	for _, tenant := range tenants.Tenants() {
+		entry := TenantSnapshot{
+			ID:         tenant.ID,
+			Allocation: tenant.Allocation.String(),
+			VRFTable:   tenant.VRFTable,
+			Sites:      []SiteSnapshot{},
+		}
+
+		for _, site := range tenant.Sites {
+			entry.Sites = append(entry.Sites, SiteSnapshot{
+				TenantID:   site.TenantID,
+				CPE:        site.CPE,
+				PortalID:   site.PortalID,
+				Node:       site.Node,
+				Prefix:     site.Prefix.String(),
+				Attach:     site.Attach,
+				AttachNode: site.AttachNode,
+				IfID:       site.IfID,
+				Identity:   site.Identity,
+			})
+		}
+
+		sort.Slice(entry.Sites, func(i, j int) bool { return entry.Sites[i].CPE < entry.Sites[j].CPE })
+		out = append(out, entry)
+	}
+
+	return out
+}
+
+func SnapshotPaths(paths PathSet) []PathSnapshot {
+	out := []PathSnapshot{}
+
+	for src, byDst := range paths {
+		for dst, byDim := range byDst {
+			for dim, path := range byDim {
+				if path == nil {
+					continue
+				}
+
+				entry := PathSnapshot{
+					Source:    string(src),
+					Dest:      string(dst),
+					Dimension: string(dim),
+					Nodes:     make([]string, 0, len(path.Nodes)),
+					Edges:     make([]string, 0, len(path.Edges)),
+					Cost:      path.Cost,
+				}
+
+				for _, node := range path.Nodes {
+					entry.Nodes = append(entry.Nodes, string(node))
+				}
+
+				for _, edge := range path.Edges {
+					entry.Edges = append(entry.Edges, string(edge))
+				}
+
+				out = append(out, entry)
+			}
+		}
+	}
+
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Source != out[j].Source {
+			return out[i].Source < out[j].Source
+		}
+		if out[i].Dest != out[j].Dest {
+			return out[i].Dest < out[j].Dest
+		}
+
+		return out[i].Dimension < out[j].Dimension
+	})
+
+	return out
+}
+
 type SnapshotPublisher struct {
 	publisher *statekv.Publisher
 	interval  time.Duration
@@ -255,6 +366,8 @@ type SnapshotPublisher struct {
 	domain    SRv6DomainMetadata
 	inventory NodeInventory
 	registry  *ServiceRegistry
+	tenants   TenantRepository
+	paths     *PathStore
 }
 
 func NewSnapshotPublisher(
@@ -265,6 +378,8 @@ func NewSnapshotPublisher(
 	domain SRv6DomainMetadata,
 	inventory NodeInventory,
 	registry *ServiceRegistry,
+	tenants TenantRepository,
+	paths *PathStore,
 ) *SnapshotPublisher {
 	return &SnapshotPublisher{
 		publisher: publisher,
@@ -274,6 +389,8 @@ func NewSnapshotPublisher(
 		domain:    domain,
 		inventory: inventory,
 		registry:  registry,
+		tenants:   tenants,
+		paths:     paths,
 	}
 }
 
@@ -282,6 +399,8 @@ func (s *SnapshotPublisher) Snapshot() ControlSnapshot {
 		PublishedAt: time.Now(),
 		Topology:    SnapshotTopology(s.graph, s.domain),
 		Inventory:   SnapshotInventory(s.inventory),
+		Tenants:     SnapshotTenants(s.tenants),
+		Paths:       SnapshotPaths(s.paths.Load()),
 	}
 
 	if s.registry != nil {
