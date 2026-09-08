@@ -6,7 +6,8 @@
     "(^|/)Makefile$",
     "\\.mk$",
     "\\.ipynb$",
-    "services/maeto-agent/bpf/headers/"
+    "services/maeto-agent/bpf/headers/",
+    "^services/maeto-pane/assets/.*\\.js$"
   ],
   "Disable": {
     "IndentSize": true
