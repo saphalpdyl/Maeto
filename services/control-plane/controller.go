@@ -167,6 +167,12 @@ func (c *Controller) Start(ctx context.Context) {
 	}
 
 	go c.startPCEUpdatesDispatcher(ctx)
+
+	c.startDebugTools(
+		ctx,
+		c.logger.With(log.Domain(log.DomainDebugTools)),
+	)
+
 	c.ready = true
 
 }

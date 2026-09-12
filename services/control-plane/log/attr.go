@@ -11,9 +11,12 @@ const (
 	DomainConfig                LogDomain = "CONFIG"
 	DomainServiceRegistry       LogDomain = "SERVICE_REGISTRY"
 	DomainPCE                   LogDomain = "PCE"
+	DomainDebugTools            LogDomain = "DEBUG_TOOLS"
 )
 
 func Domain(v LogDomain) slog.Attr { return slog.String("domain", string(v)) }
+
+func NATSSubject(s string) slog.Attr { return slog.String("nats.subject", s) }
 
 func InstanceID(v string) slog.Attr { return slog.String("service.instance.id", v) }
 

@@ -18,9 +18,9 @@ RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache
     mkdir -p /out && \
     if [ "$DEBUG" = "1" ]; then \
       go install github.com/go-delve/delve/cmd/dlv@latest && cp /go/bin/dlv /out/ && \
-      CGO_ENABLED=0 go build -gcflags="all=-N -l" -o /bin/maeto-control-plane ./services/control-plane/cmd; \
+      CGO_ENABLED=0 go build -tags devtools -gcflags="all=-N -l" -o /bin/maeto-control-plane ./services/control-plane/cmd; \
     else \
-      CGO_ENABLED=0 go build -o /bin/maeto-control-plane ./services/control-plane/cmd; \
+      CGO_ENABLED=0 go build -tags devtools -o /bin/maeto-control-plane ./services/control-plane/cmd; \
     fi
 
 FROM alpine:3.21

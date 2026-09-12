@@ -1,23 +1,33 @@
-.PHONY: lint lint.editorconfig generate deploy
+.PHONY: lint lint.editorconfig generate deploy install-virtual-environments fe ap ddbg dev ips
 
 TOPOLOGY_YAML := clab/topologies/eight-pop.yaml
 TOPOLOGY_NAME := eight-pop
 
-# DEBUG=1 builds unoptimised images that ship delve, and makes the generator
-# put MAETO_DLV_LISTEN in every node's env. See docker/scripts/maeto-launch.sh
+CLAB_PY := clab/.venv/bin/python
+CGOVER_DIR := tools/debug/control-plane
+CGOVER_PY := $(CGOVER_DIR)/.venv/bin/python
+
+# DEBUG=1 delve attached binary; for debugging purposes
 DEBUG ?= 0
 ifeq ($(DEBUG),1)
 export MAETO_DEBUG := 1
 export MAETO_DLV_LISTEN := [::]:2345
 endif
 
-setup:
+setup: install-virtual-environments
 	./scripts/hooks/install-hooks.sh
+
+install-virtual-environments:
+	python3 -m venv --clear clab/.venv
+	$(CLAB_PY) -m pip install -q --upgrade pip
+	$(CLAB_PY) -m pip install -q -r clab/generator/requirements.txt
+	python3 -m venv --clear $(CGOVER_DIR)/.venv
+	$(CGOVER_PY) -m pip install -q --upgrade pip
+	$(CGOVER_PY) -m pip install -q -r $(CGOVER_DIR)/requirements.txt
 
 # generate containerlab + frr config from the topology dsl into build/<hash>
 generate:
-	. clab/.venv/bin/activate
-	PYTHONPATH=clab python3 -m generator $(TOPOLOGY_YAML)
+	PYTHONPATH=clab $(CLAB_PY) -m generator $(TOPOLOGY_YAML)
 
 # deploy the topology recorded in .state/latest.json (build/<hash>/topology.yml)
 deploy:
@@ -51,7 +61,7 @@ fe:
 	docker compose up --build maeto-pane
 
 ddbg: # dev debug
-	DEBUG=1 docker compsoe up --build maeto-control-plane
+	DEBUG=1 docker compose up --build maeto-control-plane
 
 build-vm:
 	docker build --build-arg DEBUG=$(DEBUG) -t maeto-pop:latest -f docker/maeto-pop.Dockerfile .

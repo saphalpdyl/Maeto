@@ -24,7 +24,7 @@ func NewPCE(costGraph *CostGraph, reportChan chan<- PathSet, logger *slog.Logger
 }
 
 func (p *PCE) Run(ctx context.Context, graph *Graph) {
-	ticker := time.NewTicker(3 * time.Second)
+	ticker := time.NewTicker(10 * time.Second)
 
 	for {
 		select {
