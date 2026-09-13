@@ -8,7 +8,6 @@ import (
 	"math"
 	"slices"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -20,9 +19,46 @@ var (
 type Objective func(*Edge, *Cost) float64
 
 type Path struct {
-	Nodes []NodeID
-	Edges []EdgeID
-	Cost  float64
+	Nodes []NodeID `json:"nodes"`
+	Edges []EdgeID `json:"edges"`
+	Cost  float64  `json:"cost"`
+}
+
+func (p *Path) Equal(other *Path) bool {
+	if (len(p.Edges) != len(other.Edges)) || (len(p.Nodes) != len(other.Nodes)) {
+		return false
+	}
+
+	for i := range len(p.Nodes) {
+		if p.Nodes[i] != other.Nodes[i] {
+			return false
+		}
+	}
+
+	for i := range len(p.Edges) {
+		if p.Edges[i] != other.Edges[i] {
+			return false
+		}
+	}
+
+	return true
+}
+
+func (p *Path) LogValue() slog.Value {
+	if p == nil {
+		return slog.StringValue("<none>")
+	}
+
+	hops := make([]string, len(p.Nodes))
+	for i, n := range p.Nodes {
+		hops[i] = string(n)
+	}
+
+	return slog.GroupValue(
+		slog.String("path", strings.Join(hops, ">")),
+		slog.Float64("cost", p.Cost),
+		slog.Int("hops", len(p.Edges)),
+	)
 }
 
 type PathSet map[NodeID]map[NodeID]map[CostDimension]*Path
@@ -41,54 +77,6 @@ func (ps PathSet) Set(src, dst NodeID, dim CostDimension, path *Path) {
 	}
 
 	byDim[dim] = path
-}
-
-type PathStore struct {
-	mu    sync.RWMutex
-	paths PathSet
-}
-
-func NewPathStore() *PathStore {
-	return &PathStore{paths: make(PathSet)}
-}
-
-func (s *PathStore) Store(paths PathSet) {
-	if s == nil {
-		return
-	}
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	s.paths = paths
-}
-
-func (s *PathStore) Load() PathSet {
-	if s == nil {
-		return nil
-	}
-
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	return s.paths
-}
-
-func (p *Path) LogValue() slog.Value {
-	if p == nil {
-		return slog.StringValue("<none>")
-	}
-
-	hops := make([]string, len(p.Nodes))
-	for i, n := range p.Nodes {
-		hops[i] = string(n)
-	}
-
-	return slog.GroupValue(
-		slog.String("path", strings.Join(hops, ">")),
-		slog.Float64("cost", p.Cost),
-		slog.Int("hops", len(p.Edges)),
-	)
 }
 
 func (ps PathSet) LogValue() slog.Value {

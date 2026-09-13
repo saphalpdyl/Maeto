@@ -28,7 +28,6 @@ type Controller struct {
 	tenants         TenantRepository
 	serviceRegistry *ServiceRegistry
 	pce             *PCE
-	paths           *PathStore
 
 	ready bool
 
@@ -119,7 +118,6 @@ func NewController(
 			logger.With(log.Domain(log.DomainPCE)),
 		),
 		pceUpdates: pceUpdatesChan,
-		paths:      NewPathStore(),
 
 		ready: false,
 	}, nil
@@ -453,7 +451,7 @@ func (c *Controller) startSnapshotPublisher(ctx context.Context) error {
 		c.inventory,
 		c.serviceRegistry,
 		c.tenants,
-		c.paths,
+		c.pce.PathStore,
 	)
 
 	go snapshots.Run(ctx)
@@ -472,8 +470,6 @@ func (c *Controller) startPCEUpdatesDispatcher(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case paths := <-c.pceUpdates:
-			c.paths.Store(paths)
-
 			// Convert NodeID->NodeID->CostDimension->NodeID lists to
 			// ,for each PENode and its tenants, [prefix][]netip.Addr
 			// We need to get the egress PE's End.DT46 for the tenant as well

@@ -79,5 +79,14 @@ func (c *CostGraph) Costs() map[EdgeID]*Cost {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	return maps.Clone(c.graph)
+	costs := make(map[EdgeID]*Cost, len(c.graph))
+	for id, cost := range c.graph {
+		costs[id] = &Cost{
+			FromEdge: cost.FromEdge,
+			ToEdge:   cost.ToEdge,
+			Costs:    maps.Clone(cost.Costs),
+		}
+	}
+
+	return costs
 }
