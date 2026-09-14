@@ -25,11 +25,31 @@ lint:
     - make lint
 
 test.unit:
+  image: golang:1.25.12
   stage: test
   script:
     - make test.unit
 
 test.integration:
+  image: golang:1.25.12
   stage: test
+  services:
+    - docker:24.0.5-dind
+  variables:
+    DOCKER_HOST: tcp://docker:2376
+    DOCKER_TLS_CERTDIR: "/certs"
+    DOCKER_TLS_VERIFY: "1"
+    DOCKER_CERT_PATH: "/certs/client"
+    DOCKER_CLI_VERSION: "24.0.5"
+    DOCKER_COMPOSE_VERSION: "v2.21.0"
+    STAMP_REFLECTOR_ADDR: "docker:862"
+  before_script:
+    - curl -fsSL "https://download.docker.com/linux/static/stable/x86_64/docker-${DOCKER_CLI_VERSION}.tgz"
+      | tar -xz -C /usr/local/bin --strip-components=1 docker/docker
+    - mkdir -p /usr/local/lib/docker/cli-plugins
+    - curl -fsSL -o /usr/local/lib/docker/cli-plugins/docker-compose
+      "https://github.com/docker/compose/releases/download/${DOCKER_COMPOSE_VERSION}/docker-compose-linux-x86_64"
+    - chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+    - docker info
   script:
     - make test.integration

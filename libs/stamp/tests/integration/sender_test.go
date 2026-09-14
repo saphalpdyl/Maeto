@@ -5,6 +5,7 @@ package integration_test
 import (
 	"encoding/json"
 	"log"
+	"os"
 	"testing"
 	"time"
 
@@ -13,6 +14,13 @@ import (
 )
 
 var config stamp.Config
+
+func suiteAddr() string {
+	if addr := os.Getenv("STAMP_REFLECTOR_ADDR"); addr != "" {
+		return addr
+	}
+	return "localhost:862"
+}
 
 func TestMain(m *testing.M) {
 	config = stamp.Config{
@@ -31,8 +39,8 @@ func Test_SendNormalPkt(t *testing.T) {
 	t.Run("send normal packet", func(t *testing.T) {
 		senderConfig := stamp.SenderConfig{
 			Config:     config,
-			LocalAddr:  "localhost:50023",
-			RemoteAddr: "localhost:862",
+			LocalAddr:  ":0",
+			RemoteAddr: suiteAddr(),
 			HMACKey:    nil,
 			Timeout:    5 * time.Second,
 			OnError: func(err error) {
