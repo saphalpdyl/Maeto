@@ -23,3 +23,13 @@ lint:
     GOPATH: $CI_PROJECT_DIR/.cache/go
   script:
     - make lint
+
+test.unit:
+  stage: test
+  script:
+    - make test.unit
+
+test.integration:
+  stage: test
+  script:
+    - make test.integration

@@ -122,3 +122,17 @@ pki:
 	mkdir -p .certs/
 	pki --gen --type ecdsa --size 256 --outform pem > .certs/ca-key.pem
 	pki --self --ca --lifetime 7300 --in .certs/ca-key.pem --type priv --dn "CN=maeto-ca" --outform pem > .certs/ca-cert.pem
+
+## Testing
+test.build:
+	docker build -t test-stamp-suite:latest -f docker/tests/stamp.test.Dockerfile .
+
+test.unit:
+	go test -v ./libs/stamp/...
+	go test -v ./services/...
+
+test.integration: test.build
+	docker compose -f docker-compose.test.yaml down
+	docker compose -f docker-compose.test.yaml up -d
+	go test -v -tags integration ./libs/stamp/tests/integration
+	docker compose -f docker-compose.test.yaml down

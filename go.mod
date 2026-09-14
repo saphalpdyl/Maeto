@@ -7,6 +7,7 @@ require (
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/nats-io/nats.go v1.52.0
 	github.com/samber/slog-multi v1.8.0
+	github.com/stretchr/testify v1.11.1
 	github.com/strongswan/govici v0.8.2
 	go.opentelemetry.io/contrib/bridges/otelslog v0.19.0
 	go.opentelemetry.io/otel v1.44.0
@@ -17,7 +18,12 @@ require (
 	go.opentelemetry.io/otel/trace v1.44.0
 )
 
-require github.com/vishvananda/netns v0.0.5 // indirect
+require (
+	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
+	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
+	github.com/vishvananda/netns v0.0.5 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
+)
 
 require (
 	github.com/avast/retry-go v3.0.0+incompatible
