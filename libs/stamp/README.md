@@ -8,6 +8,15 @@ It provides two layers:
 Only the unauthenticated base mode is supported in v0. STAMP Optional
 Extensions (RFC 8972) and HMAC authentication are out of scope for now.
 
+## Segment Routing Extension (RFC 9503)
+This library will also support SRv6 Segment Routing extensions for the STAMP protocol. Features will be limited to what Maeto actually needs ( Control Code 0x1 is not supported ).
+
+Between link A-B, two stateless STAMP sessions are initiated. The probes are unidirectional and terminate at the reflector. 
+
+The reasoning behind this is that having bidirectional STAMP sessions running between the two ends cost 2x probes. Bidirectional STAMP from only one end would require leader election and all the failover jargon that I don't want to deal with.
+
+Running one way STAMP measurement with Reply Request = 0x0 from both sides gives us unidirectional measurements without having to deal with leader election or return path issues.
+
 ### Use
 **Note**: This document was written in **Apr-19-2026** and is subject to change in the future.
 
