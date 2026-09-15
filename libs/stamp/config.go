@@ -9,4 +9,8 @@ type ErrorEstimateConfig struct {
 
 type Config struct {
 	ErrorEstimate ErrorEstimateConfig
+
+	// Bind the underlying fd to a net device
+	// Used for Route-based SR implementations in Linux
+	BindToDev *string // usually probe-vrf
 }
