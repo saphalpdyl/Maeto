@@ -186,7 +186,6 @@ func DecodeSenderPacket(hmacKey []byte, b []byte) (*SenderPacket, error) {
 
 		default:
 			// TODO: Report unrecognized TLV instead
-			return nil, fmt.Errorf("unsupported TLV type %d", tlvType)
 		}
 
 		cursor += 4 + tlvLength
@@ -225,7 +224,6 @@ func decodeReturnPath(b []byte) (*SRExtReturnPath, error) {
 			returnPath.ControlCode = controlCode
 
 		default:
-			return nil, fmt.Errorf("unsupported return path sub-TLV type %d", subType)
 		}
 
 		cursor += 4 + subLength
