@@ -115,7 +115,7 @@ func (r *Reflector) Serve(ctx context.Context) error {
 			continue
 		}
 
-		senderPkt, err := DecodeSenderPacket(nil, buf)
+		senderPkt, err := DecodeSenderPacket(nil, buf[:readBytes])
 		if err != nil {
 			r.handleError(err)
 			continue

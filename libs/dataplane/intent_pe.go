@@ -22,6 +22,15 @@ type PEIntent struct {
 	//
 	// key = tenant_id
 	Tenants map[string]*TenantIntent `json:"tenants"`
+
+	// Peers mainly used for establishing STAMP sessions between adjs
+	Peers map[string]PeerIntent
+}
+
+type PeerIntent struct {
+	PeerLocator   netip.Prefix
+	PeerInterface string
+	TelemetryKey  string // EdgeID A:eth1-B:eth3 used for correlation
 }
 
 // TenantIntent is one tenant's footprint on this node: every site of theirs that

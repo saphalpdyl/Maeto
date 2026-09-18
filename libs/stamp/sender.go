@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 // Packet format for unauth mode ( RFC 8762 )
@@ -35,6 +37,8 @@ type SenderConfig struct {
 	OnError    func(error)
 	Timeout    time.Duration
 	Config     Config
+
+	SRExtensions *SRExtensions
 }
 
 // Sender originates STAMP test packets and matches reflected replies against
@@ -46,6 +50,8 @@ type Sender struct {
 	onError func(error)
 	timeout time.Duration
 	Config  Config
+
+	srExtensions *SRExtensions
 }
 
 // NewSender resolves the local and remote UDP addresses from cfg, opens a
@@ -70,18 +76,57 @@ func NewSender(cfg SenderConfig) (*Sender, error) {
 		return nil, err
 	}
 
+	if cfg.Config.BindToDev != nil {
+
+		rawConn, err := conn.SyscallConn()
+		if err != nil {
+			err := conn.Close()
+			if err != nil {
+				return nil, errors.New("connection failed to close when handling failure for rawConn")
+			}
+			return nil, err
+		}
+
+		var sockErr error
+		err = rawConn.Control(func(fd uintptr) {
+			sockErr = unix.SetsockoptString(
+				int(fd),
+				unix.SOL_SOCKET,
+				unix.SO_BINDTODEVICE,
+				*cfg.Config.BindToDev,
+			)
+
+		})
+		if err != nil {
+			err := conn.Close()
+			if err != nil {
+				return nil, errors.New("connection failed to close when handling failure for rawConn.Control")
+			}
+			return nil, err
+		}
+
+		if sockErr != nil {
+			err := conn.Close()
+			if err != nil {
+				return nil, errors.New("connection failed to close when handling failure for SO_BINDTODEVICE")
+			}
+			return nil, sockErr
+		}
+	}
+
 	timeout := cfg.Timeout
 	if timeout == 0 {
 		timeout = 5 * time.Second
 	}
 
 	return &Sender{
-		Conn:    conn,
-		HMACKey: cfg.HMACKey,
-		seq:     0,
-		onError: cfg.OnError,
-		timeout: timeout,
-		Config:  cfg.Config,
+		Conn:         conn,
+		HMACKey:      cfg.HMACKey,
+		seq:          0,
+		onError:      cfg.OnError,
+		timeout:      timeout,
+		Config:       cfg.Config,
+		srExtensions: cfg.SRExtensions,
 	}, nil
 }
 
@@ -100,30 +145,7 @@ func (s *Sender) Send() (*ReflectorPacket, error) {
 		return nil, fmt.Errorf("HMAC authentication is not yet implemented")
 	}
 
-	timestamp, err := NewTimestamp(TimestampParams{
-		ClockFormat: s.Config.ErrorEstimate.ClockFormat,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	errorEstimate, err := NewErrorEstimate(
-		s.Config.ErrorEstimate.Synchronized,
-		s.Config.ErrorEstimate.ClockFormat,
-		s.Config.ErrorEstimate.Scale,
-		s.Config.ErrorEstimate.Multiplier,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	senderPkt := SenderPacket{
-		SequenceNumber: s.seq,
-		Timestamp:      *timestamp,
-		ErrorEstimate:  errorEstimate.Encode(),
-	}
-
-	buf, err := senderPkt.Encode(nil)
+	buf, err := s.encodeNext()
 	if err != nil {
 		return nil, err
 	}
@@ -153,6 +175,61 @@ func (s *Sender) Send() (*ReflectorPacket, error) {
 	s.seq++
 
 	return reply, nil
+}
+
+// SendOnly transmits a single STAMP test packet without waiting for a
+// reflected reply. It is used by one-way probes, where the far end exports its
+// own receive timestamp out of band instead of reflecting the packet.
+func (s *Sender) SendOnly() error {
+	if s.HMACKey != nil {
+		return fmt.Errorf("HMAC authentication is not yet implemented")
+	}
+
+	buf, err := s.encodeNext()
+	if err != nil {
+		return err
+	}
+
+	if _, err := s.Conn.Write(buf); err != nil {
+		return err
+	}
+
+	s.seq++
+
+	return nil
+}
+
+func (s *Sender) encodeNext() ([]byte, error) {
+	timestamp, err := NewTimestamp(TimestampParams{
+		ClockFormat: s.Config.ErrorEstimate.ClockFormat,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	errorEstimate, err := NewErrorEstimate(
+		s.Config.ErrorEstimate.Synchronized,
+		s.Config.ErrorEstimate.ClockFormat,
+		s.Config.ErrorEstimate.Scale,
+		s.Config.ErrorEstimate.Multiplier,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	senderPkt := SenderPacket{
+		SequenceNumber: s.seq,
+		Timestamp:      *timestamp,
+		ErrorEstimate:  errorEstimate.Encode(),
+		SRExtensions:   s.srExtensions,
+	}
+
+	return senderPkt.Encode(nil)
+}
+
+// Sequence returns the sequence number the next transmitted packet will carry.
+func (s *Sender) Sequence() uint32 {
+	return s.seq
 }
 
 // Close releases the underlying socket.

@@ -129,10 +129,12 @@ test.build:
 
 test.unit:
 	go test -v ./libs/stamp/...
+	go test -v ./libs/probe/...
 	go test -v ./services/...
 
 test.integration: test.build
 	docker compose -f docker-compose.test.yaml down
 	docker compose -f docker-compose.test.yaml up -d
 	go test -v -tags integration ./libs/stamp/tests/integration
+	go test -v -tags integration ./libs/probe/tests/integration
 	docker compose -f docker-compose.test.yaml down
