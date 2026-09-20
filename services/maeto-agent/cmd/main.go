@@ -13,7 +13,7 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 
 	"github.com/saphalpdyl/maeto/libs/dataplane"
-	"github.com/saphalpdyl/maeto/libs/telemetry"
+	"github.com/saphalpdyl/maeto/libs/observability"
 	maetoagent "github.com/saphalpdyl/maeto/services/maeto-agent"
 	"github.com/saphalpdyl/maeto/services/maeto-agent/log"
 )
@@ -38,7 +38,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	logShutdown, err := telemetry.SetupLogging(ctx, config.OtelSink, config.OtelEndpoint, serviceName, serviceInstanceId, false)
+	logShutdown, err := observability.SetupLogging(ctx, config.OtelSink, config.OtelEndpoint, serviceName, serviceInstanceId, false)
 	if err != nil {
 		slog.Error("failed to setup logging", "error", err)
 		os.Exit(1)
@@ -49,7 +49,7 @@ func main() {
 		}
 	}()
 
-	traceShutdown, err := telemetry.SetupTracing(ctx, config.OtelSink, config.OtelEndpoint, serviceName, serviceInstanceId, false)
+	traceShutdown, err := observability.SetupTracing(ctx, config.OtelSink, config.OtelEndpoint, serviceName, serviceInstanceId, false)
 	if err != nil {
 		slog.Error("failed to setup tracing", "error", err)
 		os.Exit(1)

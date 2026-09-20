@@ -1,9 +1,6 @@
 package main
 
 import (
-	"github.com/saphalpdyl/maeto/libs/telemetry"
-	"github.com/saphalpdyl/maeto/services/argus"
-	log "github.com/saphalpdyl/maeto/services/argus/log"
 	"context"
 	"crypto/rand"
 	"fmt"
@@ -11,6 +8,10 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+
+	"github.com/saphalpdyl/maeto/libs/observability"
+	"github.com/saphalpdyl/maeto/services/argus"
+	log "github.com/saphalpdyl/maeto/services/argus/log"
 )
 
 func main() {
@@ -22,7 +23,7 @@ func main() {
 
 	config := argus.GetConfig()
 
-	logShutdown, err := telemetry.SetupLogging(ctx, config.OtelSink, config.OtelEndpoint, "argus", serviceInstanceId, false)
+	logShutdown, err := observability.SetupLogging(ctx, config.OtelSink, config.OtelEndpoint, "argus", serviceInstanceId, false)
 	if err != nil {
 		slog.Error("failed to setup logging", "error", err)
 		os.Exit(1)
@@ -33,7 +34,7 @@ func main() {
 		}
 	}()
 
-	traceShutdown, err := telemetry.SetupTracing(ctx, config.OtelSink, config.OtelEndpoint, "argus", serviceInstanceId, false)
+	traceShutdown, err := observability.SetupTracing(ctx, config.OtelSink, config.OtelEndpoint, "argus", serviceInstanceId, false)
 	if err != nil {
 		slog.Error("failed to setup tracing", "error", err)
 		os.Exit(1)

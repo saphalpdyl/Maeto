@@ -1,25 +1,25 @@
-package intent_test
+package nodesync_test
 
 import (
 	"net/netip"
 	"testing"
 
-	"github.com/saphalpdyl/maeto/libs/intent"
+	"github.com/saphalpdyl/maeto/libs/nodesync"
 )
 
 func TestNodeIntentCloneIsDeep(t *testing.T) {
-	orig := &intent.NodeIntent{
-		NodeType:   intent.NodeTypePE,
+	orig := &nodesync.NodeIntent{
+		NodeType:   nodesync.NodeTypePE,
 		Generation: 4,
-		Intent: &intent.PEIntent{
+		Intent: &nodesync.PEIntent{
 			NodeID: "A",
-			Tenants: map[string]*intent.TenantIntent{
+			Tenants: map[string]*nodesync.TenantIntent{
 				"273": {
-					PortalIntents: map[string]intent.PE_PortalIntent{
+					PortalIntents: map[string]nodesync.PE_PortalIntent{
 						"48522cc7549b": {TunnelInterfaceID: 3},
 					},
 					DT46SID: netip.MustParseAddr("fc00:0:1:ff8c::"),
-					InstallPaths: []intent.PESIDInstallIntent{
+					InstallPaths: []nodesync.PESIDInstallIntent{
 						{
 							TenantID:     "273",
 							PrefixRoutes: []netip.Prefix{netip.MustParsePrefix("fd7a:3921:111:2::/64")},
@@ -39,16 +39,16 @@ func TestNodeIntentCloneIsDeep(t *testing.T) {
 
 	// mutate every level of the original
 	orig.Generation = 99
-	pe := orig.Intent.(*intent.PEIntent) // nolint:errcheck
+	pe := orig.Intent.(*nodesync.PEIntent) // nolint:errcheck
 	pe.NodeID = "B"
-	pe.Tenants["273"].PortalIntents["48522cc7549b"] = intent.PE_PortalIntent{TunnelInterfaceID: 99}
-	pe.Tenants["273"].PortalIntents["new-portal"] = intent.PE_PortalIntent{}
+	pe.Tenants["273"].PortalIntents["48522cc7549b"] = nodesync.PE_PortalIntent{TunnelInterfaceID: 99}
+	pe.Tenants["273"].PortalIntents["new-portal"] = nodesync.PE_PortalIntent{}
 	pe.Tenants["273"].InstallPaths[0].Segments[0] = netip.MustParseAddr("fc00:0:9::")
 	pe.Tenants["273"].InstallPaths[0].PrefixRoutes[0] = netip.MustParsePrefix("fd00::/64")
 	pe.Tenants["273"].InstallPaths[0].Color = 99
-	pe.Tenants["999"] = &intent.TenantIntent{}
+	pe.Tenants["999"] = &nodesync.TenantIntent{}
 
-	got := clone.Intent.(*intent.PEIntent) // nolint:errcheck
+	got := clone.Intent.(*nodesync.PEIntent) // nolint:errcheck
 
 	if clone.Generation != 4 {
 		t.Errorf("Generation = %d, want 4", clone.Generation)
@@ -87,13 +87,13 @@ func TestNodeIntentCloneIsDeep(t *testing.T) {
 }
 
 func TestCPEIntentClone(t *testing.T) {
-	orig := &intent.CPEIntent{
+	orig := &nodesync.CPEIntent{
 		TunnelInterfaceID: 1,
 		TunnelPE:          "PopA",
 		SitePrefix:        netip.MustParsePrefix("fd7a:3921:111:1::/64"),
 	}
 
-	clone := orig.Clone().(*intent.CPEIntent) // nolint:errcheck
+	clone := orig.Clone().(*nodesync.CPEIntent) // nolint:errcheck
 	orig.TunnelInterfaceID = 9
 	orig.TunnelPE = "PopC"
 
@@ -103,12 +103,12 @@ func TestCPEIntentClone(t *testing.T) {
 }
 
 func TestCloneNilSafe(t *testing.T) {
-	var n *intent.NodeIntent
+	var n *nodesync.NodeIntent
 	if n.Clone() != nil {
 		t.Error("nil NodeIntent should clone to nil")
 	}
 
-	empty := (&intent.NodeIntent{NodeType: intent.NodeTypePE}).Clone()
+	empty := (&nodesync.NodeIntent{NodeType: nodesync.NodeTypePE}).Clone()
 	if empty.Intent != nil {
 		t.Error("a nil Intent should stay nil")
 	}

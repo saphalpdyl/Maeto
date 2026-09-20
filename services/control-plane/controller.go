@@ -13,9 +13,7 @@ import (
 
 	"github.com/saphalpdyl/maeto/libs/controlapi"
 	"github.com/saphalpdyl/maeto/libs/dataplane"
-	"github.com/saphalpdyl/maeto/libs/intent"
-	"github.com/saphalpdyl/maeto/libs/statekv"
-	"github.com/saphalpdyl/maeto/libs/transport"
+	"github.com/saphalpdyl/maeto/libs/nodesync"
 	log "github.com/saphalpdyl/maeto/services/control-plane/log"
 )
 
@@ -86,7 +84,7 @@ func NewController(
 	)
 
 	// Intent KV
-	intentPublisher, err := transport.NewPublisher(ctx, js)
+	intentPublisher, err := nodesync.NewPublisher(ctx, js, nodesync.IntentBucket)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create intent publisher: %w", err)
 	}
@@ -253,7 +251,7 @@ func (c *Controller) setupPortalAuthEndpoint(ctx context.Context) error {
 		c.serviceRegistry.mu.Lock()
 		_, exists = c.serviceRegistry.registry[req.PortalID]
 		if !exists {
-			cpeIntent := intent.CPEIntent{
+			cpeIntent := nodesync.CPEIntent{
 				TunnelInterfaceID:    0, // empty intent, 0 means no tunnel yet
 				TunnelPE:             site.AttachNode,
 				TunnelPEEndpointAddr: attachNode.Access.Address.Addr(),
@@ -262,8 +260,8 @@ func (c *Controller) setupPortalAuthEndpoint(ctx context.Context) error {
 				SitePrefix:           site.Prefix,
 			}
 
-			c.serviceRegistry.registry[req.PortalID] = &intent.NodeIntent{
-				NodeType:   intent.NodeTypeCPE,
+			c.serviceRegistry.registry[req.PortalID] = &nodesync.NodeIntent{
+				NodeType:   nodesync.NodeTypeCPE,
 				Intent:     &cpeIntent,
 				Timestamp:  time.Now(),
 				Generation: 1,
@@ -336,7 +334,7 @@ func (c *Controller) handleCPETunnelUpdate(ctx context.Context, data []byte) err
 		return fmt.Errorf("attach node not found in inventory")
 	}
 
-	cpeIntent := intent.CPEIntent{
+	cpeIntent := nodesync.CPEIntent{
 		TunnelInterfaceID:    req.IfID,
 		TunnelPE:             site.AttachNode,
 		TunnelPEEndpointAddr: attachNode.Access.Address.Addr(),
@@ -420,7 +418,7 @@ func (c *Controller) handlePETunnelUpdate(ctx context.Context, data []byte) erro
 	// 	return fmt.Errorf("failed to generate random SID: %w", err)
 	// }
 
-	peIntent := &intent.PE_PortalIntent{
+	peIntent := &nodesync.PE_PortalIntent{
 		HostFacingInterface: "eth1",
 		TunnelInterfaceID:   req.IfID,
 		SitePrefix:          site.Prefix,
@@ -438,7 +436,7 @@ func (c *Controller) handlePETunnelUpdate(ctx context.Context, data []byte) erro
 }
 
 func (c *Controller) startSnapshotPublisher(ctx context.Context) error {
-	publisher, err := statekv.NewPublisherFor(ctx, c.js, statekv.ControlState)
+	publisher, err := nodesync.NewPublisher(ctx, c.js, nodesync.ControlStateBucket)
 	if err != nil {
 		return fmt.Errorf("create control snapshot publisher: %w", err)
 	}
@@ -551,7 +549,7 @@ func (c *Controller) startPCEUpdatesDispatcher(ctx context.Context) {
 				}
 
 				for tenantID, siteComb := range tenantsMap {
-					tenantSIDIntents := make([]intent.PESIDInstallIntent, 0)
+					tenantSIDIntents := make([]nodesync.PESIDInstallIntent, 0)
 
 					for _, comb := range siteComb {
 
@@ -602,7 +600,7 @@ func (c *Controller) startPCEUpdatesDispatcher(ctx context.Context) {
 						}
 
 						sidAddrList = append(sidAddrList, dt46)
-						tenantSIDIntents = append(tenantSIDIntents, intent.PESIDInstallIntent{
+						tenantSIDIntents = append(tenantSIDIntents, nodesync.PESIDInstallIntent{
 							TenantID:     fmt.Sprint(tenantID),
 							PrefixRoutes: []netip.Prefix{comb.Remote.Prefix},
 							Segments:     sidAddrList,

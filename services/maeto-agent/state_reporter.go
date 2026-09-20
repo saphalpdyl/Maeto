@@ -4,11 +4,11 @@ import (
 	"context"
 
 	"github.com/saphalpdyl/maeto/libs/dataplane"
-	"github.com/saphalpdyl/maeto/libs/statekv"
+	"github.com/saphalpdyl/maeto/libs/nodesync"
 )
 
 type stateReporter struct {
-	publisher *statekv.Publisher
+	publisher *nodesync.Publisher
 	key       string
 	nodeID    string
 }

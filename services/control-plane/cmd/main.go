@@ -12,7 +12,7 @@ import (
 	"github.com/avast/retry-go"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
-	"github.com/saphalpdyl/maeto/libs/telemetry"
+	"github.com/saphalpdyl/maeto/libs/observability"
 	controlplane "github.com/saphalpdyl/maeto/services/control-plane"
 	log "github.com/saphalpdyl/maeto/services/control-plane/log"
 )
@@ -26,7 +26,7 @@ func main() {
 
 	config := controlplane.GetConfig()
 
-	logShutdown, err := telemetry.SetupLogging(ctx, config.OtelSink, config.OtelEndpoint, "control-plane", serviceInstanceId, false)
+	logShutdown, err := observability.SetupLogging(ctx, config.OtelSink, config.OtelEndpoint, "control-plane", serviceInstanceId, false)
 	if err != nil {
 		slog.Error("failed to setup logging", log.Err(err))
 		os.Exit(1)
@@ -37,7 +37,7 @@ func main() {
 		}
 	}()
 
-	traceShutdown, err := telemetry.SetupTracing(ctx, config.OtelSink, config.OtelEndpoint, "control-plane", serviceInstanceId, false)
+	traceShutdown, err := observability.SetupTracing(ctx, config.OtelSink, config.OtelEndpoint, "control-plane", serviceInstanceId, false)
 	if err != nil {
 		slog.Error("failed to setup tracing", log.Err(err))
 		os.Exit(1)

@@ -8,10 +8,8 @@ import (
 	"github.com/strongswan/govici/vici"
 
 	"github.com/saphalpdyl/maeto/libs/dataplane"
-	"github.com/saphalpdyl/maeto/libs/intent"
+	"github.com/saphalpdyl/maeto/libs/nodesync"
 	"github.com/saphalpdyl/maeto/libs/probe"
-	"github.com/saphalpdyl/maeto/libs/statekv"
-	"github.com/saphalpdyl/maeto/libs/transport"
 	"github.com/saphalpdyl/maeto/services/maeto-agent/log"
 )
 
@@ -23,14 +21,14 @@ type Agent struct {
 	dp         dataplane.Dataplane // owned primarily by the Reconciler
 
 	// Intents pushed to by the intentkv watcher and read by the Reconciler
-	intentFeed chan *intent.NodeIntent
+	intentFeed chan *nodesync.NodeIntent
 
 	probeSupervisor *probe.Supervisor
 }
 
 func NewAgent(node *Node, js jetstream.JetStream, logger *slog.Logger, dp dataplane.Dataplane) *Agent {
-	intentFeed := make(chan *intent.NodeIntent, 32)
-	reconciler := dataplane.NewReconciler(dp, intent.NodeTypePE, logger.With(log.Domain(log.DomainReconciler)), intentFeed)
+	intentFeed := make(chan *nodesync.NodeIntent, 32)
+	reconciler := dataplane.NewReconciler(dp, nodesync.NodeTypePE, logger.With(log.Domain(log.DomainReconciler)), intentFeed)
 
 	return &Agent{
 		js:              js,
@@ -64,7 +62,7 @@ func (a *Agent) Run(ctx context.Context) {
 		slog.String("intent_key", a.node.IntentKey()),
 	)
 
-	if publisher, err := statekv.NewPublisher(ctx, a.js); err != nil {
+	if publisher, err := nodesync.NewPublisher(ctx, a.js, nodesync.NodeStateBucket); err != nil {
 		a.logger.ErrorContext(ctx, "failed to open state bucket",
 			log.Domain(log.DomainControlPlane),
 			log.Err(err),
@@ -72,7 +70,7 @@ func (a *Agent) Run(ctx context.Context) {
 	} else {
 		a.reconciler.SetStateReporter(&stateReporter{
 			publisher: publisher,
-			key:       statekv.Key(statekv.PrefixPE, a.node.ID),
+			key:       nodesync.Key(nodesync.PrefixPE, a.node.ID),
 			nodeID:    a.node.ID,
 		})
 	}
@@ -80,11 +78,12 @@ func (a *Agent) Run(ctx context.Context) {
 	go a.reconciler.Start(ctx) // nolint:errcheck
 
 	go func() {
-		err := transport.Watch(
+		err := nodesync.Watch(
 			ctx,
 			a.js,
 			a.logger.With(log.Domain(log.DomainControlPlane)),
-			transport.Key(transport.PrefixPE, a.node.ID),
+			nodesync.IntentBucket,
+			nodesync.Key(nodesync.PrefixPE, a.node.ID),
 			a.intentFeed,
 		)
 
