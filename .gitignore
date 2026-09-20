@@ -63,3 +63,6 @@ roles/**
 # Generated PKI CA cert
 clab/.certs/
 .certs/
+
+# IDEA
+!.idea/watcherTasks.xml
