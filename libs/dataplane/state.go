@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/saphalpdyl/maeto/libs/intent"
+	"github.com/saphalpdyl/maeto/libs/nodesync"
 )
 
 type ResourceState struct {
@@ -19,18 +19,18 @@ type ResourceState struct {
 }
 
 type NodeState struct {
-	NodeID     string          `json:"node_id"`
-	NodeType   intent.NodeType `json:"node_type"`
-	ReportedAt time.Time       `json:"reported_at"`
-	Generation uint32          `json:"generation"`
-	Observed   bool            `json:"observed"`
-	Converged  bool            `json:"converged"`
-	Passes     int             `json:"passes"`
-	Error      string          `json:"error,omitempty"`
-	Current    []ResourceState `json:"current"`
-	Desired    []ResourceState `json:"desired"`
-	Add        []ResourceState `json:"add"`
-	Remove     []ResourceState `json:"remove"`
+	NodeID     string            `json:"node_id"`
+	NodeType   nodesync.NodeType `json:"node_type"`
+	ReportedAt time.Time         `json:"reported_at"`
+	Generation uint32            `json:"generation"`
+	Observed   bool              `json:"observed"`
+	Converged  bool              `json:"converged"`
+	Passes     int               `json:"passes"`
+	Error      string            `json:"error,omitempty"`
+	Current    []ResourceState   `json:"current"`
+	Desired    []ResourceState   `json:"desired"`
+	Add        []ResourceState   `json:"add"`
+	Remove     []ResourceState   `json:"remove"`
 }
 
 type StateReporter interface {

@@ -12,9 +12,8 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/saphalpdyl/maeto/libs/controlapi"
 	"github.com/saphalpdyl/maeto/libs/dataplane"
-	"github.com/saphalpdyl/maeto/libs/intent"
+	"github.com/saphalpdyl/maeto/libs/nodesync"
 	"github.com/saphalpdyl/maeto/libs/swan"
-	"github.com/saphalpdyl/maeto/libs/transport"
 	"github.com/saphalpdyl/maeto/services/maeto-portal/log"
 	"github.com/strongswan/govici/vici"
 )
@@ -31,7 +30,7 @@ type Portal struct {
 	js jetstream.JetStream
 
 	// Intents pushed to by the intentkv watcher and read by the Reconciler
-	intentFeed chan *intent.NodeIntent
+	intentFeed chan *nodesync.NodeIntent
 	reconciler *dataplane.Reconciler
 
 	config PortalConfig
@@ -45,10 +44,10 @@ func NewPortal(
 	dp dataplane.Dataplane,
 	logger *slog.Logger,
 ) *Portal {
-	intentFeed := make(chan *intent.NodeIntent, 32)
+	intentFeed := make(chan *nodesync.NodeIntent, 32)
 	reconciler := dataplane.NewReconciler(
 		dp,
-		intent.NodeTypeCPE,
+		nodesync.NodeTypeCPE,
 		logger.With(log.Domain(log.DomainReconciler)),
 		intentFeed,
 	)
@@ -197,11 +196,12 @@ func (p *Portal) Run(ctx context.Context) error {
 	}()
 
 	go func() {
-		err := transport.Watch(
+		err := nodesync.Watch(
 			ctx,
 			p.js,
 			p.logger.With(log.Domain(log.DomainControlPlane)),
-			transport.Key(transport.PrefixCPE, p.config.PortalID),
+			nodesync.IntentBucket,
+			nodesync.Key(nodesync.PrefixCPE, p.config.PortalID),
 			p.intentFeed,
 		)
 

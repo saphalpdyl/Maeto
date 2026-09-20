@@ -1,4 +1,4 @@
-package intent
+package nodesync
 
 import "net/netip"
 

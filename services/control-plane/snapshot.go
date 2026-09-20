@@ -8,8 +8,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/saphalpdyl/maeto/libs/intent"
-	"github.com/saphalpdyl/maeto/libs/statekv"
+	"github.com/saphalpdyl/maeto/libs/nodesync"
 	log "github.com/saphalpdyl/maeto/services/control-plane/log"
 )
 
@@ -78,10 +77,10 @@ type InventoryNodeSnapshot struct {
 }
 
 type RegistrySnapshot struct {
-	Nodes         map[string]*intent.NodeIntent `json:"nodes"`
-	SIDCursor     uint16                        `json:"sid_cursor"`
-	SIDsByTenant  map[string]string             `json:"sids_by_tenant"`
-	AllocatedSIDs []string                      `json:"allocated_sids"`
+	Nodes         map[string]*nodesync.NodeIntent `json:"nodes"`
+	SIDCursor     uint16                          `json:"sid_cursor"`
+	SIDsByTenant  map[string]string               `json:"sids_by_tenant"`
+	AllocatedSIDs []string                        `json:"allocated_sids"`
 }
 
 type SiteSnapshot struct {
@@ -250,9 +249,9 @@ func (r *ServiceRegistry) Snapshot() RegistrySnapshot {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	nodes := make(map[string]*intent.NodeIntent, len(r.registry))
-	for id, intent := range r.registry {
-		nodes[id] = intent.Clone()
+	nodes := make(map[string]*nodesync.NodeIntent, len(r.registry))
+	for id, ni := range r.registry {
+		nodes[id] = ni.Clone()
 	}
 
 	byTenant := make(map[string]string, len(r.sidTenantMap))
@@ -358,7 +357,7 @@ func SnapshotPaths(paths PathSet) []PathSnapshot {
 }
 
 type SnapshotPublisher struct {
-	publisher *statekv.Publisher
+	publisher *nodesync.Publisher
 	interval  time.Duration
 	logger    *slog.Logger
 
@@ -371,7 +370,7 @@ type SnapshotPublisher struct {
 }
 
 func NewSnapshotPublisher(
-	publisher *statekv.Publisher,
+	publisher *nodesync.Publisher,
 	interval time.Duration,
 	logger *slog.Logger,
 	graph *Graph,
@@ -427,7 +426,7 @@ func (s *SnapshotPublisher) Run(ctx context.Context) {
 }
 
 func (s *SnapshotPublisher) publish(ctx context.Context) {
-	if _, err := s.publisher.Publish(ctx, statekv.KeyControlSnapshot, s.Snapshot()); err != nil {
+	if _, err := s.publisher.Publish(ctx, nodesync.KeyControlSnapshot, s.Snapshot()); err != nil {
 		s.logger.ErrorContext(ctx, "failed to publish control snapshot", log.Err(err))
 	}
 }

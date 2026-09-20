@@ -2,6 +2,7 @@
 
 TOPOLOGY_YAML := clab/topologies/eight-pop.yaml
 TOPOLOGY_NAME := eight-pop
+STATE_FILE := .state/latest.json
 
 CLAB_PY := clab/.venv/bin/python
 CGOVER_DIR := tools/debug/control-plane
@@ -27,17 +28,11 @@ install-virtual-environments:
 
 # generate containerlab + frr config from the topology dsl into build/<hash>
 generate:
-	PYTHONPATH=clab $(CLAB_PY) -m generator $(TOPOLOGY_YAML)
+	./scripts/clab/generate.sh $(CLAB_PY) $(TOPOLOGY_YAML)
 
-# deploy the topology recorded in .state/latest.json (build/<hash>/topology.yml)
+# deploy the topology recorded in $(STATE_FILE) (build/<hash>/topology.yml)
 deploy:
-	@if [ ! -f .state/latest.json ]; then echo "no .state/latest.json; run 'make generate' first" >&2; exit 1; fi; \
-	out=$$(python3 -c "import json; print(json.load(open('.state/latest.json'))['output'])"); \
-	topo="$$out/topology.yml"; \
-	if [ ! -f "$$topo" ]; then echo "missing $$topo; run 'make generate' first" >&2; exit 1; fi; \
-	sudo modprobe vrf; \
-	sudo clab deploy -t "$$topo" --reconfigure; \
-	sudo sh "$$out/mgmt_routes.sh"
+	./scripts/clab/deploy.sh $(STATE_FILE)
 
 lint:
 	golangci-lint run ./...
@@ -64,28 +59,15 @@ ddbg: # dev debug
 	DEBUG=1 docker compose up --build maeto-control-plane
 
 build-vm:
+	docker build --build-arg DEBUG=$(DEBUG) -t maeto-control-plane:latest -f docker/maeto-control-plane.Dockerfile .
 	docker build --build-arg DEBUG=$(DEBUG) -t maeto-pop:latest -f docker/maeto-pop.Dockerfile .
 	docker build --build-arg DEBUG=$(DEBUG) -t maeto-portal:latest -f docker/maeto-portal.Dockerfile .
 
 clean:
-	@if [ ! -f .state/latest.json ]; then echo "no .state/latest.json; run 'make generate' first" >&2; exit 1; fi; \
-	out=$$(python3 -c "import json; print(json.load(open('.state/latest.json'))['output'])"); \
-	topo="$$out/topology.yml"; \
-	if [ ! -f "$$topo" ]; then echo "missing $$topo; run 'make generate' first" >&2; exit 1; fi; \
-
-	-sudo containerlab destroy -t "$$topo"
-	-sudo docker rm -f $$(docker ps -aq --filter "name=^clab-$(TOPOLOGY_NAME)-")
+	./scripts/clab/clean.sh $(TOPOLOGY_NAME) $(STATE_FILE)
 
 ips:
-	@printf "%-24s %s\n" "Name" "Interfaces"
-	@for c in $$(docker ps --format '{{.Names}}' | grep '^clab-$(TOPOLOGY_NAME)-'); do \
-		printf "%-24s\n" "$$c"; \
-		docker exec "$$c" sh -c \
-			"ip -6 -o addr show scope global | \
-			 awk '\$$2 != \"eth0\" {printf \"  %-20s %s\n\", \$$2\":\", \$$4}'" \
-			2>/dev/null || echo "  <none>"; \
-		echo; \
-	done
+	@./scripts/clab/ips.sh $(TOPOLOGY_NAME)
 
 apply: clean build-vm generate deploy
 	$(MAKE) ips
@@ -117,6 +99,7 @@ proto-gen: proto-image
 proto-lint: proto-image
 	$(PROTO_RUN) maeto-buf lint
 
+# !VM ONLY!
 # One-time CA cert generation used by generator to generate PoP and CPE certs
 pki:
 	mkdir -p .certs/
