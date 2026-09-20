@@ -11,15 +11,15 @@ import (
 	"time"
 
 	"github.com/saphalpdyl/maeto/libs/dataplane/log"
-	"github.com/saphalpdyl/maeto/libs/intent"
+	"github.com/saphalpdyl/maeto/libs/nodesync"
 )
 
 type Reconciler struct {
 	dp       Dataplane
-	nodeType intent.NodeType
-	current  *intent.NodeIntent
+	nodeType nodesync.NodeType
+	current  *nodesync.NodeIntent
 
-	intentFeed <-chan *intent.NodeIntent
+	intentFeed <-chan *nodesync.NodeIntent
 
 	reporter StateReporter
 
@@ -34,7 +34,7 @@ func (r *Reconciler) SetStateReporter(reporter StateReporter) {
 	r.reporter = reporter
 }
 
-func NewReconciler(dp Dataplane, nodeType intent.NodeType, logger *slog.Logger, intentFeed <-chan *intent.NodeIntent) *Reconciler {
+func NewReconciler(dp Dataplane, nodeType nodesync.NodeType, logger *slog.Logger, intentFeed <-chan *nodesync.NodeIntent) *Reconciler {
 	return &Reconciler{
 		dp:         dp,
 		nodeType:   nodeType,
@@ -59,7 +59,7 @@ func (r *Reconciler) Start(ctx context.Context) error {
 
 // RenderCPEIntent builds the cpe side: one tunnel interface, a default route
 // into it in maeto's own table, and a rule sending this site's traffic there.
-func (r *Reconciler) RenderCPEIntent(ctx context.Context, cpe *intent.CPEIntent) (map[string]Resource, error) {
+func (r *Reconciler) RenderCPEIntent(ctx context.Context, cpe *nodesync.CPEIntent) (map[string]Resource, error) {
 	resources := make(map[string]Resource)
 
 	if cpe.TunnelInterfaceID == 0 {
@@ -111,7 +111,7 @@ func StringToID(s string) uint32 {
 	return uint32(minVal + (val64 % span))
 }
 
-func (r *Reconciler) RenderPE(ctx context.Context, pe *intent.PEIntent) (map[string]Resource, error) {
+func (r *Reconciler) RenderPE(ctx context.Context, pe *nodesync.PEIntent) (map[string]Resource, error) {
 	resources := make(map[string]Resource)
 
 	for tenantID, t := range pe.Tenants {
@@ -269,7 +269,7 @@ func (r *Reconciler) RenderFIB(
 }
 
 // Diffs between two node intents to generate
-func (r *Reconciler) Plan(ctx context.Context, desired *intent.NodeIntent) (map[string]Resource, map[string]Resource, error) {
+func (r *Reconciler) Plan(ctx context.Context, desired *nodesync.NodeIntent) (map[string]Resource, map[string]Resource, error) {
 	// checked against our own role rather than the previous intent, so the very
 	// first delivery is validated too
 	if desired.NodeType != r.nodeType {
@@ -344,9 +344,9 @@ func (r *Reconciler) Plan(ctx context.Context, desired *intent.NodeIntent) (map[
 
 	var desiredResources map[string]Resource
 	switch i := desired.Intent.(type) {
-	case *intent.CPEIntent:
+	case *nodesync.CPEIntent:
 		desiredResources, err = r.RenderCPEIntent(ctx, i)
-	case *intent.PEIntent:
+	case *nodesync.PEIntent:
 		desiredResources, err = r.RenderPE(ctx, i)
 	default:
 		return nil, nil, fmt.Errorf("unhandled intent type %T", desired.Intent)
@@ -504,7 +504,7 @@ func (r *Reconciler) Apply(ctx context.Context, diff DiffResult) error {
 	return nil
 }
 
-func (r *Reconciler) Reconcile(ctx context.Context, ni *intent.NodeIntent) (err error) {
+func (r *Reconciler) Reconcile(ctx context.Context, ni *nodesync.NodeIntent) (err error) {
 	const maxPasses = 3
 
 	var (
@@ -561,7 +561,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, ni *intent.NodeIntent) (err 
 
 func (r *Reconciler) report(
 	ctx context.Context,
-	ni *intent.NodeIntent,
+	ni *nodesync.NodeIntent,
 	current, desired map[string]Resource,
 	result DiffResult,
 	converged bool,
@@ -624,11 +624,11 @@ func (r *Reconciler) report(
 	}
 }
 
-func intentNodeID(ni *intent.NodeIntent) string {
+func intentNodeID(ni *nodesync.NodeIntent) string {
 	switch i := ni.Intent.(type) {
-	case *intent.PEIntent:
+	case *nodesync.PEIntent:
 		return i.NodeID
-	case *intent.CPEIntent:
+	case *nodesync.CPEIntent:
 		return i.PortalID
 	default:
 		return ""
