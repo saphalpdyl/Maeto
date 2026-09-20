@@ -1,4 +1,4 @@
-package telemetry
+package observability
 
 import (
 	"go.opentelemetry.io/otel/attribute"
