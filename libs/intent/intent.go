@@ -1,4 +1,4 @@
-package dataplane
+package intent
 
 import (
 	"encoding/json"

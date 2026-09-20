@@ -8,6 +8,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/saphalpdyl/maeto/libs/intent"
 )
 
 type ResourceState struct {
@@ -18,7 +20,7 @@ type ResourceState struct {
 
 type NodeState struct {
 	NodeID     string          `json:"node_id"`
-	NodeType   NodeType        `json:"node_type"`
+	NodeType   intent.NodeType `json:"node_type"`
 	ReportedAt time.Time       `json:"reported_at"`
 	Generation uint32          `json:"generation"`
 	Observed   bool            `json:"observed"`

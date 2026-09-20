@@ -1,6 +1,6 @@
-// Package intentkv is the jetstream kv transport for node intents, shared by
+// Package transport is the jetstream kv transport for node intents, shared by
 // the control plane (which publishes) and the agent and portal (which watch).
-package intentkv
+package transport
 
 import (
 	"context"

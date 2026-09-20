@@ -13,7 +13,7 @@ func TestLiveDataplaneRead(t *testing.T) {
 		t.Skip("needs a real fib and root; set MAETO_LIVE_DP=1")
 	}
 
-	// testIntentFeed := make(chan *dataplane.NodeIntent, 32)
+	// testIntentFeed := make(chan *intent.NodeIntent, 32)
 
 	dp := dataplane.NewLinuxNetlink()
 	// r := dataplane.NewReconciler(dp, slog.Default(), testIntentFeed)

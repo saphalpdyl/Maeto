@@ -216,7 +216,7 @@ func stampConfig() *probe.ProbeConfigSTAMP {
 	}
 }
 
-func Test_STAMPConfigIDDistinguishesRoles(t *testing.T) {
+func Test_STAMPConfigIDDistinguishesProbes(t *testing.T) {
 	sender := stampConfig()
 
 	reflector := *sender
@@ -225,8 +225,12 @@ func Test_STAMPConfigIDDistinguishesRoles(t *testing.T) {
 	reflected := *sender
 	reflected.NoReply = false
 
+	otherVRF := *sender
+	otherVRF.BindToDev = "probe-vrf"
+
 	assert.NotEqual(t, sender.GetID(), reflector.GetID())
 	assert.NotEqual(t, sender.GetID(), reflected.GetID())
+	assert.NotEqual(t, sender.GetID(), otherVRF.GetID())
 }
 
 func Test_STAMPConfigRejectsReflectedMeasurement(t *testing.T) {

@@ -25,6 +25,7 @@ type ProbeConfigSTAMP struct {
 	IsSender        bool         `json:"is_sender"`
 	NoReply         bool         `json:"no_reply"`
 	Port            uint16       `json:"port"`
+	BindToDev       string       `json:"bind_to_dev"`
 
 	ProbeInterval time.Duration `json:"probe_interval"`
 }
@@ -39,11 +40,12 @@ func (p *ProbeConfigSTAMP) GetID() string {
 	}
 
 	return fmt.Sprintf(
-		"%s.%s.%s.%d.%s.%s",
+		"%s.%s.%s.%d.%s.%s.%s",
 		p.ProbeType,
 		role,
 		p.PeerDestination.Addr().String(),
 		stampPort(p),
+		p.BindToDev,
 		p.TelemetryKey,
 		p.ProbeInterval.String(),
 	)
@@ -81,7 +83,6 @@ type ProbeRunner func(ctx context.Context, cfg ProbeConfig) error
 
 type SupervisorConfig struct {
 	Dispatcher  Dispatcher
-	BindToDev   *string
 	StopTimeout time.Duration
 	Runner      ProbeRunner
 }
@@ -140,7 +141,7 @@ func NewSupervisor(ctx context.Context, cfg SupervisorConfig, logger *slog.Logge
 	}
 
 	if s.runner == nil {
-		s.runner = newDefaultRunner(cfg, logger)
+		s.runner = newDefaultRunner(cfg.Dispatcher, logger)
 	}
 
 	if s.stopTimeout <= 0 {

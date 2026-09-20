@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/saphalpdyl/maeto/libs/dataplane"
+	"github.com/saphalpdyl/maeto/libs/intent"
 )
 
 // A realistic cpe: tenant 273, site fd7a:3921:111:1::/64, homed to PopA at
@@ -77,9 +78,9 @@ func equalResources(got, want []dataplane.Resource) bool {
 func TestReconcilerDiff(t *testing.T) {
 	r := dataplane.NewReconciler(
 		&TestDefaultRouteOnlyDataplane{},
-		dataplane.NodeTypeCPE,
+		intent.NodeTypeCPE,
 		slog.Default(),
-		make(chan *dataplane.NodeIntent, 1),
+		make(chan *intent.NodeIntent, 1),
 	)
 
 	cases := []struct {

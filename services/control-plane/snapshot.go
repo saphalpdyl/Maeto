@@ -8,7 +8,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/saphalpdyl/maeto/libs/dataplane"
+	"github.com/saphalpdyl/maeto/libs/intent"
 	"github.com/saphalpdyl/maeto/libs/statekv"
 	log "github.com/saphalpdyl/maeto/services/control-plane/log"
 )
@@ -78,10 +78,10 @@ type InventoryNodeSnapshot struct {
 }
 
 type RegistrySnapshot struct {
-	Nodes         map[string]*dataplane.NodeIntent `json:"nodes"`
-	SIDCursor     uint16                           `json:"sid_cursor"`
-	SIDsByTenant  map[string]string                `json:"sids_by_tenant"`
-	AllocatedSIDs []string                         `json:"allocated_sids"`
+	Nodes         map[string]*intent.NodeIntent `json:"nodes"`
+	SIDCursor     uint16                        `json:"sid_cursor"`
+	SIDsByTenant  map[string]string             `json:"sids_by_tenant"`
+	AllocatedSIDs []string                      `json:"allocated_sids"`
 }
 
 type SiteSnapshot struct {
@@ -250,7 +250,7 @@ func (r *ServiceRegistry) Snapshot() RegistrySnapshot {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	nodes := make(map[string]*dataplane.NodeIntent, len(r.registry))
+	nodes := make(map[string]*intent.NodeIntent, len(r.registry))
 	for id, intent := range r.registry {
 		nodes[id] = intent.Clone()
 	}

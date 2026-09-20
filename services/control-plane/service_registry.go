@@ -14,7 +14,8 @@ import (
 	"sync"
 
 	"github.com/saphalpdyl/maeto/libs/dataplane"
-	"github.com/saphalpdyl/maeto/libs/intentkv"
+	"github.com/saphalpdyl/maeto/libs/intent"
+	"github.com/saphalpdyl/maeto/libs/transport"
 )
 
 const MaxSIDCollisionChecks = 5
@@ -24,24 +25,24 @@ type ServiceRegistryConfig struct {
 
 type ServiceRegistry struct {
 	config   *ServiceRegistryConfig
-	registry map[string]*dataplane.NodeIntent
+	registry map[string]*intent.NodeIntent
 	// We are explicitly allowing SID specific here since, for a SRv6-based SD-WAN,
 	// SIDs are irrelevant for the underlying dataplane implementation
 	sidAllocationMap map[netip.Addr]bool   // used to verify against collision
 	sidTenantMap     map[string]netip.Addr // one tenant has exactly <=1 VRF per PE
 	sidCursor        uint16                // Sequential cursor that is used to generate the hex for SID
 
-	publisher *intentkv.Publisher
+	publisher *transport.Publisher
 
 	mu sync.RWMutex // guards desired state
 
 	logger *slog.Logger
 }
 
-func NewServiceRegistry(config *ServiceRegistryConfig, intentPublisher *intentkv.Publisher, logger *slog.Logger) *ServiceRegistry {
+func NewServiceRegistry(config *ServiceRegistryConfig, intentPublisher *transport.Publisher, logger *slog.Logger) *ServiceRegistry {
 	return &ServiceRegistry{
 		config:           config,
-		registry:         make(map[string]*dataplane.NodeIntent),
+		registry:         make(map[string]*intent.NodeIntent),
 		sidAllocationMap: make(map[netip.Addr]bool),
 		sidTenantMap:     make(map[string]netip.Addr),
 		publisher:        intentPublisher,
@@ -98,14 +99,14 @@ func (r *ServiceRegistry) GetOrGenerateSID(locatorPrefix netip.Prefix, tenantID 
 }
 
 // Must be done under a lock
-func (r *ServiceRegistry) getOrCreateRegistryEntryForPE(nodeID string) *dataplane.NodeIntent {
+func (r *ServiceRegistry) getOrCreateRegistryEntryForPE(nodeID string) *intent.NodeIntent {
 	current, exists := r.registry[nodeID]
 	if !exists {
-		r.registry[nodeID] = &dataplane.NodeIntent{
-			NodeType: dataplane.NodeTypePE,
-			Intent: &dataplane.PEIntent{
+		r.registry[nodeID] = &intent.NodeIntent{
+			NodeType: intent.NodeTypePE,
+			Intent: &intent.PEIntent{
 				NodeID:  nodeID,
-				Tenants: make(map[string]*dataplane.TenantIntent),
+				Tenants: make(map[string]*intent.TenantIntent),
 			},
 			Timestamp:  time.Now(),
 			Generation: 1,
@@ -121,9 +122,9 @@ func (r *ServiceRegistry) getOrCreateRegistryEntryForPE(nodeID string) *dataplan
 func (r *ServiceRegistry) getOrCreateTenantIntentForPE(
 	tenantID string,
 	locatorPrefix netip.Prefix,
-	intent *dataplane.PEIntent,
-) (*dataplane.TenantIntent, error) {
-	tenantIntent, exists := intent.Tenants[tenantID]
+	pe *intent.PEIntent,
+) (*intent.TenantIntent, error) {
+	tenantIntent, exists := pe.Tenants[tenantID]
 	if exists && tenantIntent != nil {
 		return tenantIntent, nil
 	}
@@ -133,11 +134,11 @@ func (r *ServiceRegistry) getOrCreateTenantIntentForPE(
 		return nil, fmt.Errorf("failed to generate random SID: %w", err)
 	}
 
-	tenantIntent = &dataplane.TenantIntent{
-		PortalIntents: make(map[string]dataplane.PE_PortalIntent),
+	tenantIntent = &intent.TenantIntent{
+		PortalIntents: make(map[string]intent.PE_PortalIntent),
 		DT46SID:       dt46SID,
 	}
-	intent.Tenants[tenantID] = tenantIntent
+	pe.Tenants[tenantID] = tenantIntent
 
 	return tenantIntent, nil
 }
@@ -147,13 +148,13 @@ func (r *ServiceRegistry) UpsertSIDSegsForTenantOnNode(
 	tenantID string,
 	localNodeID string,
 	locatorPrefix netip.Prefix,
-	pathsInstallIntents []dataplane.PESIDInstallIntent,
+	pathsInstallIntents []intent.PESIDInstallIntent,
 ) error {
 	r.mu.Lock()
 	r.logger.InfoContext(ctx, fmt.Sprintf("got SID Install Intent for tenant %s on Node %s", tenantID, localNodeID), slog.Any("intents", pathsInstallIntents))
 
 	current := r.getOrCreateRegistryEntryForPE(localNodeID)
-	peIntent, ok := current.Intent.(*dataplane.PEIntent)
+	peIntent, ok := current.Intent.(*intent.PEIntent)
 	if !ok {
 		r.mu.Unlock()
 		return fmt.Errorf("failed to cast NodeIntent to PEIntent")
@@ -175,7 +176,7 @@ func (r *ServiceRegistry) UpsertSIDSegsForTenantOnNode(
 	snapshot := current.Clone()
 	r.mu.Unlock()
 
-	if _, err := r.publisher.Publish(ctx, intentkv.Key(intentkv.PrefixPE, localNodeID), snapshot); err != nil {
+	if _, err := r.publisher.Publish(ctx, transport.Key(transport.PrefixPE, localNodeID), snapshot); err != nil {
 		return fmt.Errorf("publish pe intent for %s: %w", localNodeID, err)
 	}
 
@@ -187,13 +188,13 @@ func (r *ServiceRegistry) UpsertPEIntentForNode(
 	nodeID string,
 	tenantID string,
 	portalID string,
-	intent *dataplane.PE_PortalIntent,
+	portal *intent.PE_PortalIntent,
 	locatorPrefix netip.Prefix,
 ) error {
 
 	r.mu.Lock()
 	current := r.getOrCreateRegistryEntryForPE(nodeID)
-	peIntent, ok := current.Intent.(*dataplane.PEIntent)
+	peIntent, ok := current.Intent.(*intent.PEIntent)
 
 	if !ok {
 		r.mu.Unlock()
@@ -209,7 +210,7 @@ func (r *ServiceRegistry) UpsertPEIntentForNode(
 		return fmt.Errorf("failed to get or create tenant intent for pe: %w", err)
 	}
 
-	tenantIntent.PortalIntents[portalID] = *intent
+	tenantIntent.PortalIntents[portalID] = *portal
 
 	current.Timestamp = time.Now()
 	current.Generation++
@@ -218,30 +219,30 @@ func (r *ServiceRegistry) UpsertPEIntentForNode(
 
 	r.mu.Unlock()
 
-	if _, err := r.publisher.Publish(ctx, intentkv.Key(intentkv.PrefixPE, nodeID), snapshot); err != nil {
+	if _, err := r.publisher.Publish(ctx, transport.Key(transport.PrefixPE, nodeID), snapshot); err != nil {
 		return fmt.Errorf("publish pe intent for %s: %w", nodeID, err)
 	}
 
 	return nil
 }
 
-func (r *ServiceRegistry) UpsertCPEIntentForSite(ctx context.Context, tenantID string, portalID string, intent *dataplane.CPEIntent) error {
+func (r *ServiceRegistry) UpsertCPEIntentForSite(ctx context.Context, tenantID string, portalID string, cpe *intent.CPEIntent) error {
 	r.mu.Lock()
 	current, exists := r.registry[portalID]
 	if !exists {
-		r.registry[portalID] = &dataplane.NodeIntent{
-			NodeType:   dataplane.NodeTypeCPE,
-			Intent:     intent,
+		r.registry[portalID] = &intent.NodeIntent{
+			NodeType:   intent.NodeTypeCPE,
+			Intent:     cpe,
 			Timestamp:  time.Now(),
 			Generation: 1,
 			Version:    1,
 		}
-		current.Intent = intent
+		current.Intent = cpe
 		current.Generation = 0
 		current.Timestamp = time.Now()
 		current.Version = 1
 	} else {
-		current.Intent = intent
+		current.Intent = cpe
 		current.Generation++
 		current.Timestamp = time.Now()
 	}
@@ -250,7 +251,7 @@ func (r *ServiceRegistry) UpsertCPEIntentForSite(ctx context.Context, tenantID s
 
 	r.mu.Unlock()
 
-	if _, err := r.publisher.Publish(ctx, intentkv.Key(intentkv.PrefixCPE, portalID), snapshot); err != nil {
+	if _, err := r.publisher.Publish(ctx, transport.Key(transport.PrefixCPE, portalID), snapshot); err != nil {
 		return fmt.Errorf("failed to publish intent for portalID: %s, err = %w", portalID, err)
 	}
 
@@ -264,20 +265,20 @@ func (r *ServiceRegistry) Restore(ctx context.Context) error {
 	}
 
 	r.mu.RLock()
-	intents := make([]dataplane.NodeIntent, 0, len(r.registry))
-	for _, intent := range r.registry {
-		intents = append(intents, *intent.Clone())
+	intents := make([]intent.NodeIntent, 0, len(r.registry))
+	for _, ni := range r.registry {
+		intents = append(intents, *ni.Clone())
 	}
 	r.mu.RUnlock()
 
-	for _, intent := range intents {
-		switch i := intent.Intent.(type) {
-		case *dataplane.CPEIntent:
-			if _, err := r.publisher.Publish(ctx, intentkv.Key(intentkv.PrefixCPE, i.PortalID), intent); err != nil {
+	for _, ni := range intents {
+		switch i := ni.Intent.(type) {
+		case *intent.CPEIntent:
+			if _, err := r.publisher.Publish(ctx, transport.Key(transport.PrefixCPE, i.PortalID), ni); err != nil {
 				return fmt.Errorf("republish intent for %s: %w", i.PortalID, err)
 			}
-		case *dataplane.PEIntent:
-			if _, err := r.publisher.Publish(ctx, intentkv.Key(intentkv.PrefixPE, i.NodeID), intent); err != nil {
+		case *intent.PEIntent:
+			if _, err := r.publisher.Publish(ctx, transport.Key(transport.PrefixPE, i.NodeID), ni); err != nil {
 				return fmt.Errorf("republish intent for %s: %w", i.NodeID, err)
 			}
 		}

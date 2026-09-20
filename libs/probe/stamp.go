@@ -20,7 +20,7 @@ const (
 
 var ErrReflectedUnsupported = errors.New("reflected two-way measurement is not supported: set no_reply")
 
-func newDefaultRunner(supCfg SupervisorConfig, logger *slog.Logger) ProbeRunner {
+func newDefaultRunner(dispatcher Dispatcher, logger *slog.Logger) ProbeRunner {
 	return func(ctx context.Context, cfg ProbeConfig) error {
 		switch cfg := cfg.(type) {
 		case *ProbeConfigSTAMP:
@@ -29,9 +29,9 @@ func newDefaultRunner(supCfg SupervisorConfig, logger *slog.Logger) ProbeRunner 
 			}
 
 			if cfg.IsSender {
-				return runSTAMPSender(ctx, cfg, supCfg, logger)
+				return runSTAMPSender(ctx, cfg, dispatcher, logger)
 			}
-			return runSTAMPReflector(ctx, cfg, supCfg, logger)
+			return runSTAMPReflector(ctx, cfg, logger)
 		default:
 			return fmt.Errorf("unsupported probe config %T", cfg)
 		}
@@ -45,16 +45,21 @@ func stampPort(cfg *ProbeConfigSTAMP) uint16 {
 	return cfg.Port
 }
 
-func stampConfig(bindToDev *string) stamp.Config {
-	return stamp.Config{
+func stampConfig(cfg *ProbeConfigSTAMP) stamp.Config {
+	stampCfg := stamp.Config{
 		ErrorEstimate: stamp.ErrorEstimateConfig{
 			Scale:        22,
 			Multiplier:   1,
 			Synchronized: false,
 			ClockFormat:  stamp.ClockFormatNTP,
 		},
-		BindToDev: bindToDev,
 	}
+
+	if cfg.BindToDev != "" {
+		stampCfg.BindToDev = &cfg.BindToDev
+	}
+
+	return stampCfg
 }
 
 func srExtensions(cfg *ProbeConfigSTAMP) *stamp.SRExtensions {
@@ -69,13 +74,13 @@ func srExtensions(cfg *ProbeConfigSTAMP) *stamp.SRExtensions {
 	}
 }
 
-func runSTAMPSender(ctx context.Context, cfg *ProbeConfigSTAMP, supCfg SupervisorConfig, logger *slog.Logger) error {
+func runSTAMPSender(ctx context.Context, cfg *ProbeConfigSTAMP, dispatcher Dispatcher, logger *slog.Logger) error {
 	peer := cfg.PeerDestination.Addr()
 
 	senderCfg := stamp.SenderConfig{
 		LocalAddr:    ":0",
 		RemoteAddr:   net.JoinHostPort(peer.String(), strconv.Itoa(int(stampPort(cfg)))),
-		Config:       stampConfig(supCfg.BindToDev),
+		Config:       stampConfig(cfg),
 		SRExtensions: srExtensions(cfg),
 		OnError: func(err error) {
 			logger.WarnContext(ctx, "stamp sender error", slog.Any("error", err))
@@ -140,17 +145,17 @@ func runSTAMPSender(ctx context.Context, cfg *ProbeConfigSTAMP, supCfg Superviso
 			continue
 		}
 
-		dispatch(ctx, supCfg.Dispatcher, result, logger)
+		dispatch(ctx, dispatcher, result, logger)
 	}
 }
 
-func runSTAMPReflector(ctx context.Context, cfg *ProbeConfigSTAMP, supCfg SupervisorConfig, logger *slog.Logger) error {
+func runSTAMPReflector(ctx context.Context, cfg *ProbeConfigSTAMP, logger *slog.Logger) error {
 	localAddr := net.JoinHostPort("", strconv.Itoa(int(stampPort(cfg))))
 
 	for {
 		reflector, err := stamp.NewReflector(stamp.ReflectorConfig{
 			LocalAddr: localAddr,
-			Config:    stampConfig(supCfg.BindToDev),
+			Config:    stampConfig(cfg),
 			OnError: func(err error) {
 				logger.WarnContext(ctx, "stamp reflector error", slog.Any("error", err))
 			},

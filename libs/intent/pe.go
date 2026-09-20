@@ -1,4 +1,4 @@
-package dataplane
+package intent
 
 import (
 	"net/netip"
@@ -24,13 +24,13 @@ type PEIntent struct {
 	Tenants map[string]*TenantIntent `json:"tenants"`
 
 	// Peers mainly used for establishing STAMP sessions between adjs
-	Peers map[string]PeerIntent
+	Peers map[string]PeerIntent `json:"peers"`
 }
 
 type PeerIntent struct {
-	PeerLocator   netip.Prefix
-	PeerInterface string
-	TelemetryKey  string // EdgeID A:eth1-B:eth3 used for correlation
+	PeerLocator   netip.Prefix `json:"peer_locator"`
+	PeerInterface string       `json:"peer_interface"`
+	TelemetryKey  string       `json:"telemetry_key"` // EdgeID A:eth1-B:eth3 used for correlation
 }
 
 // TenantIntent is one tenant's footprint on this node: every site of theirs that

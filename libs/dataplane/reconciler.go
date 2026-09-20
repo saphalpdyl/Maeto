@@ -11,14 +11,15 @@ import (
 	"time"
 
 	"github.com/saphalpdyl/maeto/libs/dataplane/log"
+	"github.com/saphalpdyl/maeto/libs/intent"
 )
 
 type Reconciler struct {
 	dp       Dataplane
-	nodeType NodeType
-	current  *NodeIntent
+	nodeType intent.NodeType
+	current  *intent.NodeIntent
 
-	intentFeed <-chan *NodeIntent
+	intentFeed <-chan *intent.NodeIntent
 
 	reporter StateReporter
 
@@ -33,7 +34,7 @@ func (r *Reconciler) SetStateReporter(reporter StateReporter) {
 	r.reporter = reporter
 }
 
-func NewReconciler(dp Dataplane, nodeType NodeType, logger *slog.Logger, intentFeed <-chan *NodeIntent) *Reconciler {
+func NewReconciler(dp Dataplane, nodeType intent.NodeType, logger *slog.Logger, intentFeed <-chan *intent.NodeIntent) *Reconciler {
 	return &Reconciler{
 		dp:         dp,
 		nodeType:   nodeType,
@@ -47,9 +48,9 @@ func (r *Reconciler) Start(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case intent := <-r.intentFeed:
-			r.logger.InfoContext(ctx, "reconciler received intent", "intent", intent)
-			if err := r.Reconcile(ctx, intent); err != nil {
+		case ni := <-r.intentFeed:
+			r.logger.InfoContext(ctx, "reconciler received intent", "intent", ni)
+			if err := r.Reconcile(ctx, ni); err != nil {
 				r.logger.ErrorContext(ctx, "reconcile failed", log.Err(err))
 			}
 		}
@@ -58,22 +59,22 @@ func (r *Reconciler) Start(ctx context.Context) error {
 
 // RenderCPEIntent builds the cpe side: one tunnel interface, a default route
 // into it in maeto's own table, and a rule sending this site's traffic there.
-func (r *Reconciler) RenderCPEIntent(ctx context.Context, intent *CPEIntent) (map[string]Resource, error) {
+func (r *Reconciler) RenderCPEIntent(ctx context.Context, cpe *intent.CPEIntent) (map[string]Resource, error) {
 	resources := make(map[string]Resource)
 
-	if intent.TunnelInterfaceID == 0 {
+	if cpe.TunnelInterfaceID == 0 {
 		r.logger.WarnContext(ctx, "tunnel iface id == 0: intent is not ready to be installed")
 		return resources, nil
 	}
 
-	if !intent.SitePrefix.IsValid() {
+	if !cpe.SitePrefix.IsValid() {
 		return nil, fmt.Errorf("cpe intent has no site prefix, nothing could select the tunnel")
 	}
 
-	xfrmTunnelName := fmt.Sprintf("xfrm-tenant-%s", intent.TenantID)
+	xfrmTunnelName := fmt.Sprintf("xfrm-tenant-%s", cpe.TenantID)
 	xfrm := &XFRM{
 		Name:      xfrmTunnelName,
-		IfID:      intent.TunnelInterfaceID,
+		IfID:      cpe.TunnelInterfaceID,
 		Parent:    "lo",
 		MasterVRF: "", // no VRF for CPE
 		Index:     0,  // observed kernel-assigned value
@@ -91,7 +92,7 @@ func (r *Reconciler) RenderCPEIntent(ctx context.Context, intent *CPEIntent) (ma
 
 	siteRule := &Rule{
 		Priority: CPERulePriority,
-		Src:      intent.SitePrefix,
+		Src:      cpe.SitePrefix,
 		Table:    CPETunnelTable,
 	}
 	resources[siteRule.ID().Key] = siteRule
@@ -110,10 +111,10 @@ func StringToID(s string) uint32 {
 	return uint32(minVal + (val64 % span))
 }
 
-func (r *Reconciler) RenderPE(ctx context.Context, intent *PEIntent) (map[string]Resource, error) {
+func (r *Reconciler) RenderPE(ctx context.Context, pe *intent.PEIntent) (map[string]Resource, error) {
 	resources := make(map[string]Resource)
 
-	for tenantID, t := range intent.Tenants {
+	for tenantID, t := range pe.Tenants {
 		vrfTableName := fmt.Sprintf("maeto-vrf-%s", tenantID)
 		tableID := StringToID(tenantID)
 
@@ -268,7 +269,7 @@ func (r *Reconciler) RenderFIB(
 }
 
 // Diffs between two node intents to generate
-func (r *Reconciler) Plan(ctx context.Context, desired *NodeIntent) (map[string]Resource, map[string]Resource, error) {
+func (r *Reconciler) Plan(ctx context.Context, desired *intent.NodeIntent) (map[string]Resource, map[string]Resource, error) {
 	// checked against our own role rather than the previous intent, so the very
 	// first delivery is validated too
 	if desired.NodeType != r.nodeType {
@@ -342,11 +343,11 @@ func (r *Reconciler) Plan(ctx context.Context, desired *NodeIntent) (map[string]
 	}
 
 	var desiredResources map[string]Resource
-	switch intent := desired.Intent.(type) {
-	case *CPEIntent:
-		desiredResources, err = r.RenderCPEIntent(ctx, intent)
-	case *PEIntent:
-		desiredResources, err = r.RenderPE(ctx, intent)
+	switch i := desired.Intent.(type) {
+	case *intent.CPEIntent:
+		desiredResources, err = r.RenderCPEIntent(ctx, i)
+	case *intent.PEIntent:
+		desiredResources, err = r.RenderPE(ctx, i)
 	default:
 		return nil, nil, fmt.Errorf("unhandled intent type %T", desired.Intent)
 	}
@@ -503,7 +504,7 @@ func (r *Reconciler) Apply(ctx context.Context, diff DiffResult) error {
 	return nil
 }
 
-func (r *Reconciler) Reconcile(ctx context.Context, intent *NodeIntent) (err error) {
+func (r *Reconciler) Reconcile(ctx context.Context, ni *intent.NodeIntent) (err error) {
 	const maxPasses = 3
 
 	var (
@@ -514,13 +515,13 @@ func (r *Reconciler) Reconcile(ctx context.Context, intent *NodeIntent) (err err
 	)
 
 	defer func() {
-		r.report(ctx, intent, current, desired, result, converged, passes, err)
+		r.report(ctx, ni, current, desired, result, converged, passes, err)
 	}()
 
 	for pass := 0; pass < maxPasses; pass++ {
 		passes = pass + 1
 
-		current, desired, err = r.Plan(ctx, intent)
+		current, desired, err = r.Plan(ctx, ni)
 		r.logger.InfoContext(ctx, "reconciling", slog.Any("current", current), slog.Any("desired", desired))
 		if err != nil {
 			r.logger.ErrorContext(ctx, "failed to plan reconciliation", log.Err(err))
@@ -542,7 +543,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, intent *NodeIntent) (err err
 				slog.Int("current", len(current)),
 			)
 
-			r.current = intent
+			r.current = ni
 			converged = true
 
 			return nil // converged
@@ -560,7 +561,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, intent *NodeIntent) (err err
 
 func (r *Reconciler) report(
 	ctx context.Context,
-	intent *NodeIntent,
+	ni *intent.NodeIntent,
 	current, desired map[string]Resource,
 	result DiffResult,
 	converged bool,
@@ -588,9 +589,9 @@ func (r *Reconciler) report(
 		Passes:     passes,
 	}
 
-	if intent != nil {
-		state.Generation = intent.Generation
-		state.NodeID = intentNodeID(intent)
+	if ni != nil {
+		state.Generation = ni.Generation
+		state.NodeID = intentNodeID(ni)
 	}
 
 	if reconcileErr != nil {
@@ -623,11 +624,11 @@ func (r *Reconciler) report(
 	}
 }
 
-func intentNodeID(intent *NodeIntent) string {
-	switch i := intent.Intent.(type) {
-	case *PEIntent:
+func intentNodeID(ni *intent.NodeIntent) string {
+	switch i := ni.Intent.(type) {
+	case *intent.PEIntent:
 		return i.NodeID
-	case *CPEIntent:
+	case *intent.CPEIntent:
 		return i.PortalID
 	default:
 		return ""
