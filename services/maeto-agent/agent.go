@@ -20,24 +20,36 @@ type Agent struct {
 	reconciler *dataplane.Reconciler
 	dp         dataplane.Dataplane // owned primarily by the Reconciler
 
-	// Intents pushed to by the intentkv watcher and read by the Reconciler
-	intentFeed chan *nodesync.NodeIntent
+	// Carries the same intent feed. A goroutine broadcasts
+	// received to both these channel
+	dataplaneIntentFeed chan *nodesync.NodeIntent
+	probeIntentFeed     chan *nodesync.NodeIntent
 
 	probeSupervisor *probe.Supervisor
 }
 
 func NewAgent(node *Node, js jetstream.JetStream, logger *slog.Logger, dp dataplane.Dataplane) *Agent {
-	intentFeed := make(chan *nodesync.NodeIntent, 32)
-	reconciler := dataplane.NewReconciler(dp, nodesync.NodeTypePE, logger.With(log.Domain(log.DomainReconciler)), intentFeed)
+	dataplaneIntentFeed := make(chan *nodesync.NodeIntent, 32)
+	probeIntentFeed := make(chan *nodesync.NodeIntent, 32)
+
+	reconciler := dataplane.NewReconciler(dp, nodesync.NodeTypePE, logger.With(log.Domain(log.DomainReconciler)), dataplaneIntentFeed)
+
+	toLogsDispatcher := probe.NewToLogsDispatcher(logger)
+	probeSupervisor := probe.NewSupervisor(probe.SupervisorConfig{
+		Dispatcher:  toLogsDispatcher,
+		StopTimeout: 0,
+		Runner:      probe.NewDefaultRunner(toLogsDispatcher, logger),
+	}, logger.With(log.Domain(log.DomainIntentSupervisor)), probeIntentFeed)
 
 	return &Agent{
-		js:              js,
-		node:            node,
-		logger:          logger,
-		reconciler:      reconciler,
-		intentFeed:      intentFeed,
-		dp:              dp,
-		probeSupervisor: nil,
+		js:                  js,
+		node:                node,
+		logger:              logger,
+		reconciler:          reconciler,
+		dataplaneIntentFeed: dataplaneIntentFeed,
+		probeIntentFeed:     probeIntentFeed,
+		dp:                  dp,
+		probeSupervisor:     probeSupervisor,
 	}
 }
 
@@ -75,26 +87,10 @@ func (a *Agent) Run(ctx context.Context) {
 		})
 	}
 
-	go a.reconciler.Start(ctx) // nolint:errcheck
+	go a.reconciler.Start(ctx)      // nolint:errcheck
+	go a.probeSupervisor.Start(ctx) // nolint:errcheck
 
-	go func() {
-		err := nodesync.Watch(
-			ctx,
-			a.js,
-			a.logger.With(log.Domain(log.DomainControlPlane)),
-			nodesync.IntentBucket,
-			nodesync.Key(nodesync.PrefixPE, a.node.ID),
-			a.intentFeed,
-		)
-
-		if err != nil {
-			a.logger.ErrorContext(ctx, "intent watch failed",
-				log.Domain(log.DomainControlPlane),
-				slog.String("intent_key", a.node.IntentKey()),
-				log.Err(err),
-			)
-		}
-	}()
+	go a.setupIntentWatch(ctx)
 
 	s, err := vici.NewSession()
 	if err != nil {

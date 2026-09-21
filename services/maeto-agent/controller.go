@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/saphalpdyl/maeto/libs/controlapi"
+	"github.com/saphalpdyl/maeto/libs/nodesync"
 	"github.com/saphalpdyl/maeto/services/maeto-agent/log"
 )
 
@@ -136,5 +137,52 @@ func (a *Agent) waitForReady(ctx context.Context) bool {
 			return false
 		case <-time.After(2000 * time.Millisecond):
 		}
+	}
+}
+
+func (a *Agent) setupIntentWatch(ctx context.Context) {
+	aggregateFeed := make(chan *nodesync.NodeIntent, 32)
+
+	// Fan-out intent to multiple receivers
+	go func(ctx context.Context) {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case item, ok := <-aggregateFeed:
+				if !ok {
+					return
+				}
+
+				select {
+				case a.dataplaneIntentFeed <- item.Clone():
+				default:
+					a.logger.WarnContext(ctx, "dropped dataplane intent, feed seems full", slog.Any("item", item.Clone()))
+				}
+
+				select {
+				case a.probeIntentFeed <- item.Clone():
+				default:
+					a.logger.WarnContext(ctx, "dropped probe intent, feed seems full", slog.Any("item", item.Clone()))
+				}
+			}
+		}
+	}(ctx)
+
+	err := nodesync.Watch(
+		ctx,
+		a.js,
+		a.logger.With(log.Domain(log.DomainControlPlane)),
+		nodesync.IntentBucket,
+		nodesync.Key(nodesync.PrefixPE, a.node.ID),
+		aggregateFeed,
+	)
+
+	if err != nil {
+		a.logger.ErrorContext(ctx, "intent watch failed",
+			log.Domain(log.DomainControlPlane),
+			slog.String("intent_key", a.node.IntentKey()),
+			log.Err(err),
+		)
 	}
 }

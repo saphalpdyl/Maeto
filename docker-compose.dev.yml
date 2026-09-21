@@ -10,3 +10,21 @@ services:
     working_dir: /src
     command: generate
     user: "${UID}:${GID}"
+
+  nats-nui:
+    image: ghcr.io/nats-nui/nui:latest
+    container_name: maeto-nats-nui
+    ports:
+      - "31311:31311"
+    volumes:
+      - nats-nui-db:/db
+    networks:
+      - default
+      - clab
+
+networks:
+  clab:
+    external: true
+
+volumes:
+  nats-nui-db:

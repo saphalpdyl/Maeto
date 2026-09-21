@@ -7,10 +7,11 @@ import (
 type LogDomain string
 
 const (
-	DomainAgentLifecycle LogDomain = "AGENT_LIFECYCLE"
-	DomainControlPlane   LogDomain = "CONTROL_PLANE"
-	DomainDataplane      LogDomain = "DATAPLANE"
-	DomainReconciler     LogDomain = "RECONCILER"
+	DomainAgentLifecycle   LogDomain = "AGENT_LIFECYCLE"
+	DomainControlPlane     LogDomain = "CONTROL_PLANE"
+	DomainDataplane        LogDomain = "DATAPLANE"
+	DomainReconciler       LogDomain = "RECONCILER"
+	DomainIntentSupervisor LogDomain = "INTENT_SUPERVISOR"
 )
 
 func Domain(v LogDomain) slog.Attr { return slog.String("domain", string(v)) }

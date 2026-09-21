@@ -69,6 +69,14 @@ clean:
 ips:
 	@./scripts/clab/ips.sh $(TOPOLOGY_NAME)
 
+# Dozzle Container logs viewer
+dozzle:
+	docker run -d -v /var/run/docker.sock:/var/run/docker.sock -v dozzle_data:/data -p 8080:8080 amir20/dozzle:latest
+
+# NATS NUI
+nui:
+	docker compose -f docker-compose.dev.yml up nats-nui
+
 apply: clean build-vm generate deploy
 	$(MAKE) ips
 

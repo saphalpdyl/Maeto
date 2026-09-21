@@ -287,6 +287,7 @@ func (r *Reconciler) Plan(ctx context.Context, desired *nodesync.NodeIntent) (ma
 	if err != nil {
 		return nil, nil, fmt.Errorf("dataplane failure: couldn't retrieve vrf links")
 	}
+
 	vrfLinks := make([]*DataplaneVRF, len(rVrfs))
 	for i, v := range rVrfs {
 		v, ok := v.(*DataplaneVRF)

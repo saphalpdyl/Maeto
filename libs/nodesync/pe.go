@@ -1,6 +1,7 @@
 package nodesync
 
 import (
+	"maps"
 	"net/netip"
 	"slices"
 )
@@ -28,9 +29,12 @@ type PEIntent struct {
 }
 
 type PeerIntent struct {
-	PeerLocator   netip.Prefix `json:"peer_locator"`
-	PeerInterface string       `json:"peer_interface"`
-	TelemetryKey  string       `json:"telemetry_key"` // EdgeID A:eth1-B:eth3 used for correlation
+	// Comments are example values
+	PeerID         string       `json:"peer_id"` // B
+	PeerLocator    netip.Prefix `json:"peer_locator"`
+	PeerInterface  string       `json:"peer_interface"`  // eth3
+	LocalInterface string       `json:"local_interface"` // eth1
+	TelemetryKey   string       `json:"telemetry_key"`   // EdgeID A:eth1-B:eth3 used for correlation
 }
 
 // TenantIntent is one tenant's footprint on this node: every site of theirs that
@@ -108,6 +112,11 @@ func (i *PEIntent) Clone() Intent {
 		}
 
 		out.Tenants[tenantID] = copied
+	}
+
+	if i.Peers != nil {
+		out.Peers = make(map[string]PeerIntent, len(i.Peers))
+		maps.Copy(out.Peers, i.Peers)
 	}
 
 	return &out

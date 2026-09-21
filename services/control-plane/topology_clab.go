@@ -274,7 +274,7 @@ func (c *ClabTopologyManager) Graph() *Graph {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	return c.graph
+	return c.graph.Clone()
 }
 
 func (c *ClabTopologyManager) GetNodeByID(nodeID NodeID) (*Node, bool) {

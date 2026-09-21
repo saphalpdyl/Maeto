@@ -3,7 +3,6 @@ package probe
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
 	"net"
 	"strconv"
@@ -19,24 +18,6 @@ const (
 )
 
 var ErrReflectedUnsupported = errors.New("reflected two-way measurement is not supported: set no_reply")
-
-func newDefaultRunner(dispatcher Dispatcher, logger *slog.Logger) ProbeRunner {
-	return func(ctx context.Context, cfg ProbeConfig) error {
-		switch cfg := cfg.(type) {
-		case *ProbeConfigSTAMP:
-			if err := cfg.Validate(); err != nil {
-				return err
-			}
-
-			if cfg.IsSender {
-				return runSTAMPSender(ctx, cfg, dispatcher, logger)
-			}
-			return runSTAMPReflector(ctx, cfg, logger)
-		default:
-			return fmt.Errorf("unsupported probe config %T", cfg)
-		}
-	}
-}
 
 func stampPort(cfg *ProbeConfigSTAMP) uint16 {
 	if cfg.Port == 0 {

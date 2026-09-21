@@ -147,6 +147,42 @@ func (c *Controller) Start(ctx context.Context) {
 		)
 	}
 
+	// Set peers
+	// TODO: Later peer updates must caught from TED update
+	g := c.topology.Graph()
+	for _, n := range g.nodes {
+		peers := make(map[string]nodesync.PeerIntent)
+
+		// Find edges related to this node
+		for _, e := range g.edges {
+			if e.Local != n.ID {
+				continue
+			}
+
+			remoteNode, exists := g.nodes[e.Remote]
+			if !exists {
+				c.logger.WarnContext(ctx, "failed to find remote node", log.NodeID(string(e.Remote)))
+				continue
+			}
+
+			peerIntent := nodesync.PeerIntent{
+				PeerID:         string(e.Remote),
+				PeerLocator:    remoteNode.Locator,
+				PeerInterface:  e.RemoteIface,
+				LocalInterface: e.LocalIface,
+				TelemetryKey:   string(e.ID),
+			}
+
+			peers[e.LocalIface] = peerIntent
+		}
+
+		err := c.serviceRegistry.UpsertPeersForPE(ctx, string(n.ID), peers)
+		if err != nil {
+			c.logger.ErrorContext(ctx, "failed to update peer intent", log.NodeID(string(n.ID)), log.Err(err))
+			continue
+		}
+	}
+
 	if err := c.setupHealthEndpoint(ctx); err != nil {
 		return
 	}
@@ -412,13 +448,7 @@ func (c *Controller) handlePETunnelUpdate(ctx context.Context, data []byte) erro
 		return fmt.Errorf("attach node not found in topology")
 	}
 
-	// // Register for SID
-	// dt46SID, err := c.serviceRegistry.GetOrGenerateSID(topologyNode.Locator, fmt.Sprintf("%d", tenant.ID), dataplane.EncapTypeDT46)
-	// if err != nil {
-	// 	return fmt.Errorf("failed to generate random SID: %w", err)
-	// }
-
-	peIntent := &nodesync.PE_PortalIntent{
+	portalIntent := &nodesync.PE_PortalIntent{
 		HostFacingInterface: "eth1",
 		TunnelInterfaceID:   req.IfID,
 		SitePrefix:          site.Prefix,
@@ -426,7 +456,7 @@ func (c *Controller) handlePETunnelUpdate(ctx context.Context, data []byte) erro
 	}
 
 	err := c.serviceRegistry.UpsertPEIntentForNode(
-		ctx, string(node.ID), fmt.Sprintf("%d", tenant.ID), req.PortalID, peIntent, topologyNode.Locator,
+		ctx, string(node.ID), fmt.Sprintf("%d", tenant.ID), req.PortalID, portalIntent, topologyNode.Locator,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to set intent for tenant: %w", err)

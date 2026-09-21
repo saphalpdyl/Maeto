@@ -3,6 +3,7 @@ package probe
 
 import (
 	"context"
+	"log/slog"
 	"net/netip"
 	"time"
 )
@@ -18,4 +19,19 @@ type Result struct {
 
 type Dispatcher interface {
 	Dispatch(ctx context.Context, result Result) error
+}
+
+type ToLogsDispatcher struct {
+	logger *slog.Logger
+}
+
+func NewToLogsDispatcher(logger *slog.Logger) *ToLogsDispatcher {
+	return &ToLogsDispatcher{
+		logger: logger,
+	}
+}
+
+func (t *ToLogsDispatcher) Dispatch(ctx context.Context, result Result) error {
+	t.logger.InfoContext(ctx, "got result", slog.Any("result", result))
+	return nil
 }

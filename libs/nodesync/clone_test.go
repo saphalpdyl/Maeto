@@ -32,6 +32,13 @@ func TestNodeIntentCloneIsDeep(t *testing.T) {
 					},
 				},
 			},
+			Peers: map[string]nodesync.PeerIntent{
+				"B": {
+					PeerLocator:   netip.MustParsePrefix("fc00:0:2::/48"),
+					PeerInterface: "eth1",
+					TelemetryKey:  "A:eth1-B:eth3",
+				},
+			},
 		},
 	}
 
@@ -47,6 +54,8 @@ func TestNodeIntentCloneIsDeep(t *testing.T) {
 	pe.Tenants["273"].InstallPaths[0].PrefixRoutes[0] = netip.MustParsePrefix("fd00::/64")
 	pe.Tenants["273"].InstallPaths[0].Color = 99
 	pe.Tenants["999"] = &nodesync.TenantIntent{}
+	pe.Peers["B"] = nodesync.PeerIntent{TelemetryKey: "mutated"}
+	pe.Peers["C"] = nodesync.PeerIntent{}
 
 	got := clone.Intent.(*nodesync.PEIntent) // nolint:errcheck
 
@@ -80,6 +89,12 @@ func TestNodeIntentCloneIsDeep(t *testing.T) {
 	}
 	if installed[0].Color != 20 {
 		t.Errorf("Color = %d, want 20 -- entry is shared", installed[0].Color)
+	}
+	if n := len(got.Peers); n != 1 {
+		t.Errorf("peer map has %d peers, want 1 -- peer map is shared", n)
+	}
+	if key := got.Peers["B"].TelemetryKey; key != "A:eth1-B:eth3" {
+		t.Errorf("TelemetryKey = %q, want %q -- peer map is shared", key, "A:eth1-B:eth3")
 	}
 	if orig.Intent == clone.Intent {
 		t.Error("clone shares the Intent pointer with the original")

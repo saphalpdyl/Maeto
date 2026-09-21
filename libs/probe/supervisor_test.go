@@ -1,4 +1,4 @@
-package probe_test
+package probe
 
 import (
 	"context"
@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/saphalpdyl/maeto/libs/probe"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -36,7 +35,7 @@ func newHarness() *harness {
 	}
 }
 
-func (h *harness) runner(ctx context.Context, cfg probe.ProbeConfig) error {
+func (h *harness) runner(ctx context.Context, cfg ProbeConfig) error {
 	id := cfg.GetID()
 
 	h.mu.Lock()
@@ -70,24 +69,26 @@ func (h *harness) snapshot() []string {
 	return slices.Clone(h.events)
 }
 
-func newTestSupervisor(t *testing.T, h *harness) *probe.Supervisor {
+func newTestSupervisor(t *testing.T, h *harness) *Supervisor {
 	t.Helper()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
-	sup := probe.NewSupervisor(ctx, probe.SupervisorConfig{
+	sup := NewSupervisor(SupervisorConfig{
 		Runner:      h.runner,
 		StopTimeout: 2 * time.Second,
-	}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	}, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
+
+	sup.setBaseContext(ctx)
 
 	t.Cleanup(func() { _ = sup.Shutdown() })
 
 	return sup
 }
 
-func target(ids ...string) map[string]probe.ProbeConfig {
-	out := make(map[string]probe.ProbeConfig, len(ids))
+func target(ids ...string) map[string]ProbeConfig {
+	out := make(map[string]ProbeConfig, len(ids))
 	for _, id := range ids {
 		out[id] = fakeConfig{id: id}
 	}
@@ -98,14 +99,14 @@ func Test_ReconcileTracksStartedProbes(t *testing.T) {
 	h := newHarness()
 	sup := newTestSupervisor(t, h)
 
-	require.NoError(t, sup.ReconcileWithTarget(target("a", "b")))
+	require.NoError(t, sup.reconcileWithTarget(target("a", "b")))
 	assert.Equal(t, target("a", "b"), sup.Running())
 
 	require.Eventually(t, func() bool {
 		return h.startCount("a") == 1 && h.startCount("b") == 1
 	}, time.Second, 10*time.Millisecond)
 
-	require.NoError(t, sup.ReconcileWithTarget(target("a", "b")))
+	require.NoError(t, sup.reconcileWithTarget(target("a", "b")))
 	assert.Equal(t, 1, h.startCount("a"))
 	assert.Equal(t, 1, h.startCount("b"))
 }
@@ -114,13 +115,13 @@ func Test_ReconcileStopsRemovedProbes(t *testing.T) {
 	h := newHarness()
 	sup := newTestSupervisor(t, h)
 
-	require.NoError(t, sup.ReconcileWithTarget(target("a", "b")))
-	require.NoError(t, sup.ReconcileWithTarget(target("a")))
+	require.NoError(t, sup.reconcileWithTarget(target("a", "b")))
+	require.NoError(t, sup.reconcileWithTarget(target("a")))
 
 	assert.Equal(t, target("a"), sup.Running())
 	assert.Contains(t, h.snapshot(), "stop:b")
 
-	require.NoError(t, sup.ReconcileWithTarget(nil))
+	require.NoError(t, sup.reconcileWithTarget(nil))
 	assert.Empty(t, sup.Running())
 	assert.Contains(t, h.snapshot(), "stop:a")
 }
@@ -129,10 +130,10 @@ func Test_ReconcileRestartsOnConfigChange(t *testing.T) {
 	h := newHarness()
 	sup := newTestSupervisor(t, h)
 
-	require.NoError(t, sup.ReconcileWithTarget(map[string]probe.ProbeConfig{
+	require.NoError(t, sup.reconcileWithTarget(map[string]ProbeConfig{
 		"peer-1": fakeConfig{id: "v1"},
 	}))
-	require.NoError(t, sup.ReconcileWithTarget(map[string]probe.ProbeConfig{
+	require.NoError(t, sup.reconcileWithTarget(map[string]ProbeConfig{
 		"peer-1": fakeConfig{id: "v2"},
 	}))
 
@@ -151,7 +152,7 @@ func Test_ReconcileRestartsExitedProbe(t *testing.T) {
 	sup := newTestSupervisor(t, h)
 
 	require.Eventually(t, func() bool {
-		require.NoError(t, sup.ReconcileWithTarget(target("crashed")))
+		require.NoError(t, sup.reconcileWithTarget(target("crashed")))
 		return h.startCount("crashed") == 2
 	}, time.Second, 10*time.Millisecond)
 }
@@ -160,7 +161,7 @@ func Test_ReconcileRejectsNilConfig(t *testing.T) {
 	h := newHarness()
 	sup := newTestSupervisor(t, h)
 
-	err := sup.ReconcileWithTarget(map[string]probe.ProbeConfig{"a": nil})
+	err := sup.reconcileWithTarget(map[string]ProbeConfig{"a": nil})
 	require.Error(t, err)
 	assert.Empty(t, sup.Running())
 }
@@ -169,8 +170,8 @@ func Test_ReconcileStopsProbeReplacedByNilConfig(t *testing.T) {
 	h := newHarness()
 	sup := newTestSupervisor(t, h)
 
-	require.NoError(t, sup.ReconcileWithTarget(target("a")))
-	require.Error(t, sup.ReconcileWithTarget(map[string]probe.ProbeConfig{"a": nil}))
+	require.NoError(t, sup.reconcileWithTarget(target("a")))
+	require.Error(t, sup.reconcileWithTarget(map[string]ProbeConfig{"a": nil}))
 
 	assert.Empty(t, sup.Running())
 	assert.Contains(t, h.snapshot(), "stop:a")
@@ -180,34 +181,46 @@ func Test_ShutdownStopsEverything(t *testing.T) {
 	h := newHarness()
 	sup := newTestSupervisor(t, h)
 
-	require.NoError(t, sup.ReconcileWithTarget(target("a", "b")))
+	require.NoError(t, sup.reconcileWithTarget(target("a", "b")))
 	require.NoError(t, sup.Shutdown())
 
 	assert.Empty(t, sup.Running())
 	assert.Contains(t, h.snapshot(), "stop:a")
 	assert.Contains(t, h.snapshot(), "stop:b")
 
-	assert.Error(t, sup.ReconcileWithTarget(target("a")))
+	assert.Error(t, sup.reconcileWithTarget(target("a")))
 	assert.NoError(t, sup.Shutdown())
+}
+
+func Test_ReconcileFailsBeforeStart(t *testing.T) {
+	h := newHarness()
+
+	sup := NewSupervisor(SupervisorConfig{
+		Runner: h.runner,
+	}, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
+
+	assert.ErrorIs(t, sup.reconcileWithTarget(target("a")), errNotStarted)
+	assert.Empty(t, sup.Running())
 }
 
 func Test_ReconcileFailsOnCancelledBaseContext(t *testing.T) {
 	h := newHarness()
 
 	ctx, cancel := context.WithCancel(context.Background())
-	sup := probe.NewSupervisor(ctx, probe.SupervisorConfig{
+	sup := NewSupervisor(SupervisorConfig{
 		Runner: h.runner,
-	}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	}, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
 
+	sup.setBaseContext(ctx)
 	cancel()
 
-	assert.ErrorIs(t, sup.ReconcileWithTarget(target("a")), context.Canceled)
+	assert.ErrorIs(t, sup.reconcileWithTarget(target("a")), context.Canceled)
 	assert.Empty(t, sup.Running())
 }
 
-func stampConfig() *probe.ProbeConfigSTAMP {
-	return &probe.ProbeConfigSTAMP{
-		ProbeType:       probe.ProbeTypeSTAMP,
+func newSTAMPConfig() *ProbeConfigSTAMP {
+	return &ProbeConfigSTAMP{
+		ProbeType:       ProbeTypeSTAMP,
 		PeerDestination: netip.MustParsePrefix("2001:db8::1/128"),
 		TelemetryKey:    "key",
 		IsSender:        true,
@@ -217,7 +230,7 @@ func stampConfig() *probe.ProbeConfigSTAMP {
 }
 
 func Test_STAMPConfigIDDistinguishesProbes(t *testing.T) {
-	sender := stampConfig()
+	sender := newSTAMPConfig()
 
 	reflector := *sender
 	reflector.IsSender = false
@@ -234,25 +247,25 @@ func Test_STAMPConfigIDDistinguishesProbes(t *testing.T) {
 }
 
 func Test_STAMPConfigRejectsReflectedMeasurement(t *testing.T) {
-	cfg := stampConfig()
+	cfg := newSTAMPConfig()
 	cfg.NoReply = false
 
-	assert.ErrorIs(t, cfg.Validate(), probe.ErrReflectedUnsupported)
+	assert.ErrorIs(t, cfg.Validate(), ErrReflectedUnsupported)
 }
 
 func Test_STAMPConfigValidate(t *testing.T) {
-	assert.NoError(t, stampConfig().Validate())
+	assert.NoError(t, newSTAMPConfig().Validate())
 
-	reflector := stampConfig()
+	reflector := newSTAMPConfig()
 	reflector.IsSender = false
 	reflector.ProbeInterval = 0
 	assert.NoError(t, reflector.Validate())
 
-	noInterval := stampConfig()
+	noInterval := newSTAMPConfig()
 	noInterval.ProbeInterval = 0
 	assert.Error(t, noInterval.Validate())
 
-	noPeer := stampConfig()
+	noPeer := newSTAMPConfig()
 	noPeer.PeerDestination = netip.Prefix{}
 	assert.Error(t, noPeer.Validate())
 }

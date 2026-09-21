@@ -86,6 +86,8 @@ services:
       - default
       - clab
 
+
+
 networks:
   clab:
     external: true
@@ -93,3 +95,4 @@ networks:
 volumes:
   maeto-pane-build:
   maeto-pane-deps:
+  nats-nui-db:

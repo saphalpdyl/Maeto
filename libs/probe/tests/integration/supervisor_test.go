@@ -59,10 +59,12 @@ func newSupervisor(t *testing.T, sink *collector) *probe.Supervisor {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
-	sup := probe.NewSupervisor(ctx, probe.SupervisorConfig{
+	sup := probe.NewSupervisor(probe.SupervisorConfig{
 		Dispatcher:  sink,
 		StopTimeout: 2 * time.Second,
-	}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	}, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
+
+	sup.SetBaseContextForTest(ctx)
 
 	t.Cleanup(func() { _ = sup.Shutdown() })
 

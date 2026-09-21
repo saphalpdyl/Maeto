@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"sync"
 	"time"
+
+	"github.com/saphalpdyl/maeto/libs/nodesync"
 )
 
 type ProbeType string
@@ -16,6 +18,8 @@ const (
 )
 
 const defaultStopTimeout = 10 * time.Second
+
+var errNotStarted = errors.New("supervisor has not been started")
 
 type ProbeConfig interface {
 	GetID() string
@@ -43,6 +47,8 @@ type Supervisor struct {
 
 	generation uint64
 	closed     bool
+
+	intentFeed <-chan *nodesync.NodeIntent
 }
 
 type Probe struct {
@@ -72,18 +78,23 @@ func (p *Probe) Err() error {
 	}
 }
 
-func NewSupervisor(ctx context.Context, cfg SupervisorConfig, logger *slog.Logger) *Supervisor {
+func NewSupervisor(
+	cfg SupervisorConfig,
+	logger *slog.Logger,
+	intentFeed <-chan *nodesync.NodeIntent,
+) *Supervisor {
 	s := &Supervisor{
 		probes:      make(map[string]*Probe),
 		generation:  0,
 		logger:      logger,
-		baseCtx:     ctx,
+		baseCtx:     nil,
 		runner:      cfg.Runner,
 		stopTimeout: cfg.StopTimeout,
+		intentFeed:  intentFeed,
 	}
 
 	if s.runner == nil {
-		s.runner = newDefaultRunner(cfg.Dispatcher, logger)
+		s.runner = NewDefaultRunner(cfg.Dispatcher, logger)
 	}
 
 	if s.stopTimeout <= 0 {
@@ -93,11 +104,55 @@ func NewSupervisor(ctx context.Context, cfg SupervisorConfig, logger *slog.Logge
 	return s
 }
 
-func (s *Supervisor) ReconcileWithTarget(target map[string]ProbeConfig) error {
+func (s *Supervisor) setBaseContext(ctx context.Context) {
+	s.mu.Lock()
+	s.baseCtx = ctx
+	s.mu.Unlock()
+}
+
+func (s *Supervisor) base() (context.Context, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.baseCtx == nil {
+		return nil, errNotStarted
+	}
+
+	return s.baseCtx, nil
+}
+
+func (s *Supervisor) Start(ctx context.Context) error {
+	s.setBaseContext(ctx)
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case nodeIntent := <-s.intentFeed:
+			switch intent := nodeIntent.Intent.(type) {
+			case *nodesync.CPEIntent:
+				panic("cpe intent parsing is not supported")
+			case *nodesync.PEIntent:
+				if len(intent.Peers) > 0 {
+					s.logger.DebugContext(ctx, "got peer intent ", slog.Any("intent", intent.Peers))
+				}
+			default:
+				s.logger.ErrorContext(ctx, "unrecognized intent type")
+			}
+		}
+	}
+}
+
+func (s *Supervisor) reconcileWithTarget(target map[string]ProbeConfig) error {
 	s.reconcileMu.Lock()
 	defer s.reconcileMu.Unlock()
 
-	if err := s.baseCtx.Err(); err != nil {
+	baseCtx, err := s.base()
+	if err != nil {
+		return err
+	}
+
+	if err := baseCtx.Err(); err != nil {
 		return err
 	}
 
@@ -122,7 +177,7 @@ func (s *Supervisor) ReconcileWithTarget(target map[string]ProbeConfig) error {
 	}
 	s.mu.Unlock()
 
-	s.stop(stopped, generation)
+	s.stop(baseCtx, stopped, generation)
 
 	var errs []error
 
@@ -137,7 +192,7 @@ func (s *Supervisor) ReconcileWithTarget(target map[string]ProbeConfig) error {
 			continue
 		}
 
-		s.probes[id] = s.start(id, cfg, generation)
+		s.probes[id] = s.startProbe(baseCtx, id, cfg, generation)
 	}
 	s.mu.Unlock()
 
@@ -160,9 +215,14 @@ func (s *Supervisor) Shutdown() error {
 	stopped := s.probes
 	s.probes = make(map[string]*Probe)
 	generation := s.generation
+
+	baseCtx := s.baseCtx
+	if baseCtx == nil {
+		baseCtx = context.Background()
+	}
 	s.mu.Unlock()
 
-	s.stop(stopped, generation)
+	s.stop(baseCtx, stopped, generation)
 
 	var errs []error
 	for id, probe := range stopped {
@@ -186,8 +246,8 @@ func (s *Supervisor) Running() map[string]ProbeConfig {
 	return running
 }
 
-func (s *Supervisor) start(id string, cfg ProbeConfig, generation uint64) *Probe {
-	probeCtx, cancel := context.WithCancel(s.baseCtx)
+func (s *Supervisor) startProbe(baseCtx context.Context, id string, cfg ProbeConfig, generation uint64) *Probe {
+	probeCtx, cancel := context.WithCancel(baseCtx)
 
 	probe := &Probe{
 		CtxCancel:  cancel,
@@ -196,7 +256,7 @@ func (s *Supervisor) start(id string, cfg ProbeConfig, generation uint64) *Probe
 		done:       make(chan struct{}),
 	}
 
-	s.logger.InfoContext(s.baseCtx, "starting probe",
+	s.logger.InfoContext(baseCtx, "starting probe",
 		slog.String("probe", id),
 		slog.Uint64("generation", generation),
 	)
@@ -221,13 +281,13 @@ func (s *Supervisor) start(id string, cfg ProbeConfig, generation uint64) *Probe
 	return probe
 }
 
-func (s *Supervisor) stop(stopped map[string]*Probe, generation uint64) {
+func (s *Supervisor) stop(baseCtx context.Context, stopped map[string]*Probe, generation uint64) {
 	if len(stopped) == 0 {
 		return
 	}
 
 	for id, probe := range stopped {
-		s.logger.InfoContext(s.baseCtx, "stopping probe",
+		s.logger.InfoContext(baseCtx, "stopping probe",
 			slog.String("probe", id),
 			slog.Uint64("generation", generation),
 		)
@@ -241,11 +301,29 @@ func (s *Supervisor) stop(stopped map[string]*Probe, generation uint64) {
 		select {
 		case <-probe.done:
 		case <-deadline.C:
-			s.logger.WarnContext(s.baseCtx, "timed out waiting for probe to stop",
+			s.logger.WarnContext(baseCtx, "timed out waiting for probe to stop",
 				slog.String("probe", id),
 				slog.Duration("timeout", s.stopTimeout),
 			)
 			return
+		}
+	}
+}
+
+func NewDefaultRunner(dispatcher Dispatcher, logger *slog.Logger) ProbeRunner {
+	return func(ctx context.Context, cfg ProbeConfig) error {
+		switch cfg := cfg.(type) {
+		case *ProbeConfigSTAMP:
+			if err := cfg.Validate(); err != nil {
+				return err
+			}
+
+			if cfg.IsSender {
+				return runSTAMPSender(ctx, cfg, dispatcher, logger)
+			}
+			return runSTAMPReflector(ctx, cfg, logger)
+		default:
+			return fmt.Errorf("unsupported probe config %T", cfg)
 		}
 	}
 }

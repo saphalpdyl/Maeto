@@ -56,6 +56,36 @@ type Graph struct {
 	adj      map[NodeID][]EdgeID
 }
 
+func (g *Graph) Clone() *Graph {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	newGraph := &Graph{
+		nodes:    make(map[NodeID]*Node),
+		edges:    make(map[EdgeID]*Edge),
+		prefixes: make(map[string]*Prefix),
+		adj:      make(map[NodeID][]EdgeID),
+	}
+
+	for k, v := range g.nodes {
+		newGraph.nodes[k] = v
+	}
+
+	for k, v := range g.edges {
+		newGraph.edges[k] = v
+	}
+
+	for k, v := range g.prefixes {
+		newGraph.prefixes[k] = v
+	}
+
+	for k, v := range g.adj {
+		newGraph.adj[k] = v
+	}
+
+	return newGraph
+}
+
 type TopologyManager interface {
 	LoadTopology() error
 	IsReady() bool

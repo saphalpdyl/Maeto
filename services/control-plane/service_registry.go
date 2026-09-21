@@ -6,6 +6,7 @@ package controlplane
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/netip"
@@ -106,6 +107,7 @@ func (r *ServiceRegistry) getOrCreateRegistryEntryForPE(nodeID string) *nodesync
 			Intent: &nodesync.PEIntent{
 				NodeID:  nodeID,
 				Tenants: make(map[string]*nodesync.TenantIntent),
+				Peers:   make(map[string]nodesync.PeerIntent),
 			},
 			Timestamp:  time.Now(),
 			Generation: 1,
@@ -281,6 +283,34 @@ func (r *ServiceRegistry) Restore(ctx context.Context) error {
 				return fmt.Errorf("republish intent for %s: %w", i.NodeID, err)
 			}
 		}
+	}
+
+	return nil
+}
+
+func (r *ServiceRegistry) UpsertPeersForPE(
+	ctx context.Context,
+	nodeID string,
+	peers map[string]nodesync.PeerIntent,
+) error {
+	r.mu.Lock()
+
+	current := r.getOrCreateRegistryEntryForPE(nodeID)
+	intent, ok := current.Intent.(*nodesync.PEIntent)
+	if !ok {
+		return errors.New("failed to cast Intent to PEIntent")
+	}
+
+	intent.Peers = peers
+	current.Timestamp = time.Now()
+	current.Generation++
+
+	snapshot := current.Clone()
+
+	r.mu.Unlock()
+
+	if _, err := r.publisher.Publish(ctx, nodesync.Key(nodesync.PrefixPE, nodeID), snapshot); err != nil {
+		return fmt.Errorf("publish pe intent for %s: %w", nodeID, err)
 	}
 
 	return nil

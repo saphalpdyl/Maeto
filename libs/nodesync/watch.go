@@ -49,7 +49,7 @@ func Open(ctx context.Context, js jetstream.JetStream, logger *slog.Logger, cfg 
 // Watch delivers every intent written to key onto feed until ctx is done. T is
 // the payload the caller expects: the agent and the portal decode the same
 // bucket into their own shapes.
-func Watch[T any](ctx context.Context, js jetstream.JetStream, logger *slog.Logger, cfg BucketConfig, key string, feed chan<- *T) error {
+func Watch[T any](ctx context.Context, js jetstream.JetStream, logger *slog.Logger, cfg BucketConfig, key string, feed chan<- T) error {
 	kv, err := Open(ctx, js, logger, cfg)
 	if err != nil {
 		return err
@@ -108,7 +108,7 @@ func Watch[T any](ctx context.Context, js jetstream.JetStream, logger *slog.Logg
 			)
 
 			select {
-			case feed <- &value:
+			case feed <- value:
 			case <-ctx.Done():
 				return nil
 			}
