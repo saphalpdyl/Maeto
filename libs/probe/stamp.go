@@ -2,6 +2,7 @@ package probe
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"net"
@@ -13,17 +14,15 @@ import (
 
 const (
 	DefaultSTAMPPort uint16 = 862
-
-	restartBackoff = 5 * time.Second
 )
 
 var ErrReflectedUnsupported = errors.New("reflected two-way measurement is not supported: set no_reply")
 
 func stampPort(cfg *ProbeConfigSTAMP) uint16 {
-	if cfg.Port == 0 {
+	if cfg.DestPort == 0 {
 		return DefaultSTAMPPort
 	}
-	return cfg.Port
+	return cfg.DestPort
 }
 
 func stampConfig(cfg *ProbeConfigSTAMP) stamp.Config {
@@ -101,19 +100,28 @@ func runSTAMPSender(ctx context.Context, cfg *ProbeConfigSTAMP, dispatcher Dispa
 			sender = opened
 		}
 
+		stampResults := STAMPResult{
+			IsSender: true,
+			Peer:     peer,
+			Sequence: sender.Sequence(),
+		}
+
+		stampResultsJson, err := json.Marshal(stampResults)
+		if err != nil {
+			logger.WarnContext(ctx, "failed to marshal stamp results")
+			continue
+		}
+
 		result := Result{
-			ProbeID:      cfg.GetID(),
 			ProbeType:    ProbeTypeSTAMP,
 			TelemetryKey: cfg.TelemetryKey,
-			Peer:         peer,
-			Sequence:     sender.Sequence(),
 			SentAt:       time.Now(),
+			Data:         stampResultsJson,
 		}
 
 		if err := sender.SendOnly(); err != nil {
 			logger.WarnContext(ctx, "stamp probe failed",
 				slog.String("peer", peer.String()),
-				slog.Uint64("sequence", uint64(result.Sequence)),
 				slog.Any("error", err),
 			)
 
@@ -130,39 +138,108 @@ func runSTAMPSender(ctx context.Context, cfg *ProbeConfigSTAMP, dispatcher Dispa
 	}
 }
 
-func runSTAMPReflector(ctx context.Context, cfg *ProbeConfigSTAMP, logger *slog.Logger) error {
+func runSTAMPReflector(ctx context.Context, cfg *ProbeConfigSTAMP, dispatcher Dispatcher, logger *slog.Logger) error {
 	localAddr := net.JoinHostPort("", strconv.Itoa(int(stampPort(cfg))))
 
+	controlChan := make(chan stamp.ProbePacket, 64)
+	reflector, err := stamp.NewReflector(stamp.ReflectorConfig{
+		LocalAddr: localAddr,
+		HMACKey:   nil,
+		OnError: func(err error) {
+			logger.WarnContext(ctx, "reflector error", slog.Any("error", err))
+		},
+		Config: stampConfig(cfg),
+	})
+
+	if err != nil {
+		return err
+	}
+
+	serveErr := make(chan error, 1)
+	go func() {
+		serveErr <- reflector.Serve(ctx, controlChan)
+	}()
+
 	for {
-		reflector, err := stamp.NewReflector(stamp.ReflectorConfig{
-			LocalAddr: localAddr,
-			Config:    stampConfig(cfg),
-			OnError: func(err error) {
-				logger.WarnContext(ctx, "stamp reflector error", slog.Any("error", err))
-			},
-		})
-		if err == nil {
-			err = reflector.Serve(ctx)
-		}
-
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-
-		if err != nil {
-			logger.WarnContext(ctx, "stamp reflector exited, restarting",
-				slog.String("local_addr", localAddr),
-				slog.Duration("backoff", restartBackoff),
-				slog.Any("error", err),
-			)
-		}
-
 		select {
 		case <-ctx.Done():
-			return nil
-		case <-time.After(restartBackoff):
+			err := reflector.Close()
+			if err != nil && !errors.Is(err, net.ErrClosed) {
+				return err
+			}
+
+			return ctx.Err()
+		case err := <-serveErr:
+			return err
+		case pkt := <-controlChan:
+			switch p := pkt.(type) {
+			case *stamp.SenderPacket:
+				// don't care about sender packets
+				continue
+			case *stamp.ReflectorPacket:
+				result, err := reflectorResult(cfg, p)
+				if err != nil {
+					logger.WarnContext(ctx, "failed to build stamp reflector result",
+						slog.Any("error", err),
+					)
+					continue
+				}
+
+				dispatch(ctx, dispatcher, result, logger)
+			default:
+				logger.WarnContext(ctx, "unexpected packet type", slog.Any("packet", pkt))
+			}
 		}
 	}
+}
+
+func reflectorResult(cfg *ProbeConfigSTAMP, pkt *stamp.ReflectorPacket) (Result, error) {
+	clockFormat := stampConfig(cfg).ErrorEstimate.ClockFormat
+
+	senderTimestamp, err := pkt.SenderTimestamp.ToTime(clockFormat)
+	if err != nil {
+		return Result{}, err
+	}
+
+	receiveTimestamp, err := pkt.ReceiveTimestamp.ToTime(clockFormat)
+	if err != nil {
+		return Result{}, err
+	}
+
+	senderSequence := pkt.SenderSequenceNumber
+
+	stampResult := STAMPResult{
+		IsSender:         false,
+		Sequence:         pkt.SequenceNumber,
+		Peer:             cfg.PeerDestination.Addr(),
+		SenderSequence:   &senderSequence,
+		SenderTimestamp:  senderTimestamp,
+		ReceiveTimestamp: receiveTimestamp,
+	}
+
+	stampResultJson, err := json.Marshal(stampResult)
+	if err != nil {
+		return Result{}, err
+	}
+
+	return Result{
+		ProbeType:    ProbeTypeSTAMP,
+		TelemetryKey: telemetryKey(cfg, pkt.SRExtensions),
+		SentAt:       *senderTimestamp,
+		Data:         stampResultJson,
+	}, nil
+}
+
+func telemetryKey(cfg *ProbeConfigSTAMP, ext *stamp.SRExtensions) string {
+	if ext == nil || ext.MaetoContainer == nil || ext.MaetoContainer.TelemetryKey == nil {
+		return cfg.TelemetryKey
+	}
+
+	if ext.MaetoContainer.TelemetryKey.Key == "" {
+		return cfg.TelemetryKey
+	}
+
+	return ext.MaetoContainer.TelemetryKey.Key
 }
 
 func dispatch(ctx context.Context, dispatcher Dispatcher, result Result, logger *slog.Logger) {
@@ -172,7 +249,6 @@ func dispatch(ctx context.Context, dispatcher Dispatcher, result Result, logger 
 
 	if err := dispatcher.Dispatch(ctx, result); err != nil {
 		logger.ErrorContext(ctx, "failed to dispatch probe result",
-			slog.String("probe", result.ProbeID),
 			slog.Any("error", err),
 		)
 	}

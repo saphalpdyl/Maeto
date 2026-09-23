@@ -61,7 +61,10 @@ func NewReflector(cfg ReflectorConfig) (*Reflector, error) {
 
 // Serve runs the reflector loop until the underlying connection is closed.
 // Each received packet is reflected back to its sender.
-func (r *Reflector) Serve(ctx context.Context) error {
+func (r *Reflector) Serve(
+	ctx context.Context,
+	controlChan chan<- ProbePacket,
+) error {
 	var lc net.ListenConfig
 	udpServer, err := lc.ListenPacket(ctx, "udp", r.LocalAddr)
 	if err != nil {
@@ -140,6 +143,10 @@ func (r *Reflector) Serve(ctx context.Context) error {
 			continue
 		}
 
+		if controlChan != nil {
+			controlChan <- senderPkt
+		}
+
 		reflectorPkt := ReflectorPacket{
 			SequenceNumber:       r.seq,
 			Timestamp:            *timestamp,
@@ -149,22 +156,41 @@ func (r *Reflector) Serve(ctx context.Context) error {
 			SenderTimestamp:      senderPkt.Timestamp,
 			SenderErrorEstimate:  senderPkt.ErrorEstimate,
 			SenderTTL:            1,
+			SSID:                 senderPkt.SSID,
+			SRExtensions:         senderPkt.SRExtensions,
 		}
 
 		r.seq++
 
-		reflectorPktBytes, err := reflectorPkt.Encode(nil)
-		if err != nil {
-			r.handleError(err)
-			continue
+		if requestsReply(senderPkt) {
+			reflectorPktBytes, err := reflectorPkt.Encode(nil)
+			if err != nil {
+				r.handleError(err)
+				continue
+			}
+
+			_, err = udpServer.WriteTo(reflectorPktBytes, addr)
+			if err != nil {
+				r.handleError(err)
+				continue
+			}
 		}
 
-		_, err = udpServer.WriteTo(reflectorPktBytes, addr)
-		if err != nil {
-			r.handleError(err)
-			continue
+		if controlChan != nil {
+			controlChan <- &reflectorPkt
 		}
 	}
+}
+
+// requestsReply reports whether the sender asked for the packet to be
+// reflected. Packets without a return path control code fall back to base
+// STAMP behavior and are reflected.
+func requestsReply(p *SenderPacket) bool {
+	if p.SRExtensions == nil || p.SRExtensions.ReturnPath == nil || p.SRExtensions.ReturnPath.ControlCode == nil {
+		return true
+	}
+
+	return p.SRExtensions.ReturnPath.ControlCode.RequestReply
 }
 
 func (r *Reflector) handleError(err error) {

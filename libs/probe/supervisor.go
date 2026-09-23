@@ -133,8 +133,29 @@ func (s *Supervisor) Start(ctx context.Context) error {
 			case *nodesync.CPEIntent:
 				panic("cpe intent parsing is not supported")
 			case *nodesync.PEIntent:
-				if len(intent.Peers) > 0 {
-					s.logger.DebugContext(ctx, "got peer intent ", slog.Any("intent", intent.Peers))
+				if len(intent.Peers) <= 0 {
+					continue
+				}
+
+				s.logger.InfoContext(ctx, "got peer intent ", slog.Any("intent", intent.Peers))
+
+				// TODO: Get LSDB to match interface with the SID
+
+				// Convert the peer intents into STAMP configs
+				cfgMap := make(map[string]ProbeConfig)
+				for _, p := range intent.Peers {
+					stampConfig := ProbeConfigSTAMP{
+						ProbeType:       ProbeTypeSTAMP,
+						PeerDestination: p.PeerLocator,
+						TelemetryKey:    p.TelemetryKey,
+						IsSender:        true,
+						NoReply:         true,
+						DestPort:        DefaultSTAMPPort,
+						BindToDev:       "probe-vrf",
+						ProbeInterval:   4 * time.Second,
+					}
+
+					cfgMap[stampConfig.GetID()] = &stampConfig
 				}
 			default:
 				s.logger.ErrorContext(ctx, "unrecognized intent type")
@@ -321,7 +342,7 @@ func NewDefaultRunner(dispatcher Dispatcher, logger *slog.Logger) ProbeRunner {
 			if cfg.IsSender {
 				return runSTAMPSender(ctx, cfg, dispatcher, logger)
 			}
-			return runSTAMPReflector(ctx, cfg, logger)
+			return runSTAMPReflector(ctx, cfg, dispatcher, logger)
 		default:
 			return fmt.Errorf("unsupported probe config %T", cfg)
 		}

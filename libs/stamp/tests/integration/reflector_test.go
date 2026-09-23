@@ -27,7 +27,7 @@ func startReflector(t *testing.T, ctx context.Context) {
 	t.Cleanup(func() { reflector.Close() })
 
 	go func() {
-		if err := reflector.Serve(ctx); err != nil {
+		if err := reflector.Serve(ctx, nil); err != nil {
 			t.Logf("reflector serve exited: %v", err)
 		}
 	}()

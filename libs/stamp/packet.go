@@ -6,6 +6,10 @@ import (
 	"fmt"
 )
 
+type ProbePacket interface {
+	IsSender() bool
+}
+
 // SenderPacket is an unauthenticated STAMP sender test packet (RFC 8762 §3.2).
 // The wire format is 44 octets: sequence number, timestamp, error estimate,
 // and 30 octets of MBZ (must be zero) padding.
@@ -16,6 +20,8 @@ type SenderPacket struct {
 	SSID           uint16
 	SRExtensions   *SRExtensions
 }
+
+func (p *SenderPacket) IsSender() bool { return true }
 
 type STAMPTLVType uint8
 
@@ -105,13 +111,26 @@ func DecodeSenderPacket(hmacKey []byte, b []byte) (*SenderPacket, error) {
 		SSID:          binary.BigEndian.Uint16(b[14:16]),
 	}
 
-	if len(b) == 44 {
-		return p, nil
+	ext, err := decodeSRExtensions(b[44:])
+	if err != nil {
+		return nil, err
+	}
+
+	p.SRExtensions = ext
+
+	return p, nil
+}
+
+// decodeSRExtensions parses the TLV region that follows the 44-octet base
+// packet. It returns nil when the region is empty.
+func decodeSRExtensions(b []byte) (*SRExtensions, error) {
+	if len(b) == 0 {
+		return nil, nil
 	}
 
 	ext := &SRExtensions{}
 
-	cursor := 44
+	cursor := 0
 	for cursor < len(b) {
 		if len(b)-cursor < 4 {
 			return nil, errors.New("truncated TLV header")
@@ -150,9 +169,7 @@ func DecodeSenderPacket(hmacKey []byte, b []byte) (*SenderPacket, error) {
 		cursor += 4 + tlvLength
 	}
 
-	p.SRExtensions = ext
-
-	return p, nil
+	return ext, nil
 }
 
 // ReflectorPacket is an unauthenticated STAMP reflector response packet
@@ -168,7 +185,11 @@ type ReflectorPacket struct {
 	SenderErrorEstimate  uint16
 	SenderTTL            uint8
 	SSID                 uint16
+
+	SRExtensions *SRExtensions
 }
+
+func (p *ReflectorPacket) IsSender() bool { return false }
 
 // Encode serializes the ReflectorPacket into a 44-octet buffer.
 // hmacKey must be nil; authenticated mode is not yet supported.
@@ -198,6 +219,15 @@ func (p *ReflectorPacket) Encode(hmacKey []byte) ([]byte, error) {
 	buf[40] = p.SenderTTL
 
 	// 41-43: MBZ
+
+	if p.SRExtensions != nil {
+		enc, err := p.SRExtensions.Encode()
+		if err != nil {
+			return nil, err
+		}
+
+		buf = append(buf, enc...)
+	}
 
 	return buf, nil
 }
@@ -236,6 +266,13 @@ func DecodeReflectorPacket(hmacKey []byte, data []byte) (*ReflectorPacket, error
 		SenderTTL: data[40],
 		// 41-43: MBZ
 	}
+
+	ext, err := decodeSRExtensions(data[44:])
+	if err != nil {
+		return nil, err
+	}
+
+	p.SRExtensions = ext
 
 	return p, nil
 }

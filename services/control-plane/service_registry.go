@@ -298,6 +298,7 @@ func (r *ServiceRegistry) UpsertPeersForPE(
 	current := r.getOrCreateRegistryEntryForPE(nodeID)
 	intent, ok := current.Intent.(*nodesync.PEIntent)
 	if !ok {
+		r.mu.Unlock()
 		return errors.New("failed to cast Intent to PEIntent")
 	}
 

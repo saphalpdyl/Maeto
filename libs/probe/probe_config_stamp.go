@@ -12,7 +12,7 @@ type ProbeConfigSTAMP struct {
 	TelemetryKey    string       `json:"telemetry_key"`
 	IsSender        bool         `json:"is_sender"`
 	NoReply         bool         `json:"no_reply"`
-	Port            uint16       `json:"port"`
+	DestPort        uint16       `json:"dest_port"`
 	BindToDev       string       `json:"bind_to_dev"`
 
 	ProbeInterval time.Duration `json:"probe_interval"`
