@@ -2,7 +2,9 @@ package maetoagent
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/strongswan/govici/vici"
@@ -34,11 +36,15 @@ func NewAgent(node *Node, js jetstream.JetStream, logger *slog.Logger, dp datapl
 
 	reconciler := dataplane.NewReconciler(dp, nodesync.NodeTypePE, logger.With(log.Domain(log.DomainReconciler)), dataplaneIntentFeed)
 
-	toLogsDispatcher := probe.NewToLogsDispatcher(logger)
+	dispatcherConfig := probe.NATSDispatcherConfig{
+		SubjectPrefix:  fmt.Sprintf("%s.%s", probe.ProbeResultSubjectPrefix, node.ID),
+		PublishTimeout: 5 * time.Second,
+	}
+	dispatcher := probe.NewNATSDispatcher(js, dispatcherConfig)
 	probeSupervisor := probe.NewSupervisor(probe.SupervisorConfig{
-		Dispatcher:  toLogsDispatcher,
+		Dispatcher:  dispatcher,
 		StopTimeout: 0,
-		Runner:      probe.NewDefaultRunner(toLogsDispatcher, logger),
+		Runner:      probe.NewDefaultRunner(dispatcher, logger),
 	}, logger.With(log.Domain(log.DomainIntentSupervisor)), dp, probeIntentFeed)
 
 	return &Agent{

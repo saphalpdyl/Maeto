@@ -63,7 +63,7 @@ func runSTAMPSender(ctx context.Context, cfg *ProbeConfigSTAMP, dispatcher Dispa
 
 	localAddr := ":0"
 	if cfg.LocalLoopback != nil {
-		localAddr = cfg.LocalLoopback.Addr().String()
+		localAddr = net.JoinHostPort(cfg.LocalLoopback.Addr().String(), "0")
 	}
 
 	senderCfg := stamp.SenderConfig{

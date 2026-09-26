@@ -12,6 +12,7 @@ const (
 	DomainServiceRegistry       LogDomain = "SERVICE_REGISTRY"
 	DomainPCE                   LogDomain = "PCE"
 	DomainDebugTools            LogDomain = "DEBUG_TOOLS"
+	DomainTelemetryCollection   LogDomain = "TELEMETRY_COLLECTION"
 )
 
 func Domain(v LogDomain) slog.Attr { return slog.String("domain", string(v)) }

@@ -18,10 +18,8 @@ var _ JetStreamPublisher = (jetstream.JetStream)(nil)
 type fakeJetStream struct {
 	subjects []string
 	payloads [][]byte
-	streams  []jetstream.StreamConfig
 
 	publishErr error
-	streamErr  error
 }
 
 func (f *fakeJetStream) Publish(ctx context.Context, subject string, payload []byte, _ ...jetstream.PublishOpt) (*jetstream.PubAck, error) {
@@ -37,11 +35,6 @@ func (f *fakeJetStream) Publish(ctx context.Context, subject string, payload []b
 	}
 
 	return &jetstream.PubAck{Stream: ProbeResultStream}, nil
-}
-
-func (f *fakeJetStream) CreateOrUpdateStream(_ context.Context, cfg jetstream.StreamConfig) (jetstream.Stream, error) {
-	f.streams = append(f.streams, cfg)
-	return nil, f.streamErr
 }
 
 func stampData(t *testing.T, sequence uint32) json.RawMessage {
@@ -71,9 +64,7 @@ func probeResult(t *testing.T) Result {
 func Test_NATSDispatcherAppliesDefaults(t *testing.T) {
 	d := NewNATSDispatcher(&fakeJetStream{}, NATSDispatcherConfig{})
 
-	assert.Equal(t, ProbeResultStream, d.cfg.StreamName)
 	assert.Equal(t, ProbeResultSubjectPrefix, d.cfg.SubjectPrefix)
-	assert.Equal(t, defaultResultMaxAge, d.cfg.MaxAge)
 	assert.Equal(t, defaultPublishTimeout, d.cfg.PublishTimeout)
 }
 
@@ -134,26 +125,6 @@ func Test_NATSDispatcherHonoursCancelledContext(t *testing.T) {
 
 	require.ErrorIs(t, d.Dispatch(ctx, probeResult(t)), context.Canceled)
 	assert.Empty(t, js.payloads)
-}
-
-func Test_NATSDispatcherEnsureBindsSubjectTree(t *testing.T) {
-	js := &fakeJetStream{}
-	d := NewNATSDispatcher(js, NATSDispatcherConfig{MaxAge: time.Hour})
-
-	require.NoError(t, d.Ensure(context.Background()))
-
-	require.Len(t, js.streams, 1)
-	assert.Equal(t, ProbeResultStream, js.streams[0].Name)
-	assert.Equal(t, []string{"maeto.probe.result.>"}, js.streams[0].Subjects)
-	assert.Equal(t, time.Hour, js.streams[0].MaxAge)
-	assert.Equal(t, jetstream.FileStorage, js.streams[0].Storage)
-}
-
-func Test_NATSDispatcherEnsureWrapsFailure(t *testing.T) {
-	sentinel := errors.New("jetstream down")
-	d := NewNATSDispatcher(&fakeJetStream{streamErr: sentinel}, NATSDispatcherConfig{})
-
-	require.ErrorIs(t, d.Ensure(context.Background()), sentinel)
 }
 
 func Test_NATSDispatcherSatisfiesDispatcher(t *testing.T) {

@@ -10,6 +10,7 @@ import (
 
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
+	"github.com/saphalpdyl/maeto/libs/probe"
 
 	"github.com/saphalpdyl/maeto/libs/controlapi"
 	"github.com/saphalpdyl/maeto/libs/dataplane"
@@ -22,11 +23,12 @@ type Controller struct {
 	logger *slog.Logger
 	js     jetstream.JetStream
 
-	topology        *ClabTopologyManager
-	inventory       NodeInventory
-	tenants         TenantRepository
-	serviceRegistry *ServiceRegistry
-	pce             *PCE
+	topology            *ClabTopologyManager
+	inventory           NodeInventory
+	tenants             TenantRepository
+	serviceRegistry     *ServiceRegistry
+	pce                 *PCE
+	telemetryCollectors map[NodeID]*TelemetryCollector
 
 	ready bool
 
@@ -82,6 +84,18 @@ func NewController(
 	logger.InfoContext(ctx, "controller initialized",
 		slog.Int("tenants", len(tenants.Tenants())),
 	)
+
+	// Telemetry collectors
+	// inventory is more authoritative than topology
+	telemetryCollectors := make(map[NodeID]*TelemetryCollector)
+	for _, n := range inventory.Nodes() {
+		telemetryCollectors[n.ID] = NewTelemetryCollector(
+			js,
+			logger.With(log.Domain(log.DomainTelemetryCollection)),
+			n.ID,
+			fmt.Sprintf("%s.%s", probe.ProbeResultSubjectPrefix, string(n.ID)),
+		)
+	}
 
 	// Intent KV
 	intentPublisher, err := nodesync.NewPublisher(ctx, js, nodesync.IntentBucket)
@@ -184,6 +198,29 @@ func (c *Controller) Start(ctx context.Context) {
 		}
 	}
 
+	if err := c.ensureProbeResultStream(ctx); err != nil {
+		c.logger.ErrorContext(ctx, "failed to ensure probe result stream", log.Err(err))
+		return
+	}
+
+	for _, collector := range c.telemetryCollectors {
+		err := collector.Start(ctx)
+		if err != nil {
+			c.logger.ErrorContext(ctx, "failed to start telemetry collector", log.Err(err))
+			continue
+		}
+
+		c.logger.InfoContext(ctx, fmt.Sprintf("telemetry collector started successfully, consuming at %s", collector.SubjectPrefix))
+	}
+
+	go func() {
+		<-ctx.Done()
+
+		for _, collector := range c.telemetryCollectors {
+			collector.Stop()
+		}
+	}()
+
 	if err := c.setupHealthEndpoint(ctx); err != nil {
 		return
 	}
@@ -209,6 +246,24 @@ func (c *Controller) Start(ctx context.Context) {
 
 	c.ready = true
 
+}
+
+// ensureProbeResultStream owns the shared probe result stream. Every agent
+// publishes under its own node subtree and every collector filters on one, so
+// the subject list has to span them all and only one writer can hold it.
+func (c *Controller) ensureProbeResultStream(ctx context.Context) error {
+	_, err := c.js.CreateOrUpdateStream(ctx, jetstream.StreamConfig{
+		Name:        probe.ProbeResultStream,
+		Description: "raw probe results published by maeto agents",
+		Subjects:    []string{probe.ProbeResultSubjectPrefix + ".>"},
+		Storage:     jetstream.FileStorage,
+		MaxAge:      ProbeResultMaxAge,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create stream %s: %w", probe.ProbeResultStream, err)
+	}
+
+	return nil
 }
 
 func (c *Controller) setupHealthEndpoint(ctx context.Context) error {

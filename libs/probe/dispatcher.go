@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"net/netip"
 	"strings"
 	"time"
@@ -35,38 +34,21 @@ type Dispatcher interface {
 	Dispatch(ctx context.Context, result Result) error
 }
 
-type ToLogsDispatcher struct {
-	logger *slog.Logger
-}
-
-func NewToLogsDispatcher(logger *slog.Logger) *ToLogsDispatcher {
-	return &ToLogsDispatcher{
-		logger: logger,
-	}
-}
-
-func (t *ToLogsDispatcher) Dispatch(ctx context.Context, result Result) error {
-	t.logger.InfoContext(ctx, "got result", slog.Any("result", result))
-	return nil
-}
-
 const (
 	ProbeResultStream        = "PROBES"
 	ProbeResultSubjectPrefix = "maeto.probe.result"
 
 	defaultPublishTimeout = 5 * time.Second
-	defaultResultMaxAge   = 24 * time.Hour
 )
 
 type JetStreamPublisher interface {
 	Publish(ctx context.Context, subject string, payload []byte, opts ...jetstream.PublishOpt) (*jetstream.PubAck, error)
-	CreateOrUpdateStream(ctx context.Context, cfg jetstream.StreamConfig) (jetstream.Stream, error)
 }
 
+// The probe result stream is owned by the control plane, so a dispatcher only
+// publishes into it and never creates it.
 type NATSDispatcherConfig struct {
-	StreamName     string
 	SubjectPrefix  string
-	MaxAge         time.Duration
 	PublishTimeout time.Duration
 }
 
@@ -76,16 +58,8 @@ type NATSDispatcher struct {
 }
 
 func NewNATSDispatcher(js JetStreamPublisher, cfg NATSDispatcherConfig) *NATSDispatcher {
-	if cfg.StreamName == "" {
-		cfg.StreamName = ProbeResultStream
-	}
-
 	if cfg.SubjectPrefix == "" {
 		cfg.SubjectPrefix = ProbeResultSubjectPrefix
-	}
-
-	if cfg.MaxAge <= 0 {
-		cfg.MaxAge = defaultResultMaxAge
 	}
 
 	if cfg.PublishTimeout <= 0 {
@@ -93,21 +67,6 @@ func NewNATSDispatcher(js JetStreamPublisher, cfg NATSDispatcherConfig) *NATSDis
 	}
 
 	return &NATSDispatcher{js: js, cfg: cfg}
-}
-
-func (d *NATSDispatcher) Ensure(ctx context.Context) error {
-	_, err := d.js.CreateOrUpdateStream(ctx, jetstream.StreamConfig{
-		Name:        d.cfg.StreamName,
-		Description: "raw probe results published by maeto agents",
-		Subjects:    []string{d.cfg.SubjectPrefix + ".>"},
-		Storage:     jetstream.FileStorage,
-		MaxAge:      d.cfg.MaxAge,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to create stream %s: %w", d.cfg.StreamName, err)
-	}
-
-	return nil
 }
 
 func (d *NATSDispatcher) Subject(result Result) string {
