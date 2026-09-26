@@ -72,15 +72,12 @@ func (h *harness) snapshot() []string {
 func newTestSupervisor(t *testing.T, h *harness) *Supervisor {
 	t.Helper()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-
 	sup := NewSupervisor(SupervisorConfig{
 		Runner:      h.runner,
 		StopTimeout: 2 * time.Second,
-	}, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
+	}, slog.New(slog.NewTextHandler(io.Discard, nil)), nil, nil)
 
-	sup.setBaseContext(ctx)
+	sup.markStarted()
 
 	t.Cleanup(func() { _ = sup.Shutdown() })
 
@@ -99,14 +96,14 @@ func Test_ReconcileTracksStartedProbes(t *testing.T) {
 	h := newHarness()
 	sup := newTestSupervisor(t, h)
 
-	require.NoError(t, sup.reconcileWithTarget(target("a", "b")))
+	require.NoError(t, sup.reconcileWithTarget(t.Context(), target("a", "b")))
 	assert.Equal(t, target("a", "b"), sup.Running())
 
 	require.Eventually(t, func() bool {
 		return h.startCount("a") == 1 && h.startCount("b") == 1
 	}, time.Second, 10*time.Millisecond)
 
-	require.NoError(t, sup.reconcileWithTarget(target("a", "b")))
+	require.NoError(t, sup.reconcileWithTarget(t.Context(), target("a", "b")))
 	assert.Equal(t, 1, h.startCount("a"))
 	assert.Equal(t, 1, h.startCount("b"))
 }
@@ -115,13 +112,13 @@ func Test_ReconcileStopsRemovedProbes(t *testing.T) {
 	h := newHarness()
 	sup := newTestSupervisor(t, h)
 
-	require.NoError(t, sup.reconcileWithTarget(target("a", "b")))
-	require.NoError(t, sup.reconcileWithTarget(target("a")))
+	require.NoError(t, sup.reconcileWithTarget(t.Context(), target("a", "b")))
+	require.NoError(t, sup.reconcileWithTarget(t.Context(), target("a")))
 
 	assert.Equal(t, target("a"), sup.Running())
 	assert.Contains(t, h.snapshot(), "stop:b")
 
-	require.NoError(t, sup.reconcileWithTarget(nil))
+	require.NoError(t, sup.reconcileWithTarget(t.Context(), nil))
 	assert.Empty(t, sup.Running())
 	assert.Contains(t, h.snapshot(), "stop:a")
 }
@@ -130,10 +127,10 @@ func Test_ReconcileRestartsOnConfigChange(t *testing.T) {
 	h := newHarness()
 	sup := newTestSupervisor(t, h)
 
-	require.NoError(t, sup.reconcileWithTarget(map[string]ProbeConfig{
+	require.NoError(t, sup.reconcileWithTarget(t.Context(), map[string]ProbeConfig{
 		"peer-1": fakeConfig{id: "v1"},
 	}))
-	require.NoError(t, sup.reconcileWithTarget(map[string]ProbeConfig{
+	require.NoError(t, sup.reconcileWithTarget(t.Context(), map[string]ProbeConfig{
 		"peer-1": fakeConfig{id: "v2"},
 	}))
 
@@ -152,7 +149,7 @@ func Test_ReconcileRestartsExitedProbe(t *testing.T) {
 	sup := newTestSupervisor(t, h)
 
 	require.Eventually(t, func() bool {
-		require.NoError(t, sup.reconcileWithTarget(target("crashed")))
+		require.NoError(t, sup.reconcileWithTarget(t.Context(), target("crashed")))
 		return h.startCount("crashed") == 2
 	}, time.Second, 10*time.Millisecond)
 }
@@ -161,7 +158,7 @@ func Test_ReconcileRejectsNilConfig(t *testing.T) {
 	h := newHarness()
 	sup := newTestSupervisor(t, h)
 
-	err := sup.reconcileWithTarget(map[string]ProbeConfig{"a": nil})
+	err := sup.reconcileWithTarget(t.Context(), map[string]ProbeConfig{"a": nil})
 	require.Error(t, err)
 	assert.Empty(t, sup.Running())
 }
@@ -170,8 +167,8 @@ func Test_ReconcileStopsProbeReplacedByNilConfig(t *testing.T) {
 	h := newHarness()
 	sup := newTestSupervisor(t, h)
 
-	require.NoError(t, sup.reconcileWithTarget(target("a")))
-	require.Error(t, sup.reconcileWithTarget(map[string]ProbeConfig{"a": nil}))
+	require.NoError(t, sup.reconcileWithTarget(t.Context(), target("a")))
+	require.Error(t, sup.reconcileWithTarget(t.Context(), map[string]ProbeConfig{"a": nil}))
 
 	assert.Empty(t, sup.Running())
 	assert.Contains(t, h.snapshot(), "stop:a")
@@ -181,14 +178,14 @@ func Test_ShutdownStopsEverything(t *testing.T) {
 	h := newHarness()
 	sup := newTestSupervisor(t, h)
 
-	require.NoError(t, sup.reconcileWithTarget(target("a", "b")))
+	require.NoError(t, sup.reconcileWithTarget(t.Context(), target("a", "b")))
 	require.NoError(t, sup.Shutdown())
 
 	assert.Empty(t, sup.Running())
 	assert.Contains(t, h.snapshot(), "stop:a")
 	assert.Contains(t, h.snapshot(), "stop:b")
 
-	assert.Error(t, sup.reconcileWithTarget(target("a")))
+	assert.Error(t, sup.reconcileWithTarget(t.Context(), target("a")))
 	assert.NoError(t, sup.Shutdown())
 }
 
@@ -197,24 +194,24 @@ func Test_ReconcileFailsBeforeStart(t *testing.T) {
 
 	sup := NewSupervisor(SupervisorConfig{
 		Runner: h.runner,
-	}, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
+	}, slog.New(slog.NewTextHandler(io.Discard, nil)), nil, nil)
 
-	assert.ErrorIs(t, sup.reconcileWithTarget(target("a")), errNotStarted)
+	assert.ErrorIs(t, sup.reconcileWithTarget(t.Context(), target("a")), errNotStarted)
 	assert.Empty(t, sup.Running())
 }
 
-func Test_ReconcileFailsOnCancelledBaseContext(t *testing.T) {
+func Test_ReconcileFailsOnCancelledContext(t *testing.T) {
 	h := newHarness()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	sup := NewSupervisor(SupervisorConfig{
 		Runner: h.runner,
-	}, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
+	}, slog.New(slog.NewTextHandler(io.Discard, nil)), nil, nil)
 
-	sup.setBaseContext(ctx)
+	sup.markStarted()
 	cancel()
 
-	assert.ErrorIs(t, sup.reconcileWithTarget(target("a")), context.Canceled)
+	assert.ErrorIs(t, sup.reconcileWithTarget(ctx, target("a")), context.Canceled)
 	assert.Empty(t, sup.Running())
 }
 
@@ -225,6 +222,7 @@ func newSTAMPConfig() *ProbeConfigSTAMP {
 		TelemetryKey:    "key",
 		IsSender:        true,
 		NoReply:         true,
+		EgressInterface: "eth4",
 		ProbeInterval:   time.Second,
 	}
 }
@@ -238,12 +236,12 @@ func Test_STAMPConfigIDDistinguishesProbes(t *testing.T) {
 	reflected := *sender
 	reflected.NoReply = false
 
-	otherVRF := *sender
-	otherVRF.BindToDev = "probe-vrf"
+	otherLink := *sender
+	otherLink.EgressInterface = "eth5"
 
 	assert.NotEqual(t, sender.GetID(), reflector.GetID())
 	assert.NotEqual(t, sender.GetID(), reflected.GetID())
-	assert.NotEqual(t, sender.GetID(), otherVRF.GetID())
+	assert.NotEqual(t, sender.GetID(), otherLink.GetID())
 }
 
 func Test_STAMPConfigRejectsReflectedMeasurement(t *testing.T) {

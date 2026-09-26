@@ -34,7 +34,7 @@ func TestNodeIntentCloneIsDeep(t *testing.T) {
 			},
 			Peers: map[string]nodesync.PeerIntent{
 				"B": {
-					PeerLocator:   netip.MustParsePrefix("fc00:0:2::/48"),
+					PeerLoopback:  netip.MustParsePrefix("fc00:0:2::/48"),
 					PeerInterface: "eth1",
 					TelemetryKey:  "A:eth1-B:eth3",
 				},

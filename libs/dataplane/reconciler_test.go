@@ -69,7 +69,7 @@ func (t *TestDefaultRouteOnlyDataplane) RemoveSRRouteForPrefix(prefix netip.Pref
 }
 
 // GetSIDs implements [dataplane.Dataplane].
-func (t *TestDefaultRouteOnlyDataplane) GetSIDs() ([]dataplane.DataplaneSID, error) {
+func (t *TestDefaultRouteOnlyDataplane) GetSIDs(filterBy *dataplane.EncapType, groupingKey *int) ([]dataplane.DataplaneSID, error) {
 	panic("unimplemented")
 }
 

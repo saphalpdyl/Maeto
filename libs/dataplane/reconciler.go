@@ -111,7 +111,10 @@ func StringToID(s string) uint32 {
 	return uint32(minVal + (val64 % span))
 }
 
-func (r *Reconciler) RenderPE(ctx context.Context, pe *nodesync.PEIntent) (map[string]Resource, error) {
+func (r *Reconciler) RenderPE(
+	ctx context.Context,
+	pe *nodesync.PEIntent,
+) (map[string]Resource, error) {
 	resources := make(map[string]Resource)
 
 	for tenantID, t := range pe.Tenants {
@@ -320,7 +323,7 @@ func (r *Reconciler) Plan(ctx context.Context, desired *nodesync.NodeIntent) (ma
 		return nil, nil, fmt.Errorf("dataplane failure: couldn't retrieve rules: %w", err)
 	}
 
-	sids, err := r.dp.GetSIDs()
+	sids, err := r.dp.GetSIDs(nil, nil)
 	if err != nil {
 		return nil, nil, fmt.Errorf("dataplane failure: couldn't retrieve sids: %w", err)
 	}

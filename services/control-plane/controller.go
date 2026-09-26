@@ -167,7 +167,8 @@ func (c *Controller) Start(ctx context.Context) {
 
 			peerIntent := nodesync.PeerIntent{
 				PeerID:         string(e.Remote),
-				PeerLocator:    remoteNode.Locator,
+				PeerLoopback:   remoteNode.Loopback,
+				LocalLoopback:  n.Loopback,
 				PeerInterface:  e.RemoteIface,
 				LocalInterface: e.LocalIface,
 				TelemetryKey:   string(e.ID),

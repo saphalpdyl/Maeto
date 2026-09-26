@@ -4,10 +4,10 @@ package probe
 
 import "context"
 
-func (s *Supervisor) SetBaseContextForTest(ctx context.Context) {
-	s.setBaseContext(ctx)
+func (s *Supervisor) MarkStartedForTest() {
+	s.markStarted()
 }
 
-func (s *Supervisor) ReconcileWithTarget(target map[string]ProbeConfig) error {
-	return s.reconcileWithTarget(target)
+func (s *Supervisor) ReconcileWithTarget(ctx context.Context, target map[string]ProbeConfig) error {
+	return s.reconcileWithTarget(ctx, target)
 }

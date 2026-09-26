@@ -7,9 +7,11 @@ import (
 	"log/slog"
 	"net"
 	"strconv"
+	"syscall"
 	"time"
 
 	"github.com/saphalpdyl/maeto/libs/stamp"
+	"golang.org/x/sys/unix"
 )
 
 const (
@@ -26,6 +28,7 @@ func stampPort(cfg *ProbeConfigSTAMP) uint16 {
 }
 
 func stampConfig(cfg *ProbeConfigSTAMP) stamp.Config {
+	_ = cfg
 	stampCfg := stamp.Config{
 		ErrorEstimate: stamp.ErrorEstimateConfig{
 			Scale:        22,
@@ -33,10 +36,6 @@ func stampConfig(cfg *ProbeConfigSTAMP) stamp.Config {
 			Synchronized: false,
 			ClockFormat:  stamp.ClockFormatNTP,
 		},
-	}
-
-	if cfg.BindToDev != "" {
-		stampCfg.BindToDev = &cfg.BindToDev
 	}
 
 	return stampCfg
@@ -51,14 +50,24 @@ func srExtensions(cfg *ProbeConfigSTAMP) *stamp.SRExtensions {
 		MaetoContainer: &stamp.SRExtMaetoContainer{
 			TelemetryKey: &stamp.SRExtMaetoContainerTelemetryKey{Key: cfg.TelemetryKey},
 		},
+		ReturnPath: &stamp.SRExtReturnPath{
+			ControlCode: &stamp.SRExtReturnPathControlCode{
+				RequestReply: !cfg.NoReply,
+			},
+		},
 	}
 }
 
 func runSTAMPSender(ctx context.Context, cfg *ProbeConfigSTAMP, dispatcher Dispatcher, logger *slog.Logger) error {
 	peer := cfg.PeerDestination.Addr()
 
+	localAddr := ":0"
+	if cfg.LocalLoopback != nil {
+		localAddr = cfg.LocalLoopback.Addr().String()
+	}
+
 	senderCfg := stamp.SenderConfig{
-		LocalAddr:    ":0",
+		LocalAddr:    localAddr,
 		RemoteAddr:   net.JoinHostPort(peer.String(), strconv.Itoa(int(stampPort(cfg)))),
 		Config:       stampConfig(cfg),
 		SRExtensions: srExtensions(cfg),
@@ -89,7 +98,47 @@ func runSTAMPSender(ctx context.Context, cfg *ProbeConfigSTAMP, dispatcher Dispa
 		}
 
 		if sender == nil {
-			opened, err := stamp.NewSender(senderCfg)
+			//control, err := srv6.SRHControl(cfg.EncapSegments)
+			//if err != nil {
+			//	return err
+			//}
+			control := func(network, address string, c syscall.RawConn) error {
+				var sockErr error
+
+				if err := c.Control(func(fd uintptr) {
+					sockErr = unix.SetsockoptString(int(fd), syscall.SOL_SOCKET, syscall.SO_BINDTODEVICE, cfg.EgressInterface)
+				}); err != nil {
+					return err
+				}
+
+				return sockErr
+			}
+			dialer := net.Dialer{Control: control}
+
+			localAddr, err := net.ResolveUDPAddr("udp", senderCfg.LocalAddr)
+			if err != nil {
+				return err
+			}
+
+			dialer.LocalAddr = localAddr
+
+			conn, err := dialer.DialContext(ctx, "udp", senderCfg.RemoteAddr)
+			if err != nil {
+				return err
+			}
+
+			udpConn, ok := conn.(*net.UDPConn)
+			if !ok {
+				conn.Close()
+				return errors.New("couldn't cast to *net.UDPConn")
+			}
+
+			logger.InfoContext(ctx, "stamp sender opened",
+				slog.String("local", udpConn.LocalAddr().String()),
+				slog.String("remote", udpConn.RemoteAddr().String()),
+			)
+
+			opened, err := stamp.NewSenderFromConn(senderCfg, udpConn)
 			if err != nil {
 				logger.WarnContext(ctx, "failed to open stamp sender",
 					slog.String("peer", peer.String()),
@@ -139,11 +188,16 @@ func runSTAMPSender(ctx context.Context, cfg *ProbeConfigSTAMP, dispatcher Dispa
 }
 
 func runSTAMPReflector(ctx context.Context, cfg *ProbeConfigSTAMP, dispatcher Dispatcher, logger *slog.Logger) error {
-	localAddr := net.JoinHostPort("", strconv.Itoa(int(stampPort(cfg))))
+	localAddr := ""
+	if cfg.LocalLoopback != nil {
+		localAddr = cfg.LocalLoopback.Addr().String()
+	}
+
+	localAddrWithPort := net.JoinHostPort(localAddr, strconv.Itoa(int(stampPort(cfg))))
 
 	controlChan := make(chan stamp.ProbePacket, 64)
 	reflector, err := stamp.NewReflector(stamp.ReflectorConfig{
-		LocalAddr: localAddr,
+		LocalAddr: localAddrWithPort,
 		HMACKey:   nil,
 		OnError: func(err error) {
 			logger.WarnContext(ctx, "reflector error", slog.Any("error", err))

@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/netip"
 	"sync"
 	"time"
 
+	"github.com/saphalpdyl/maeto/libs/dataplane"
 	"github.com/saphalpdyl/maeto/libs/nodesync"
 )
 
@@ -38,7 +40,7 @@ type Supervisor struct {
 
 	mu      sync.Mutex
 	logger  *slog.Logger
-	baseCtx context.Context
+	started bool
 
 	probes map[string]*Probe
 
@@ -48,6 +50,7 @@ type Supervisor struct {
 	generation uint64
 	closed     bool
 
+	dataplane  dataplane.Dataplane
 	intentFeed <-chan *nodesync.NodeIntent
 }
 
@@ -81,16 +84,18 @@ func (p *Probe) Err() error {
 func NewSupervisor(
 	cfg SupervisorConfig,
 	logger *slog.Logger,
+	dataplane dataplane.Dataplane,
 	intentFeed <-chan *nodesync.NodeIntent,
 ) *Supervisor {
 	s := &Supervisor{
 		probes:      make(map[string]*Probe),
 		generation:  0,
 		logger:      logger,
-		baseCtx:     nil,
+		started:     false,
 		runner:      cfg.Runner,
 		stopTimeout: cfg.StopTimeout,
 		intentFeed:  intentFeed,
+		dataplane:   dataplane,
 	}
 
 	if s.runner == nil {
@@ -104,25 +109,25 @@ func NewSupervisor(
 	return s
 }
 
-func (s *Supervisor) setBaseContext(ctx context.Context) {
+func (s *Supervisor) markStarted() {
 	s.mu.Lock()
-	s.baseCtx = ctx
+	s.started = true
 	s.mu.Unlock()
 }
 
-func (s *Supervisor) base() (context.Context, error) {
+func (s *Supervisor) hasStarted() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if s.baseCtx == nil {
-		return nil, errNotStarted
-	}
-
-	return s.baseCtx, nil
+	return s.started
 }
 
+// Start owns the lifetime of every probe: the context it is given is the
+// parent of each probe context, so reconcileWithTarget must only ever be
+// called from here. A request-scoped context reaching it would kill probes
+// when that request ends.
 func (s *Supervisor) Start(ctx context.Context) error {
-	s.setBaseContext(ctx)
+	s.markStarted()
 
 	for {
 		select {
@@ -136,26 +141,76 @@ func (s *Supervisor) Start(ctx context.Context) error {
 				if len(intent.Peers) <= 0 {
 					continue
 				}
-
 				s.logger.InfoContext(ctx, "got peer intent ", slog.Any("intent", intent.Peers))
 
-				// TODO: Get LSDB to match interface with the SID
+				encapType := dataplane.EncapTypeEndX
+				proto := dataplane.ProtoLinuxISISDefault
+				localEndXSIDs, err := s.dataplane.GetSIDs(&encapType, &proto)
+				if err != nil {
+					return err
+				}
+
+				// TODO: ugly
+				var localLoopback *netip.Prefix
 
 				// Convert the peer intents into STAMP configs
 				cfgMap := make(map[string]ProbeConfig)
 				for _, p := range intent.Peers {
+					if localLoopback == nil {
+						localLoopback = &p.LocalLoopback
+					}
+
+					var dstSID *netip.Addr
+					for _, sid := range localEndXSIDs {
+						if sid.Dev == p.LocalInterface {
+							parsedNetipAddr, ok := netip.AddrFromSlice(sid.Dst.IP)
+							if !ok {
+								s.logger.ErrorContext(ctx, "failed to parse sid from local endXSID")
+								break
+							}
+
+							dstSID = &parsedNetipAddr
+
+							break
+						}
+					}
+
+					if dstSID == nil {
+						s.logger.WarnContext(ctx, "could not find matching destination SID", slog.String("localInterface", p.LocalInterface), slog.Any("currentSIDs", localEndXSIDs))
+						continue
+					}
+
 					stampConfig := ProbeConfigSTAMP{
 						ProbeType:       ProbeTypeSTAMP,
-						PeerDestination: p.PeerLocator,
+						LocalLoopback:   &p.LocalLoopback,
+						PeerDestination: p.PeerLoopback,
 						TelemetryKey:    p.TelemetryKey,
 						IsSender:        true,
 						NoReply:         true,
 						DestPort:        DefaultSTAMPPort,
-						BindToDev:       "probe-vrf",
-						ProbeInterval:   4 * time.Second,
+						ProbeInterval:   10 * time.Second,
+						EncapSegments:   []netip.Addr{},
+						EgressInterface: p.LocalInterface,
 					}
 
+					s.logger.InfoContext(ctx, "completed stampConfig", slog.Any("config", stampConfig))
+
 					cfgMap[stampConfig.GetID()] = &stampConfig
+				}
+
+				reflectorStampConfig := ProbeConfigSTAMP{
+					ProbeType:     ProbeTypeSTAMP,
+					LocalLoopback: localLoopback,
+					IsSender:      false,
+					NoReply:       true,
+					DestPort:      862,
+				}
+
+				cfgMap[reflectorStampConfig.GetID()] = &reflectorStampConfig
+
+				err = s.reconcileWithTarget(ctx, cfgMap)
+				if err != nil {
+					s.logger.ErrorContext(ctx, "failed to reconcileWithTarget", slog.Any("error", err))
 				}
 			default:
 				s.logger.ErrorContext(ctx, "unrecognized intent type")
@@ -164,16 +219,15 @@ func (s *Supervisor) Start(ctx context.Context) error {
 	}
 }
 
-func (s *Supervisor) reconcileWithTarget(target map[string]ProbeConfig) error {
+func (s *Supervisor) reconcileWithTarget(ctx context.Context, target map[string]ProbeConfig) error {
 	s.reconcileMu.Lock()
 	defer s.reconcileMu.Unlock()
 
-	baseCtx, err := s.base()
-	if err != nil {
-		return err
+	if !s.hasStarted() {
+		return errNotStarted
 	}
 
-	if err := baseCtx.Err(); err != nil {
+	if err := ctx.Err(); err != nil {
 		return err
 	}
 
@@ -198,7 +252,7 @@ func (s *Supervisor) reconcileWithTarget(target map[string]ProbeConfig) error {
 	}
 	s.mu.Unlock()
 
-	s.stop(baseCtx, stopped, generation)
+	s.stop(ctx, stopped, generation)
 
 	var errs []error
 
@@ -213,7 +267,7 @@ func (s *Supervisor) reconcileWithTarget(target map[string]ProbeConfig) error {
 			continue
 		}
 
-		s.probes[id] = s.startProbe(baseCtx, id, cfg, generation)
+		s.probes[id] = s.startProbe(ctx, id, cfg, generation)
 	}
 	s.mu.Unlock()
 
@@ -237,13 +291,9 @@ func (s *Supervisor) Shutdown() error {
 	s.probes = make(map[string]*Probe)
 	generation := s.generation
 
-	baseCtx := s.baseCtx
-	if baseCtx == nil {
-		baseCtx = context.Background()
-	}
 	s.mu.Unlock()
 
-	s.stop(baseCtx, stopped, generation)
+	s.stop(context.Background(), stopped, generation)
 
 	var errs []error
 	for id, probe := range stopped {
@@ -267,8 +317,8 @@ func (s *Supervisor) Running() map[string]ProbeConfig {
 	return running
 }
 
-func (s *Supervisor) startProbe(baseCtx context.Context, id string, cfg ProbeConfig, generation uint64) *Probe {
-	probeCtx, cancel := context.WithCancel(baseCtx)
+func (s *Supervisor) startProbe(ctx context.Context, id string, cfg ProbeConfig, generation uint64) *Probe {
+	probeCtx, cancel := context.WithCancel(ctx)
 
 	probe := &Probe{
 		CtxCancel:  cancel,
@@ -277,7 +327,7 @@ func (s *Supervisor) startProbe(baseCtx context.Context, id string, cfg ProbeCon
 		done:       make(chan struct{}),
 	}
 
-	s.logger.InfoContext(baseCtx, "starting probe",
+	s.logger.InfoContext(ctx, "starting probe",
 		slog.String("probe", id),
 		slog.Uint64("generation", generation),
 	)
@@ -302,13 +352,13 @@ func (s *Supervisor) startProbe(baseCtx context.Context, id string, cfg ProbeCon
 	return probe
 }
 
-func (s *Supervisor) stop(baseCtx context.Context, stopped map[string]*Probe, generation uint64) {
+func (s *Supervisor) stop(ctx context.Context, stopped map[string]*Probe, generation uint64) {
 	if len(stopped) == 0 {
 		return
 	}
 
 	for id, probe := range stopped {
-		s.logger.InfoContext(baseCtx, "stopping probe",
+		s.logger.InfoContext(ctx, "stopping probe",
 			slog.String("probe", id),
 			slog.Uint64("generation", generation),
 		)
@@ -322,7 +372,7 @@ func (s *Supervisor) stop(baseCtx context.Context, stopped map[string]*Probe, ge
 		select {
 		case <-probe.done:
 		case <-deadline.C:
-			s.logger.WarnContext(baseCtx, "timed out waiting for probe to stop",
+			s.logger.WarnContext(ctx, "timed out waiting for probe to stop",
 				slog.String("probe", id),
 				slog.Duration("timeout", s.stopTimeout),
 			)

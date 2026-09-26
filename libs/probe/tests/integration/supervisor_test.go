@@ -77,7 +77,7 @@ func stampProbe(sender bool, telemetryKey string) *probe.ProbeConfigSTAMP {
 	}
 }
 
-func newSupervisor(t *testing.T, sink *collector) *probe.Supervisor {
+func newSupervisor(t *testing.T, sink *collector) (*probe.Supervisor, context.Context) {
 	t.Helper()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -86,23 +86,23 @@ func newSupervisor(t *testing.T, sink *collector) *probe.Supervisor {
 	sup := probe.NewSupervisor(probe.SupervisorConfig{
 		Dispatcher:  sink,
 		StopTimeout: 2 * time.Second,
-	}, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
+	}, slog.New(slog.NewTextHandler(io.Discard, nil)), nil, nil)
 
-	sup.SetBaseContextForTest(ctx)
+	sup.MarkStartedForTest()
 
 	t.Cleanup(func() { _ = sup.Shutdown() })
 
-	return sup
+	return sup, ctx
 }
 
 func Test_SupervisorSendsOneWayProbes(t *testing.T) {
 	sink := &collector{results: make(chan probe.Result, 8)}
-	sup := newSupervisor(t, sink)
+	sup, ctx := newSupervisor(t, sink)
 
 	reflector := stampProbe(false, "tk-oneway")
 	sender := stampProbe(true, "tk-oneway")
 
-	require.NoError(t, sup.ReconcileWithTarget(map[string]probe.ProbeConfig{
+	require.NoError(t, sup.ReconcileWithTarget(ctx, map[string]probe.ProbeConfig{
 		reflector.GetID(): reflector,
 		sender.GetID():    sender,
 	}))
@@ -125,18 +125,18 @@ func Test_SupervisorSendsOneWayProbes(t *testing.T) {
 
 func Test_SupervisorStopsProbesOnReconcile(t *testing.T) {
 	sink := &collector{results: make(chan probe.Result, 8)}
-	sup := newSupervisor(t, sink)
+	sup, ctx := newSupervisor(t, sink)
 
 	reflector := stampProbe(false, "tk-stop")
 	sender := stampProbe(true, "tk-stop")
 
-	require.NoError(t, sup.ReconcileWithTarget(map[string]probe.ProbeConfig{
+	require.NoError(t, sup.ReconcileWithTarget(ctx, map[string]probe.ProbeConfig{
 		reflector.GetID(): reflector,
 		sender.GetID():    sender,
 	}))
 	awaitResult(t, sink)
 
-	require.NoError(t, sup.ReconcileWithTarget(map[string]probe.ProbeConfig{
+	require.NoError(t, sup.ReconcileWithTarget(ctx, map[string]probe.ProbeConfig{
 		reflector.GetID(): reflector,
 	}))
 
@@ -152,12 +152,12 @@ func Test_SupervisorStopsProbesOnReconcile(t *testing.T) {
 
 func Test_SupervisorReflectorReportsReceivedProbes(t *testing.T) {
 	sink := &collector{results: make(chan probe.Result, 32)}
-	sup := newSupervisor(t, sink)
+	sup, ctx := newSupervisor(t, sink)
 
 	reflector := stampProbe(false, "tk-reflector-local")
 	sender := stampProbe(true, "tk-on-wire")
 
-	require.NoError(t, sup.ReconcileWithTarget(map[string]probe.ProbeConfig{
+	require.NoError(t, sup.ReconcileWithTarget(ctx, map[string]probe.ProbeConfig{
 		reflector.GetID(): reflector,
 		sender.GetID():    sender,
 	}))

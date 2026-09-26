@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"net"
 	"time"
-
-	"golang.org/x/sys/unix"
 )
 
 // Packet format for unauth mode ( RFC 8762 )
@@ -76,42 +74,25 @@ func NewSender(cfg SenderConfig) (*Sender, error) {
 		return nil, err
 	}
 
-	if cfg.Config.BindToDev != nil {
+	timeout := cfg.Timeout
+	if timeout == 0 {
+		timeout = 5 * time.Second
+	}
 
-		rawConn, err := conn.SyscallConn()
-		if err != nil {
-			err := conn.Close()
-			if err != nil {
-				return nil, errors.New("connection failed to close when handling failure for rawConn")
-			}
-			return nil, err
-		}
+	return &Sender{
+		Conn:         conn,
+		HMACKey:      cfg.HMACKey,
+		seq:          0,
+		onError:      cfg.OnError,
+		timeout:      timeout,
+		Config:       cfg.Config,
+		srExtensions: cfg.SRExtensions,
+	}, nil
+}
 
-		var sockErr error
-		err = rawConn.Control(func(fd uintptr) {
-			sockErr = unix.SetsockoptString(
-				int(fd),
-				unix.SOL_SOCKET,
-				unix.SO_BINDTODEVICE,
-				*cfg.Config.BindToDev,
-			)
-
-		})
-		if err != nil {
-			err := conn.Close()
-			if err != nil {
-				return nil, errors.New("connection failed to close when handling failure for rawConn.Control")
-			}
-			return nil, err
-		}
-
-		if sockErr != nil {
-			err := conn.Close()
-			if err != nil {
-				return nil, errors.New("connection failed to close when handling failure for SO_BINDTODEVICE")
-			}
-			return nil, sockErr
-		}
+func NewSenderFromConn(cfg SenderConfig, conn *net.UDPConn) (*Sender, error) {
+	if conn == nil {
+		return nil, errors.New("nil connection")
 	}
 
 	timeout := cfg.Timeout

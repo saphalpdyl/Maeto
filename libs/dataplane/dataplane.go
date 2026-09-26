@@ -5,6 +5,10 @@ import (
 	"net/netip"
 )
 
+const (
+	ProtoLinuxISISDefault int = 187
+)
+
 type Via struct {
 	AddrFamily int
 	Addr       net.IP
@@ -37,6 +41,8 @@ type DataplaneSRRoute struct {
 	Segments  []netip.Addr
 }
 
+type Seg6LocalType string
+
 type EncapType string
 
 const (
@@ -44,6 +50,8 @@ const (
 	EncapTypeB6   EncapType = "b6"
 	EncapTypeDT4  EncapType = "dt4"
 	EncapTypeDT6  EncapType = "dt6"
+	EncapTypeEnd  EncapType = "end"
+	EncapTypeEndX EncapType = "endX"
 )
 
 type DataplaneSID struct {
@@ -145,7 +153,7 @@ type Dataplane interface {
 
 	UpsertDT46SID(sid netip.Addr, vrfTableID int) error
 	RemoveSID(sid netip.Addr) error
-	GetSIDs() ([]DataplaneSID, error)
+	GetSIDs(FilterBy *EncapType, GroupingKey *int) ([]DataplaneSID, error)
 
 	GetDefaultRouteAndDev() (string, string, error)
 }

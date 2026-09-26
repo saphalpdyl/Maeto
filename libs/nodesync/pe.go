@@ -31,7 +31,8 @@ type PEIntent struct {
 type PeerIntent struct {
 	// Comments are example values
 	PeerID         string       `json:"peer_id"` // B
-	PeerLocator    netip.Prefix `json:"peer_locator"`
+	PeerLoopback   netip.Prefix `json:"peer_loopback"`
+	LocalLoopback  netip.Prefix `json:"local_loopback"`
 	PeerInterface  string       `json:"peer_interface"`  // eth3
 	LocalInterface string       `json:"local_interface"` // eth1
 	TelemetryKey   string       `json:"telemetry_key"`   // EdgeID A:eth1-B:eth3 used for correlation

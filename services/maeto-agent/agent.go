@@ -39,7 +39,7 @@ func NewAgent(node *Node, js jetstream.JetStream, logger *slog.Logger, dp datapl
 		Dispatcher:  toLogsDispatcher,
 		StopTimeout: 0,
 		Runner:      probe.NewDefaultRunner(toLogsDispatcher, logger),
-	}, logger.With(log.Domain(log.DomainIntentSupervisor)), probeIntentFeed)
+	}, logger.With(log.Domain(log.DomainIntentSupervisor)), dp, probeIntentFeed)
 
 	return &Agent{
 		js:                  js,

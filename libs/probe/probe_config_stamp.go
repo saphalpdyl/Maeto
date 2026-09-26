@@ -7,13 +7,15 @@ import (
 )
 
 type ProbeConfigSTAMP struct {
-	ProbeType       ProbeType    `json:"probe_type"`
-	PeerDestination netip.Prefix `json:"peer_destination"`
-	TelemetryKey    string       `json:"telemetry_key"`
-	IsSender        bool         `json:"is_sender"`
-	NoReply         bool         `json:"no_reply"`
-	DestPort        uint16       `json:"dest_port"`
-	BindToDev       string       `json:"bind_to_dev"`
+	ProbeType       ProbeType     `json:"probe_type"`
+	LocalLoopback   *netip.Prefix `json:"local_loopback"`
+	PeerDestination netip.Prefix  `json:"peer_destination"`
+	TelemetryKey    string        `json:"telemetry_key"`
+	IsSender        bool          `json:"is_sender"`
+	NoReply         bool          `json:"no_reply"`
+	DestPort        uint16        `json:"dest_port"`
+	EgressInterface string        `json:"egress_interface"`
+	EncapSegments   []netip.Addr  `json:"encap_segments"`
 
 	ProbeInterval time.Duration `json:"probe_interval"`
 }
@@ -33,7 +35,7 @@ func (p *ProbeConfigSTAMP) GetID() string {
 		role,
 		p.PeerDestination.Addr().String(),
 		stampPort(p),
-		p.BindToDev,
+		p.EgressInterface,
 		p.TelemetryKey,
 		p.ProbeInterval.String(),
 	)
@@ -44,7 +46,7 @@ func (p *ProbeConfigSTAMP) Validate() error {
 		return fmt.Errorf("probe type must be %s, got %q", ProbeTypeSTAMP, p.ProbeType)
 	}
 
-	if !p.PeerDestination.Addr().IsValid() {
+	if p.IsSender && !p.PeerDestination.Addr().IsValid() {
 		return fmt.Errorf("invalid peer destination %q", p.PeerDestination)
 	}
 

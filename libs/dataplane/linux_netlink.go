@@ -630,9 +630,20 @@ func (l *LinuxNetlink) RemoveSID(sid netip.Addr) error {
 	return nil
 }
 
-func (l *LinuxNetlink) GetSIDs() ([]DataplaneSID, error) {
+func (l *LinuxNetlink) GetSIDs(FilterBy *EncapType, GroupingKey *int) ([]DataplaneSID, error) {
+	proto := MaetoSIDProto
+	if GroupingKey != nil {
+		proto = netlink.RouteProtocol(*GroupingKey)
+	}
+
+	routeFilter := &netlink.Route{Table: unix.RT_TABLE_UNSPEC}
+
+	if proto > 0 {
+		routeFilter.Protocol = proto
+	}
+
 	netlinkRoutes, err := netlink.RouteListFiltered(netlink.FAMILY_ALL,
-		&netlink.Route{Table: unix.RT_TABLE_UNSPEC, Protocol: MaetoSIDProto},
+		routeFilter,
 		netlink.RT_FILTER_TABLE|netlink.RT_FILTER_PROTOCOL)
 	if err != nil {
 		return nil, fmt.Errorf("list maeto sids: %w", err)
@@ -643,11 +654,17 @@ func (l *LinuxNetlink) GetSIDs() ([]DataplaneSID, error) {
 		return nil, err
 	}
 
+	ownedByMaeto := proto == MaetoSIDProto
+
 	sids := make([]DataplaneSID, 0, len(netlinkRoutes))
 	for _, r := range netlinkRoutes {
 		encap, ok := r.Encap.(*netlink.SEG6LocalEncap)
 		if !ok {
-			return nil, fmt.Errorf("failed to parse sid encap type as seg6localencap")
+			if ownedByMaeto {
+				return nil, fmt.Errorf("failed to parse sid encap type as seg6localencap")
+			}
+
+			continue
 		}
 
 		var encapType EncapType
@@ -660,8 +677,20 @@ func (l *LinuxNetlink) GetSIDs() ([]DataplaneSID, error) {
 			encapType = EncapTypeDT46
 		case nl.SEG6_LOCAL_ACTION_END_B6:
 			encapType = EncapTypeB6
+		case nl.SEG6_LOCAL_ACTION_END_X:
+			encapType = EncapTypeEndX
+		case nl.SEG6_LOCAL_ACTION_END:
+			encapType = EncapTypeEnd
 		default:
-			return nil, fmt.Errorf("unknown encap action type %d", encap.Action)
+			if ownedByMaeto {
+				return nil, fmt.Errorf("unknown encap action type %d", encap.Action)
+			}
+
+			continue
+		}
+
+		if FilterBy != nil && *FilterBy != encapType {
+			continue
 		}
 
 		sid := DataplaneSID{
