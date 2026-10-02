@@ -1,6 +1,6 @@
 # static values shared across the generator
 
-GENERATOR_VERSION = "1.21.0"
+GENERATOR_VERSION = "2.0.0"
 
 POP_IMAGE = "maeto-pop:latest"
 FRR_VERSION = "10.5.1"
