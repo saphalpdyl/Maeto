@@ -26,8 +26,10 @@ pops:
 tenants:
   - id: 273
     allocation: fd7a:3921:111::/48
+    tier: gold
   - id: 231
     allocation: fd7a:3921:e7::/48
+    tier: silver
 
 cpes:
   - id: cA
@@ -35,36 +37,103 @@ cpes:
     tenant: 273
     prefix: fd7a:3921:111:1::/64
     portal_id: 83505cf19a08
+    reservation_bandwidth: 200
   - id: cA2
     attach: A
     tenant: 231
     prefix: fd7a:3921:e7:1::/64
     portal_id: 48522cc7549b
+    reservation_bandwidth: 100
   - id: cA3
     attach: A
     tenant: 231
     prefix: fd7a:3921:e7:2::/64
     portal_id: 32522cc7549b
+    reservation_bandwidth: 50
   - id: cA4
     attach: G
     tenant: 231
     prefix: fd7a:3921:e7:bb24::/64
     portal_id: 32527fa75219
+    reservation_bandwidth: 50
   - id: cC
     attach: C
     tenant: 273
     prefix: fd7a:3921:111:2::/64
     portal_id: aa400723fee3
+    reservation_bandwidth: 150
 
 links:
-  - [A,B,2]
-  - [A,D,2]
-  - [B,C,2]
-  - [B,D]
-  - [C,E,3]
-  - [C,F,2]
-  - [D,E]
-  - [E,F]
-  - [F,G,2]
-  - [F,H]
-  - [G,H]
+  - a: A
+    b: B
+    parallel:
+      - bandwidth: 1000
+        delay: 4
+        start_jitter: 0.05
+      - bandwidth: 400
+        delay: 7
+  - a: A
+    b: D
+    parallel:
+      - bandwidth: 1000
+        delay: 3
+      - bandwidth: 250
+        delay: 11
+        start_jitter: 0.1
+  - a: B
+    b: C
+    parallel:
+      - bandwidth: 1000
+        delay: 5
+      - bandwidth: 1000
+        delay: 6
+  - a: B
+    b: D
+    parallel:
+      - bandwidth: 600
+        delay: 9
+  - a: C
+    b: E
+    parallel:
+      - bandwidth: 1000
+        delay: 4
+      - bandwidth: 500
+        delay: 8
+      - bandwidth: 250
+        delay: 15
+        start_jitter: 0.1
+  - a: C
+    b: F
+    parallel:
+      - bandwidth: 1000
+        delay: 6
+      - bandwidth: 400
+        delay: 12
+  - a: D
+    b: E
+    parallel:
+      - bandwidth: 800
+        delay: 7
+  - a: E
+    b: F
+    parallel:
+      - bandwidth: 1000
+        delay: 5
+  - a: F
+    b: G
+    parallel:
+      - bandwidth: 1000
+        delay: 3
+        start_jitter: 0.05
+      - bandwidth: 300
+        delay: 9
+  - a: F
+    b: H
+    parallel:
+      - bandwidth: 600
+        delay: 8
+  - a: G
+    b: H
+    parallel:
+      - bandwidth: 1000
+        delay: 4

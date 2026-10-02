@@ -35,6 +35,38 @@ yaml.SafeDumper.add_representer(
 )
 
 
+def _shape_setup(plan, pop_id):
+    # delay and capacity live on the sending side of each interface, so both
+    # ends of a link are shaped independently and a packet crossing it pays the
+    # delay once per direction. tbf sits under netem because netem has to see
+    # the packet before the rate limiter queues it.
+    cmds = []
+    for l in plan.links:
+        if l.kind != "core":
+            continue
+
+        for end in (l.a, l.b):
+            if end.id != pop_id:
+                continue
+
+            if l.delay_ms > 0:
+                cmds.append(
+                    f"tc qdisc add dev {end.iface} root handle 1: netem delay {l.delay_ms}ms"
+                )
+                parent = "parent 1:1 handle 10:"
+            else:
+                parent = "root handle 10:"
+
+            rate = l.bandwidth_mbps
+            burst = max(32, int(rate * 1000 / 800))
+            cmds.append(
+                f"tc qdisc add dev {end.iface} {parent} tbf "
+                f"rate {rate}mbit burst {burst}kb latency 50ms"
+            )
+
+    return cmds
+
+
 def _access_setup(a):
     if a is None:
         return []
@@ -103,6 +135,7 @@ def render_clab(topo, plan):
         ]
         access = plan.pops[pop.id].access
         cmds += _access_setup(access)
+        cmds += _shape_setup(plan, pop.id)
         binds = [
             "conf/shared/frr_daemons:/etc/frr/daemons",
             f"conf/{pop.node_name}/frr.conf:/etc/frr/frr.conf",

@@ -48,25 +48,27 @@ type RawTopologyData struct {
 		} `json:"access"`
 	} `json:"pops"`
 	Cpes []struct {
-		ID            string `json:"id"`
-		Name          string `json:"name"`
-		ClabLabel     string `json:"clab_label"`
-		Instance      int    `json:"instance"`
-		Attach        string `json:"attach"`
-		AttachNode    string `json:"attach_node"`
-		TransitNode   string `json:"transit_node"`
-		Subnet        string `json:"subnet"`
-		Address       string `json:"address"`
-		Gateway       string `json:"gateway"`
-		Interface     string `json:"interface"`
-		PeerInterface string `json:"peer_interface"`
+		ID              string  `json:"id"`
+		Name            string  `json:"name"`
+		ClabLabel       string  `json:"clab_label"`
+		Instance        int     `json:"instance"`
+		Attach          string  `json:"attach"`
+		AttachNode      string  `json:"attach_node"`
+		TransitNode     string  `json:"transit_node"`
+		Subnet          string  `json:"subnet"`
+		Address         string  `json:"address"`
+		Gateway         string  `json:"gateway"`
+		Interface       string  `json:"interface"`
+		PeerInterface   string  `json:"peer_interface"`
+		ReservationMbps float64 `json:"reservation_mbps"`
 	} `json:"cpes"`
 	Links []struct {
-		Index    int    `json:"index"`
-		Type     string `json:"type"`
-		Instance int    `json:"instance"`
-		Subnet   string `json:"subnet"`
-		A        struct {
+		Index         int     `json:"index"`
+		Type          string  `json:"type"`
+		Instance      int     `json:"instance"`
+		Subnet        string  `json:"subnet"`
+		BandwidthMbps float64 `json:"bandwidth_mbps"`
+		A             struct {
 			Kind      string `json:"kind"`
 			ID        string `json:"id"`
 			Node      string `json:"node"`
@@ -193,9 +195,9 @@ func generateGraphFromRawTopology(rawTopoData *RawTopologyData) (*Graph, error) 
 			Subnet:      l.Subnet,
 			Metric:      0,
 			TEMetric:    0,
-			Bandwidth:   0,
-			Delay:       0,
-			Up:          true,
+
+			Bandwidth: l.BandwidthMbps,
+			Up:        true,
 		}
 
 		revEdgeId := EdgeID(fmt.Sprintf("%s:%s-%s:%s", l.B.ID, l.B.Interface, l.A.ID, l.A.Interface))
@@ -211,9 +213,9 @@ func generateGraphFromRawTopology(rawTopoData *RawTopologyData) (*Graph, error) 
 			Subnet:      l.Subnet,
 			Metric:      0,
 			TEMetric:    0,
-			Bandwidth:   0,
-			Delay:       0,
-			Up:          true,
+
+			Bandwidth: l.BandwidthMbps,
+			Up:        true,
 		}
 
 		g.adj[NodeID(l.A.ID)] = append(g.adj[NodeID(l.A.ID)], edgeId)

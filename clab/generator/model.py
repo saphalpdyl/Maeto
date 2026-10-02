@@ -21,6 +21,7 @@ class Pop:
 class Tenant:
     id: int
     allocation: str     # every site prefix must sit inside this
+    tier: str           # service class, uninterpreted here
     data: dict = field(default_factory=dict)
 
 
@@ -33,6 +34,7 @@ class Cpe:
     tenant: int
     prefix: str         # this site's lan
     portal_id: str # LDevID equivalent
+    reservation_mbps: float   # bandwidth this site has reserved
     data: dict = field(default_factory=dict)
 
 
@@ -42,6 +44,9 @@ class CoreLink:
     a: str              # pop id, lower index (gets ::1)
     b: str              # pop id, higher index (gets ::2)
     instance: int       # 1-based redundancy instance
+    bandwidth_mbps: float     # nominal capacity, assigned per parallel link
+    delay_ms: float           # one-way propagation delay, stands in for distance
+    start_jitter: float       # 0..1, spread applied to bandwidth at generate time
 
 
 @dataclass

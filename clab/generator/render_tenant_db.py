@@ -18,6 +18,7 @@ def render_tenant_db(topo):
         tenant_data = {
             "id": c.id,
             "allocation": c.allocation,
+            "tier": c.tier,
             "vrf_table": c.id,
             "sites": [],
         }
@@ -31,6 +32,7 @@ def render_tenant_db(topo):
                 "attach": cp.attach,
                 "attach_node": topo.pop_by_id(cp.attach).node_name,
                 "if_id": next_if_id,
+                "reservation_mbps": cp.reservation_mbps,
                 "identity": cpe_identity(cp.portal_id),
             })
             next_if_id += 1

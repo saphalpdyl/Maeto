@@ -57,8 +57,17 @@ OVERRIDE_KEYS = {"clab_label"}
 TOP_LEVEL_KEYS = {"name", "defaults", "pops", "tenants", "cpes", "links"}
 DEFAULT_KEYS = {"locator_prefix", "link_prefix", "edge_prefix"}
 POP_KEYS = {"id", "index", "data", "override"}
-CPE_KEYS = {"id", "attach", "tenant", "prefix", "portal_id", "data", "override"}
-TENANT_KEYS = {"id", "allocation", "data"}
+CPE_KEYS = {"id", "attach", "tenant", "prefix", "portal_id", "reservation_bandwidth", "data", "override"}
+TENANT_KEYS = {"id", "allocation", "tier", "data"}
+LINK_KEYS = {"a", "b", "parallel"}
+LINK_PARALLEL_KEYS = {"bandwidth", "delay", "start_jitter"}
+
+# tenants carry a tier so the control plane can price or prioritise them; the
+# generator does not interpret it beyond requiring a non-empty label
+DEFAULT_TENANT_TIER = "standard"
+
+# a link with no start_jitter runs at exactly its nominal bandwidth
+DEFAULT_START_JITTER = 0.0
 
 FRR_DAEMONS = """zebra=yes
 isisd=yes

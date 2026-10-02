@@ -14,8 +14,10 @@ import (
 type Tenant struct {
 	ID         int
 	Allocation netip.Prefix
-	VRFTable   int
-	Sites      []*Site
+	// Tier is the tenant's service class, carried verbatim from the topology.
+	Tier     string
+	VRFTable int
+	Sites    []*Site
 }
 
 type Site struct {
@@ -28,6 +30,8 @@ type Site struct {
 	AttachNode string
 	IfID       uint32
 	Identity   string
+	// ReservationMbps is the bandwidth this site has reserved.
+	ReservationMbps float64
 }
 
 type TenantRepository interface {
@@ -44,16 +48,18 @@ type rawTenantDB struct {
 	Tenants          []struct {
 		ID         int    `json:"id"`
 		Allocation string `json:"allocation"`
+		Tier       string `json:"tier"`
 		VRFTable   int    `json:"vrf_table"`
 		Sites      []struct {
-			CPE        string `json:"cpe"`
-			PortalID   string `json:"portal_id"`
-			Node       string `json:"node"`
-			Prefix     string `json:"prefix"`
-			Attach     string `json:"attach"`
-			AttachNode string `json:"attach_node"`
-			IfID       uint32 `json:"if_id"`
-			Identity   string `json:"identity"`
+			CPE             string  `json:"cpe"`
+			PortalID        string  `json:"portal_id"`
+			Node            string  `json:"node"`
+			Prefix          string  `json:"prefix"`
+			Attach          string  `json:"attach"`
+			AttachNode      string  `json:"attach_node"`
+			IfID            uint32  `json:"if_id"`
+			Identity        string  `json:"identity"`
+			ReservationMbps float64 `json:"reservation_mbps"`
 		} `json:"sites"`
 	} `json:"tenants"`
 }
@@ -121,6 +127,7 @@ func (r *JSONTenantRepository) Load(_ context.Context) error {
 		tenant := &Tenant{
 			ID:         rc.ID,
 			Allocation: allocation,
+			Tier:       rc.Tier,
 			VRFTable:   rc.VRFTable,
 		}
 
@@ -143,15 +150,16 @@ func (r *JSONTenantRepository) Load(_ context.Context) error {
 			}
 
 			site := &Site{
-				TenantID:   rc.ID,
-				CPE:        rs.CPE,
-				PortalID:   rs.PortalID,
-				Node:       rs.Node,
-				Prefix:     prefix,
-				Attach:     rs.Attach,
-				AttachNode: rs.AttachNode,
-				IfID:       rs.IfID,
-				Identity:   rs.Identity,
+				TenantID:        rc.ID,
+				CPE:             rs.CPE,
+				PortalID:        rs.PortalID,
+				Node:            rs.Node,
+				Prefix:          prefix,
+				Attach:          rs.Attach,
+				AttachNode:      rs.AttachNode,
+				IfID:            rs.IfID,
+				Identity:        rs.Identity,
+				ReservationMbps: rs.ReservationMbps,
 			}
 
 			seenIfID[rs.IfID] = rs.Identity

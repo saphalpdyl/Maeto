@@ -31,9 +31,10 @@ type Edge struct {
 	Subnet      string
 	Metric      int
 	TEMetric    int
-	Bandwidth   float64
-	Delay       time.Duration
-	Up          bool
+	// Bandwidth is the link's capacity in Mbps.
+	Bandwidth float64
+	Delay     time.Duration
+	Up        bool
 }
 
 type Prefix struct {

@@ -106,6 +106,7 @@ def _cpe(cpe, cp):
         "gateway": cp.gateway,
         "interface": cp.iface,
         "peer_interface": cp.peer_iface,
+        "reservation_mbps": cpe.reservation_mbps,
         "data": cpe.data,
     }
 
@@ -116,6 +117,7 @@ def _link(l):
         "type": l.kind,
         "instance": l.instance,
         "subnet": l.subnet,
+        "bandwidth_mbps": l.bandwidth_mbps,
         "a": {"kind": l.a.kind, "id": l.a.id, "node": l.a.node, "interface": l.a.iface, "address": l.a.address},
         "b": {"kind": l.b.kind, "id": l.b.id, "node": l.b.node, "interface": l.b.iface, "address": l.b.address},
     }

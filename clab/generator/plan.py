@@ -1,3 +1,4 @@
+import hashlib
 from dataclasses import dataclass
 
 from . import addressing
@@ -48,6 +49,24 @@ class PlannedLink:
     subnet: str
     a: Endpoint
     b: Endpoint
+    bandwidth_mbps: float = 0.0
+    # propagation delay with start_jitter already folded in. it shapes the lab
+    # via netem and goes no further: the control plane measures delay with
+    # probes rather than being told what it should be.
+    delay_ms: float = 0.0
+
+
+def jittered_delay(delay_ms, start_jitter, seed):
+    # derived from a digest rather than random() so a given topology renders the
+    # same way on every run -- a changing hash would churn the build directory
+    if start_jitter <= 0 or delay_ms <= 0:
+        return delay_ms
+
+    digest = hashlib.sha256(str(seed).encode()).digest()
+    # first 4 octets onto [0, 1); jitter only ever adds delay
+    raw = int.from_bytes(digest[:4], "big") / float(1 << 32)
+
+    return round(delay_ms * (1.0 + raw * start_jitter), 3)
 
 
 @dataclass
@@ -162,6 +181,10 @@ def build_plan(topo):
             link.index, "core", link.instance, subnet,
             Endpoint("pop", a.id, a.node_name, iface_by_key[(link.a, ("core", link.index))], a_addr),
             Endpoint("pop", b.id, b.node_name, iface_by_key[(link.b, ("core", link.index))], b_addr),
+            bandwidth_mbps=link.bandwidth_mbps,
+            delay_ms=jittered_delay(
+                link.delay_ms, link.start_jitter, link.index,
+            ),
         ))
 
     transits = {}
