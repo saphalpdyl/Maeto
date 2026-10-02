@@ -8,7 +8,6 @@ import (
 	"math"
 	"slices"
 	"strings"
-	"time"
 )
 
 var (
@@ -101,23 +100,6 @@ func (ps PathSet) LogValue() slog.Value {
 	return slog.GroupValue(sources...)
 }
 
-func MinHop(*Edge, *Cost) float64 { return 1 }
-
-func MinIGPMetric(e *Edge, _ *Cost) float64 {
-	switch {
-	case e.TEMetric > 0:
-		return float64(e.TEMetric)
-	case e.Metric > 0:
-		return float64(e.Metric)
-	default:
-		return 1
-	}
-}
-
-func MinDelay(e *Edge, _ *Cost) float64 {
-	return float64(e.Delay) / float64(time.Millisecond)
-}
-
 func MinDimension(dim CostDimension) Objective {
 	return WeightedCost(map[CostDimension]float64{dim: 1})
 }
@@ -147,7 +129,7 @@ func computePath(g *Graph, costs map[EdgeID]*Cost, src, dst NodeID, obj Objectiv
 	}
 
 	if obj == nil {
-		obj = MinIGPMetric
+		return nil, errors.New("objective cannot be nil")
 	}
 
 	if _, exists := g.nodes[src]; !exists {

@@ -32,9 +32,6 @@ func TestWhatIf(t *testing.T) {
 	after := applyOverrides(g, before, whatIf.Overrides)
 
 	objective := whatIf.Objective
-	if objective == nil {
-		objective = MinIGPMetric
-	}
 
 	pairs := whatIf.Pairs
 	if len(pairs) == 0 {

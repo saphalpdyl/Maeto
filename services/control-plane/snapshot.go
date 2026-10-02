@@ -120,6 +120,8 @@ type ControlSnapshot struct {
 	Registry    RegistrySnapshot        `json:"registry"`
 	Tenants     []TenantSnapshot        `json:"tenants"`
 	Paths       []PathSnapshot          `json:"paths"`
+	// newest first, so the ui can render a timeline without sorting
+	PathChanges []PCETickReportReroute `json:"path_changes"`
 }
 
 func SnapshotTopology(graph *Graph, domain SRv6DomainMetadata, costs *CostGraph) TopologySnapshot {
@@ -378,6 +380,7 @@ type SnapshotPublisher struct {
 	tenants   TenantRepository
 	paths     *PathStore
 	costs     *CostGraph
+	changes   *PathChangeStore
 }
 
 func NewSnapshotPublisher(
@@ -391,6 +394,7 @@ func NewSnapshotPublisher(
 	tenants TenantRepository,
 	paths *PathStore,
 	costs *CostGraph,
+	changes *PathChangeStore,
 ) *SnapshotPublisher {
 	return &SnapshotPublisher{
 		publisher: publisher,
@@ -403,6 +407,7 @@ func NewSnapshotPublisher(
 		tenants:   tenants,
 		paths:     paths,
 		costs:     costs,
+		changes:   changes,
 	}
 }
 
@@ -413,6 +418,7 @@ func (s *SnapshotPublisher) Snapshot() ControlSnapshot {
 		Inventory:   SnapshotInventory(s.inventory),
 		Tenants:     SnapshotTenants(s.tenants),
 		Paths:       SnapshotPaths(s.paths.Load()),
+		PathChanges: s.changes.Recent(),
 	}
 
 	if s.registry != nil {

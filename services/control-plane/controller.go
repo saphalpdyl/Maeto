@@ -547,6 +547,7 @@ func (c *Controller) startSnapshotPublisher(ctx context.Context) error {
 		c.tenants,
 		c.pce.PathStore,
 		c.costGraph,
+		c.pce.Changes,
 	)
 
 	go snapshots.Run(ctx)

@@ -44,6 +44,45 @@ defmodule MaetoPane.Fabric.Paths do
     |> Enum.sort_by(&{&1.source, &1.dest, &1.dimension})
   end
 
+  @doc """
+  Recent path changes, newest first, as published by the PCE. Each carries the
+  edges whose cost rose on the departing path, so a reroute can be shown with
+  its reason rather than just its outcome.
+  """
+  def changes(snapshot) do
+    control = Map.get(snapshot, :control) || %{}
+
+    (control["path_changes"] || [])
+    |> Enum.map(fn change ->
+      from = change["from_path"] || %{}
+      to = change["to_path"] || %{}
+
+      %{
+        at: change["at"],
+        src: change["src"],
+        dst: change["dst"],
+        dimension: change["dimension"],
+        kind: change["kind"],
+        from_nodes: from["nodes"] || [],
+        to_nodes: to["nodes"] || [],
+        from_cost: from["cost"],
+        to_cost: to["cost"],
+        causes:
+          (change["causes"] || [])
+          |> Enum.map(fn cause ->
+            %{
+              edge: cause["edge"],
+              dimension: cause["dimension"],
+              was: cause["was"],
+              now: cause["now"],
+              delta: cause["delta"],
+              share: cause["share"]
+            }
+          end)
+      }
+    end)
+  end
+
   def computed_index(computed) do
     Map.new(computed, fn path -> {{path.source, path.dest, path.dimension}, path} end)
   end

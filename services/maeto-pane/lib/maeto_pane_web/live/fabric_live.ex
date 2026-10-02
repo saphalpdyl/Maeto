@@ -15,6 +15,7 @@ defmodule MaetoPaneWeb.FabricLive do
   alias MaetoPane.Fabric.Paths
 
   @sections [
+    {:changes, "Changes", "hero-arrow-path"},
     {:links, "Links", "hero-link"},
     {:computed, "Computed", "hero-cpu-chip"},
     {:paths, "Segment lists", "hero-arrows-right-left"},
@@ -63,7 +64,7 @@ defmodule MaetoPaneWeb.FabricLive do
   end
 
   def handle_event("section", %{"section" => section}, socket)
-      when section in ~w(paths links computed sites registry) do
+      when section in ~w(changes paths links computed sites registry) do
     {:noreply, assign(socket, :section, String.to_existing_atom(section))}
   end
 
@@ -82,6 +83,7 @@ defmodule MaetoPaneWeb.FabricLive do
     sites = Paths.sites(snapshot)
     links = links(graph)
     computed = Paths.computed(snapshot)
+    changes = Paths.changes(snapshot)
 
     socket
     |> assign(:connected_to_nats, snapshot.connected)
@@ -92,9 +94,10 @@ defmodule MaetoPaneWeb.FabricLive do
     |> assign(:sites, sites)
     |> assign(:links, links)
     |> assign(:computed, computed)
+    |> assign(:changes, changes)
     |> assign(:sites_by_node, Enum.frequencies_by(sites, & &1.attach))
     |> assign(:issues, Analysis.issues(nodes) ++ Analysis.drift(registry) ++ Paths.issues(rows))
-    |> assign(:facts, facts(graph, links, sites, rows, computed))
+    |> assign(:facts, facts(graph, links, sites, rows, computed, changes))
     |> assign(:programmed_pairs, MapSet.new(rows, &{&1.pe, &1.dest}))
     |> assign(:ceiling, Enum.max([1.0 | Enum.map(links, & &1.cost)]))
     |> resolve()
@@ -138,7 +141,7 @@ defmodule MaetoPaneWeb.FabricLive do
     end)
   end
 
-  defp facts(graph, links, sites, rows, computed) do
+  defp facts(graph, links, sites, rows, computed, changes) do
     members = Enum.flat_map(graph.links, & &1.edges)
     site_counts = Paths.site_counts(sites)
     path_counts = Paths.path_counts(rows)
@@ -153,10 +156,12 @@ defmodule MaetoPaneWeb.FabricLive do
       paths: path_counts.total,
       paths_installed: path_counts.installed,
       paths_degraded: path_counts.degraded,
-      computed: length(computed)
+      computed: length(computed),
+      changes: length(changes)
     }
   end
 
+  defp count(:changes, facts), do: facts.changes
   defp count(:paths, facts), do: facts.paths
   defp count(:links, facts), do: facts.links
   defp count(:computed, facts), do: facts.computed
@@ -233,11 +238,15 @@ defmodule MaetoPaneWeb.FabricLive do
     end
   end
 
+  defp section_title(:changes), do: "Path changes"
   defp section_title(:paths), do: "Segment lists"
   defp section_title(:computed), do: "Computed paths"
   defp section_title(:links), do: "Links"
   defp section_title(:sites), do: "Sites"
   defp section_title(:registry), do: "Service registry"
+
+  defp section_caption(:changes, _facts, _registry),
+    do: "Reroutes and near-misses, newest first, with the edge whose cost moved"
 
   defp section_caption(:paths, facts, _registry),
     do: "#{facts.paths_installed} of #{facts.paths} programmed, desired against the observed FIB"
@@ -437,6 +446,8 @@ defmodule MaetoPaneWeb.FabricLive do
           <div class="grid grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
             <div class="mt-scroll overflow-x-auto rounded-lg border border-line bg-surface">
               <%= case @section do %>
+                <% :changes -> %>
+                  <.changes_table changes={@changes} selection={@selection} />
                 <% :paths -> %>
                   <.paths_table paths={@paths} selection={@selection} />
                 <% :links -> %>
@@ -565,6 +576,73 @@ defmodule MaetoPaneWeb.FabricLive do
     </table>
     """
   end
+
+  attr :changes, :list, required: true
+  attr :selection, :any, required: true
+
+  defp changes_table(assigns) do
+    ~H"""
+    <table class="w-full min-w-[640px] border-collapse text-left text-[13px]">
+      <thead class="border-b border-line text-xs font-medium text-muted">
+        <tr>
+          <th class="px-4 py-2.5">When</th>
+          <th class="py-2.5">Pair</th>
+          <th class="py-2.5">Change</th>
+          <th class="py-2.5">Because</th>
+          <th class="px-4 py-2.5 text-right">Cost</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr
+          :for={{change, i} <- Enum.with_index(@changes)}
+          id={"change-#{i}"}
+          class="border-b border-line last:border-0"
+        >
+          <td class="px-4 py-2.5 font-mono text-xs whitespace-nowrap text-muted">
+            {clock(change.at)}
+          </td>
+          <td class="py-2.5 font-mono font-medium whitespace-nowrap text-accent">
+            {change.src} &rarr; {change.dst}
+          </td>
+          <td class="py-2.5 font-mono text-xs text-muted">
+            <.pill tone={kind_tone(change.kind)}>{change.kind}</.pill>
+            <span :if={change.from_nodes != []} class="ml-2">
+              {Enum.join(change.from_nodes, " ")} &rarr;
+            </span>
+            <span class="text-ink">{Enum.join(change.to_nodes, " ")}</span>
+          </td>
+          <td class="py-2.5 text-xs text-muted">
+            <%= case change.causes do %>
+              <% [] -> %>
+                <span class="text-faint">-</span>
+              <% [lead | rest] -> %>
+                <span class="font-mono text-ink">{lead.edge}</span>
+                {num(lead.was)} &rarr; {num(lead.now)}
+                <span class="text-faint">({pct(lead.share)})</span>
+                <span :if={rest != []} class="text-faint">+{length(rest)} more</span>
+            <% end %>
+          </td>
+          <td class="px-4 py-2.5 text-right font-mono tabular-nums whitespace-nowrap">
+            <span :if={change.from_cost} class="text-muted">{num(change.from_cost)} &rarr;</span>
+            {num(change.to_cost)}
+          </td>
+        </tr>
+        <tr :if={@changes == []}>
+          <td class="px-4 py-6 text-center text-xs text-faint" colspan="5">
+            No path changes recorded yet
+          </td>
+        </tr>
+      </tbody>
+    </table>
+    """
+  end
+
+  defp kind_tone("rerouted"), do: "ok"
+  defp kind_tone("gated"), do: "warn"
+  defp kind_tone(_), do: "faint"
+
+  defp pct(nil), do: "-"
+  defp pct(share), do: "#{round(share * 100)}%"
 
   attr :links, :list, required: true
   attr :selection, :any, required: true

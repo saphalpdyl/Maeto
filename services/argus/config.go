@@ -1,10 +1,11 @@
 package argus
 
 import (
-	"github.com/saphalpdyl/maeto/libs/common"
 	"log/slog"
 	"os"
 	"strconv"
+
+	"github.com/saphalpdyl/maeto/libs/common"
 )
 
 type DetectorConfig struct {
