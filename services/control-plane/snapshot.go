@@ -36,7 +36,9 @@ type TopologyEdgeSnapshot struct {
 	TEMetric    int     `json:"te_metric"`
 	Bandwidth   float64 `json:"bandwidth"`
 	DelayMS     float64 `json:"delay_ms"`
-	Up          bool    `json:"up"`
+	// measured costs per dimension, empty until telemetry has landed for the edge
+	Costs map[CostDimension]float64 `json:"costs,omitempty"`
+	Up    bool                      `json:"up"`
 }
 
 type TopologyPrefixSnapshot struct {
@@ -120,7 +122,7 @@ type ControlSnapshot struct {
 	Paths       []PathSnapshot          `json:"paths"`
 }
 
-func SnapshotTopology(graph *Graph, domain SRv6DomainMetadata) TopologySnapshot {
+func SnapshotTopology(graph *Graph, domain SRv6DomainMetadata, costs *CostGraph) TopologySnapshot {
 	snapshot := TopologySnapshot{
 		Nodes:    []TopologyNodeSnapshot{},
 		Edges:    []TopologyEdgeSnapshot{},
@@ -151,7 +153,14 @@ func SnapshotTopology(graph *Graph, domain SRv6DomainMetadata) TopologySnapshot 
 		})
 	}
 
+	costSnapshot := costs.Costs()
+
 	for _, edge := range dedupeEdges(graph.edges) {
+		var edgeCosts map[CostDimension]float64
+		if cost, ok := costSnapshot[edge.ID]; ok && cost != nil {
+			edgeCosts = cost.Costs
+		}
+
 		snapshot.Edges = append(snapshot.Edges, TopologyEdgeSnapshot{
 			ID:          string(edge.ID),
 			Local:       string(edge.Local),
@@ -166,6 +175,7 @@ func SnapshotTopology(graph *Graph, domain SRv6DomainMetadata) TopologySnapshot 
 			TEMetric:    edge.TEMetric,
 			Bandwidth:   edge.Bandwidth,
 			DelayMS:     float64(edge.Delay) / float64(time.Millisecond),
+			Costs:       edgeCosts,
 			Up:          edge.Up,
 		})
 	}
@@ -367,6 +377,7 @@ type SnapshotPublisher struct {
 	registry  *ServiceRegistry
 	tenants   TenantRepository
 	paths     *PathStore
+	costs     *CostGraph
 }
 
 func NewSnapshotPublisher(
@@ -379,6 +390,7 @@ func NewSnapshotPublisher(
 	registry *ServiceRegistry,
 	tenants TenantRepository,
 	paths *PathStore,
+	costs *CostGraph,
 ) *SnapshotPublisher {
 	return &SnapshotPublisher{
 		publisher: publisher,
@@ -390,13 +402,14 @@ func NewSnapshotPublisher(
 		registry:  registry,
 		tenants:   tenants,
 		paths:     paths,
+		costs:     costs,
 	}
 }
 
 func (s *SnapshotPublisher) Snapshot() ControlSnapshot {
 	snapshot := ControlSnapshot{
 		PublishedAt: time.Now(),
-		Topology:    SnapshotTopology(s.graph, s.domain),
+		Topology:    SnapshotTopology(s.graph, s.domain, s.costs),
 		Inventory:   SnapshotInventory(s.inventory),
 		Tenants:     SnapshotTenants(s.tenants),
 		Paths:       SnapshotPaths(s.paths.Load()),

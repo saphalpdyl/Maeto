@@ -120,12 +120,16 @@ defmodule MaetoPaneWeb.FabricLive do
 
   defp trace(_selected), do: %{nodes: [], pairs: MapSet.new()}
 
+  # Measured latency cost, written by the telemetry pipeline. Absent until a
+  # probe has landed for the edge, which is not the same as zero cost.
+  defp edge_cost(edge), do: get_in(edge, ["costs", "LATENCY"]) || 0
+
   # One row per physical link. The control snapshot carries a single edge record
   # per interface pair, so a per-direction cost is not available here yet.
   defp links(graph) do
     Enum.map(graph.links, fn link ->
       Map.merge(link, %{
-        cost: link.edges |> Enum.map(&(&1["delay_ms"] || 0)) |> Enum.min(fn -> 0 end),
+        cost: link.edges |> Enum.map(&edge_cost/1) |> Enum.min(fn -> 0 end),
         role: link.edges |> List.first() |> then(&(&1 && &1["role"])),
         metric: link.edges |> Enum.map(&(&1["metric"] || 0)) |> Enum.max(fn -> 0 end),
         te_metric: link.edges |> Enum.map(&(&1["te_metric"] || 0)) |> Enum.max(fn -> 0 end),

@@ -27,9 +27,7 @@ const (
 )
 
 type Cost struct {
-	FromEdge *Edge
-	ToEdge   *Edge
-
+	Edge  *Edge
 	Costs map[CostDimension]float64
 }
 
@@ -57,8 +55,7 @@ func NewTestCostGraph(
 			}
 
 			cg.graph[e] = &Cost{
-				FromEdge: edge,
-				ToEdge:   edge,
+				Edge: edge,
 				Costs: map[CostDimension]float64{
 					COSTDIM_LOSS:    5,
 					COSTDIM_LATENCY: 5,
@@ -69,6 +66,18 @@ func NewTestCostGraph(
 	}
 
 	return cg, nil
+}
+
+func (c *CostGraph) UpdateCost(id EdgeID, dim CostDimension, cost float64) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	edge, exists := c.graph[id]
+	if !exists {
+		return
+	}
+
+	edge.Costs[dim] = cost
 }
 
 func (c *CostGraph) Costs() map[EdgeID]*Cost {
@@ -82,9 +91,8 @@ func (c *CostGraph) Costs() map[EdgeID]*Cost {
 	costs := make(map[EdgeID]*Cost, len(c.graph))
 	for id, cost := range c.graph {
 		costs[id] = &Cost{
-			FromEdge: cost.FromEdge,
-			ToEdge:   cost.ToEdge,
-			Costs:    maps.Clone(cost.Costs),
+			Edge:  cost.Edge,
+			Costs: maps.Clone(cost.Costs),
 		}
 	}
 

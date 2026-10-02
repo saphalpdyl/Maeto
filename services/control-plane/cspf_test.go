@@ -65,8 +65,7 @@ func flatCosts(g *Graph, loss, latency, jitter float64) map[EdgeID]*Cost {
 	costs := make(map[EdgeID]*Cost, len(g.edges))
 	for id, edge := range g.edges {
 		costs[id] = &Cost{
-			FromEdge: edge,
-			ToEdge:   edge,
+			Edge: edge,
 			Costs: map[CostDimension]float64{
 				COSTDIM_LOSS:    loss,
 				COSTDIM_LATENCY: latency,

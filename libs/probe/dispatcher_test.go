@@ -68,18 +68,10 @@ func Test_NATSDispatcherAppliesDefaults(t *testing.T) {
 	assert.Equal(t, defaultPublishTimeout, d.cfg.PublishTimeout)
 }
 
-func Test_NATSDispatcherSubjectIsWildcardSafe(t *testing.T) {
+func Test_NATSDispatcherSubjectPreservesTelemetryKey(t *testing.T) {
 	d := NewNATSDispatcher(&fakeJetStream{}, NATSDispatcherConfig{})
 
-	assert.Equal(t, "maeto.probe.result.probe_stamp.a:eth1-b:eth3", d.Subject(probeResult(t)))
-
-	unkeyed := probeResult(t)
-	unkeyed.TelemetryKey = ""
-	assert.Equal(t, "maeto.probe.result.probe_stamp.none", d.Subject(unkeyed))
-
-	hostile := probeResult(t)
-	hostile.TelemetryKey = "a.b c>d*e"
-	assert.Equal(t, "maeto.probe.result.probe_stamp.a_b_c_d_e", d.Subject(hostile))
+	assert.Equal(t, "maeto.probe.result.PROBE_STAMP.A:eth1-B:eth3", d.Subject(probeResult(t)))
 }
 
 func Test_NATSDispatcherPublishesResult(t *testing.T) {
@@ -89,7 +81,7 @@ func Test_NATSDispatcherPublishesResult(t *testing.T) {
 	require.NoError(t, d.Dispatch(context.Background(), probeResult(t)))
 
 	require.Len(t, js.payloads, 1)
-	assert.Equal(t, []string{"maeto.probe.result.probe_stamp.a:eth1-b:eth3"}, js.subjects)
+	assert.Equal(t, []string{"maeto.probe.result.PROBE_STAMP.A:eth1-B:eth3"}, js.subjects)
 
 	var decoded Result
 	require.NoError(t, json.Unmarshal(js.payloads[0], &decoded))

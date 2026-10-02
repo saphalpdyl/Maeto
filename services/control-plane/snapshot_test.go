@@ -22,7 +22,7 @@ func loadTestGraph(t *testing.T) *Graph {
 
 func TestSnapshotDropsMirroredEdges(t *testing.T) {
 	graph := loadTestGraph(t)
-	snapshot := SnapshotTopology(graph, SRv6DomainMetadata{})
+	snapshot := SnapshotTopology(graph, SRv6DomainMetadata{}, nil)
 
 	if len(graph.edges) != 2*len(snapshot.Edges) {
 		t.Fatalf("expected half of %d graph edges, got %d", len(graph.edges), len(snapshot.Edges))
@@ -48,10 +48,10 @@ func TestSnapshotDropsMirroredEdges(t *testing.T) {
 func TestSnapshotEdgesAreStableAcrossRuns(t *testing.T) {
 	graph := loadTestGraph(t)
 
-	first := SnapshotTopology(graph, SRv6DomainMetadata{})
+	first := SnapshotTopology(graph, SRv6DomainMetadata{}, nil)
 
 	for range 20 {
-		next := SnapshotTopology(graph, SRv6DomainMetadata{})
+		next := SnapshotTopology(graph, SRv6DomainMetadata{}, nil)
 
 		if len(next.Edges) != len(first.Edges) {
 			t.Fatalf("edge count changed: %d then %d", len(first.Edges), len(next.Edges))

@@ -19,6 +19,12 @@ cytoscape.use(fcose)
 const NODE_W = 172
 const NODE_H = 58
 
+// the card is a raster as far as cytoscape is concerned: the browser rasterises
+// the data uri at the svg's intrinsic size, then cytoscape paints it onto a
+// canvas scaled by devicePixelRatio and again by zoom. drawing it larger and
+// letting background-width scale it back down is what keeps the text sharp.
+const CARD_SCALE = Math.min(4, Math.ceil((window.devicePixelRatio || 1) * 2))
+
 const token = name => {
   const value = getComputedStyle(document.documentElement).getPropertyValue(name)
   return value.trim() || "#888888"
@@ -83,7 +89,7 @@ const card = (colors, data) => {
   const mono = "ui-monospace, SFMono-Regular, Menlo, monospace"
   const sans = "ui-sans-serif, system-ui, -apple-system, sans-serif"
 
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${NODE_W}" height="${NODE_H}">
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${NODE_W * CARD_SCALE}" height="${NODE_H * CARD_SCALE}" viewBox="0 0 ${NODE_W} ${NODE_H}">
     <circle cx="13" cy="15" r="3.5" fill="${statusColor(colors, data.status)}"/>
     <text x="23" y="19" font-family="${mono}" font-size="12" font-weight="600" fill="${colors.ink}">${escape(clip(data.id, 4))}</text>
     <text x="${23 + 9 * String(clip(data.id, 4)).length + 6}" y="19" font-family="${sans}" font-size="11" fill="${colors.muted}">${escape(clip(data.name, 12))}</text>

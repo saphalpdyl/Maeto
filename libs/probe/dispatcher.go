@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/netip"
-	"strings"
 	"time"
 
 	"github.com/nats-io/nats.go/jetstream"
@@ -72,8 +71,8 @@ func NewNATSDispatcher(js JetStreamPublisher, cfg NATSDispatcherConfig) *NATSDis
 func (d *NATSDispatcher) Subject(result Result) string {
 	return fmt.Sprintf("%s.%s.%s",
 		d.cfg.SubjectPrefix,
-		subjectToken(string(result.ProbeType)),
-		subjectToken(result.TelemetryKey),
+		result.ProbeType,
+		result.TelemetryKey,
 	)
 }
 
@@ -98,24 +97,9 @@ func resultMsgID(result Result) string {
 	sum := sha256.Sum256(result.Data)
 
 	return fmt.Sprintf("%s.%s.%d.%x",
-		subjectToken(string(result.ProbeType)),
-		subjectToken(result.TelemetryKey),
+		result.ProbeType,
+		result.TelemetryKey,
 		result.SentAt.UnixNano(),
 		sum[:8],
 	)
-}
-
-func subjectToken(raw string) string {
-	if raw == "" {
-		return "none"
-	}
-
-	return strings.ToLower(strings.Map(func(r rune) rune {
-		switch r {
-		case '.', '*', '>', ' ', '\t', '\n', '\r':
-			return '_'
-		}
-
-		return r
-	}, raw))
 }

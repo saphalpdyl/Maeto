@@ -28,6 +28,7 @@ type Controller struct {
 	tenants             TenantRepository
 	serviceRegistry     *ServiceRegistry
 	pce                 *PCE
+	costGraph           *CostGraph
 	telemetryCollectors map[NodeID]*TelemetryCollector
 
 	ready bool
@@ -85,6 +86,11 @@ func NewController(
 		slog.Int("tenants", len(tenants.Tenants())),
 	)
 
+	costGraph, err := NewTestCostGraph(topology.Graph())
+	if err != nil {
+		return nil, fmt.Errorf("failed to create cost graph: %w", err)
+	}
+
 	// Telemetry collectors
 	// inventory is more authoritative than topology
 	telemetryCollectors := make(map[NodeID]*TelemetryCollector)
@@ -94,6 +100,9 @@ func NewController(
 			logger.With(log.Domain(log.DomainTelemetryCollection)),
 			n.ID,
 			fmt.Sprintf("%s.%s", probe.ProbeResultSubjectPrefix, string(n.ID)),
+			inventory,
+			topology,
+			costGraph,
 		)
 	}
 
@@ -101,11 +110,6 @@ func NewController(
 	intentPublisher, err := nodesync.NewPublisher(ctx, js, nodesync.IntentBucket)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create intent publisher: %w", err)
-	}
-
-	costGraph, err := NewTestCostGraph(topology.Graph())
-	if err != nil {
-		return nil, fmt.Errorf("failed to create cost graph: %w", err)
 	}
 
 	sr := NewServiceRegistry(
@@ -121,10 +125,12 @@ func NewController(
 		logger: logger,
 		js:     js,
 
-		topology:        topology,
-		inventory:       inventory,
-		tenants:         tenants,
-		serviceRegistry: sr,
+		topology:            topology,
+		inventory:           inventory,
+		tenants:             tenants,
+		serviceRegistry:     sr,
+		telemetryCollectors: telemetryCollectors,
+		costGraph:           costGraph,
 		pce: NewPCE(
 			costGraph,
 			pceUpdatesChan,
@@ -185,7 +191,7 @@ func (c *Controller) Start(ctx context.Context) {
 				LocalLoopback:  n.Loopback,
 				PeerInterface:  e.RemoteIface,
 				LocalInterface: e.LocalIface,
-				TelemetryKey:   string(e.ID),
+				TelemetryKey:   fmt.Sprintf("%s:%s-%s:%s", string(n.ID), e.LocalIface, string(remoteNode.ID), e.RemoteIface),
 			}
 
 			peers[e.LocalIface] = peerIntent
@@ -197,29 +203,6 @@ func (c *Controller) Start(ctx context.Context) {
 			continue
 		}
 	}
-
-	if err := c.ensureProbeResultStream(ctx); err != nil {
-		c.logger.ErrorContext(ctx, "failed to ensure probe result stream", log.Err(err))
-		return
-	}
-
-	for _, collector := range c.telemetryCollectors {
-		err := collector.Start(ctx)
-		if err != nil {
-			c.logger.ErrorContext(ctx, "failed to start telemetry collector", log.Err(err))
-			continue
-		}
-
-		c.logger.InfoContext(ctx, fmt.Sprintf("telemetry collector started successfully, consuming at %s", collector.SubjectPrefix))
-	}
-
-	go func() {
-		<-ctx.Done()
-
-		for _, collector := range c.telemetryCollectors {
-			collector.Stop()
-		}
-	}()
 
 	if err := c.setupHealthEndpoint(ctx); err != nil {
 		return
@@ -239,6 +222,8 @@ func (c *Controller) Start(ctx context.Context) {
 
 	go c.startPCEUpdatesDispatcher(ctx)
 
+	c.startTelemetryCollection(ctx)
+
 	c.startDebugTools(
 		ctx,
 		c.logger.With(log.Domain(log.DomainDebugTools)),
@@ -246,6 +231,30 @@ func (c *Controller) Start(ctx context.Context) {
 
 	c.ready = true
 
+}
+
+func (c *Controller) startTelemetryCollection(ctx context.Context) {
+	if err := c.ensureProbeResultStream(ctx); err != nil {
+		c.logger.ErrorContext(ctx, "failed to ensure probe result stream", log.Err(err))
+		return
+	}
+
+	for _, collector := range c.telemetryCollectors {
+		if err := collector.Start(ctx); err != nil {
+			c.logger.ErrorContext(ctx, "failed to start telemetry collector", log.Err(err))
+			continue
+		}
+
+		c.logger.InfoContext(ctx, fmt.Sprintf("telemetry collector started successfully, consuming at %s", collector.SubjectPrefix))
+	}
+
+	go func() {
+		<-ctx.Done()
+
+		for _, collector := range c.telemetryCollectors {
+			collector.Stop()
+		}
+	}()
 }
 
 // ensureProbeResultStream owns the shared probe result stream. Every agent
@@ -537,6 +546,7 @@ func (c *Controller) startSnapshotPublisher(ctx context.Context) error {
 		c.serviceRegistry,
 		c.tenants,
 		c.pce.PathStore,
+		c.costGraph,
 	)
 
 	go snapshots.Run(ctx)
