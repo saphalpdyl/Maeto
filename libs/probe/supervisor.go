@@ -143,14 +143,6 @@ func (s *Supervisor) Start(ctx context.Context) error {
 				}
 				s.logger.InfoContext(ctx, "got peer intent ", slog.Any("intent", intent.Peers))
 
-				encapType := dataplane.EncapTypeEndX
-				proto := dataplane.ProtoLinuxISISDefault
-				localEndXSIDs, err := s.dataplane.GetSIDs(&encapType, &proto)
-				if err != nil {
-					return err
-				}
-
-				// TODO: ugly
 				var localLoopback *netip.Prefix
 
 				// Convert the peer intents into STAMP configs
@@ -158,26 +150,6 @@ func (s *Supervisor) Start(ctx context.Context) error {
 				for _, p := range intent.Peers {
 					if localLoopback == nil {
 						localLoopback = &p.LocalLoopback
-					}
-
-					var dstSID *netip.Addr
-					for _, sid := range localEndXSIDs {
-						if sid.Dev == p.LocalInterface {
-							parsedNetipAddr, ok := netip.AddrFromSlice(sid.Dst.IP)
-							if !ok {
-								s.logger.ErrorContext(ctx, "failed to parse sid from local endXSID")
-								break
-							}
-
-							dstSID = &parsedNetipAddr
-
-							break
-						}
-					}
-
-					if dstSID == nil {
-						s.logger.WarnContext(ctx, "could not find matching destination SID", slog.String("localInterface", p.LocalInterface), slog.Any("currentSIDs", localEndXSIDs))
-						continue
 					}
 
 					stampConfig := ProbeConfigSTAMP{
@@ -208,7 +180,7 @@ func (s *Supervisor) Start(ctx context.Context) error {
 
 				cfgMap[reflectorStampConfig.GetID()] = &reflectorStampConfig
 
-				err = s.reconcileWithTarget(ctx, cfgMap)
+				err := s.reconcileWithTarget(ctx, cfgMap)
 				if err != nil {
 					s.logger.ErrorContext(ctx, "failed to reconcileWithTarget", slog.Any("error", err))
 				}

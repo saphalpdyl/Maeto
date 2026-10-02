@@ -23,22 +23,22 @@ type TopologyNodeSnapshot struct {
 }
 
 type TopologyEdgeSnapshot struct {
-	ID          string  `json:"id"`
-	Local       string  `json:"local"`
-	Remote      string  `json:"remote"`
-	Role        string  `json:"role"`
-	LocalIface  string  `json:"local_iface"`
-	RemoteIface string  `json:"remote_iface"`
-	LocalAddr   string  `json:"local_addr"`
-	RemoteAddr  string  `json:"remote_addr"`
-	Subnet      string  `json:"subnet"`
-	Metric      int     `json:"metric"`
-	TEMetric    int     `json:"te_metric"`
-	Bandwidth   float64 `json:"bandwidth"`
-	DelayMS     float64 `json:"delay_ms"`
-	// measured costs per dimension, empty until telemetry has landed for the edge
-	Costs map[CostDimension]float64 `json:"costs,omitempty"`
-	Up    bool                      `json:"up"`
+	ID          string                     `json:"id"`
+	Local       string                     `json:"local"`
+	Remote      string                     `json:"remote"`
+	Role        string                     `json:"role"`
+	LocalIface  string                     `json:"local_iface"`
+	RemoteIface string                     `json:"remote_iface"`
+	LocalAddr   string                     `json:"local_addr"`
+	RemoteAddr  string                     `json:"remote_addr"`
+	Subnet      string                     `json:"subnet"`
+	Metric      int                        `json:"metric"`
+	TEMetric    int                        `json:"te_metric"`
+	Bandwidth   float64                    `json:"bandwidth"`
+	DelayMS     float64                    `json:"delay_ms"`
+	Costs       map[CostDimension]float64  `json:"costs,omitempty"`
+	Reservation *BandwidthReservationState `json:"reservation,omitempty"`
+	Up          bool                       `json:"up"`
 }
 
 type TopologyPrefixSnapshot struct {
@@ -120,11 +120,10 @@ type ControlSnapshot struct {
 	Registry    RegistrySnapshot        `json:"registry"`
 	Tenants     []TenantSnapshot        `json:"tenants"`
 	Paths       []PathSnapshot          `json:"paths"`
-	// newest first, so the ui can render a timeline without sorting
-	PathChanges []PCETickReportReroute `json:"path_changes"`
+	PathChanges []PCETickReportReroute  `json:"path_changes"`
 }
 
-func SnapshotTopology(graph *Graph, domain SRv6DomainMetadata, costs *CostGraph) TopologySnapshot {
+func SnapshotTopology(graph *Graph, domain SRv6DomainMetadata, costs *CostGraph, reservations *BandwidthReservationRegistry) TopologySnapshot {
 	snapshot := TopologySnapshot{
 		Nodes:    []TopologyNodeSnapshot{},
 		Edges:    []TopologyEdgeSnapshot{},
@@ -156,11 +155,17 @@ func SnapshotTopology(graph *Graph, domain SRv6DomainMetadata, costs *CostGraph)
 	}
 
 	costSnapshot := costs.Costs()
+	reservationSnapshot := reservations.Snapshot(graph)
 
 	for _, edge := range dedupeEdges(graph.edges) {
 		var edgeCosts map[CostDimension]float64
 		if cost, ok := costSnapshot[edge.ID]; ok && cost != nil {
 			edgeCosts = cost.Costs
+		}
+
+		var reservation *BandwidthReservationState
+		if state, ok := reservationSnapshot[edge.ID]; ok {
+			reservation = &state
 		}
 
 		snapshot.Edges = append(snapshot.Edges, TopologyEdgeSnapshot{
@@ -178,6 +183,7 @@ func SnapshotTopology(graph *Graph, domain SRv6DomainMetadata, costs *CostGraph)
 			Bandwidth:   edge.Bandwidth,
 			DelayMS:     float64(edge.Delay) / float64(time.Millisecond),
 			Costs:       edgeCosts,
+			Reservation: reservation,
 			Up:          edge.Up,
 		})
 	}
@@ -381,6 +387,7 @@ type SnapshotPublisher struct {
 	paths     *PathStore
 	costs     *CostGraph
 	changes   *PathChangeStore
+	bookings  *BandwidthReservationRegistry
 }
 
 func NewSnapshotPublisher(
@@ -395,6 +402,7 @@ func NewSnapshotPublisher(
 	paths *PathStore,
 	costs *CostGraph,
 	changes *PathChangeStore,
+	bookings *BandwidthReservationRegistry,
 ) *SnapshotPublisher {
 	return &SnapshotPublisher{
 		publisher: publisher,
@@ -408,13 +416,14 @@ func NewSnapshotPublisher(
 		paths:     paths,
 		costs:     costs,
 		changes:   changes,
+		bookings:  bookings,
 	}
 }
 
 func (s *SnapshotPublisher) Snapshot() ControlSnapshot {
 	snapshot := ControlSnapshot{
 		PublishedAt: time.Now(),
-		Topology:    SnapshotTopology(s.graph, s.domain, s.costs),
+		Topology:    SnapshotTopology(s.graph, s.domain, s.costs, s.bookings),
 		Inventory:   SnapshotInventory(s.inventory),
 		Tenants:     SnapshotTenants(s.tenants),
 		Paths:       SnapshotPaths(s.paths.Load()),

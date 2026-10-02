@@ -37,31 +37,31 @@ cpes:
     tenant: 273
     prefix: fd7a:3921:111:1::/64
     portal_id: 83505cf19a08
-    reservation_bandwidth: 200
+    reservation_bandwidth: 700
   - id: cA2
     attach: A
     tenant: 231
     prefix: fd7a:3921:e7:1::/64
     portal_id: 48522cc7549b
-    reservation_bandwidth: 100
+    reservation_bandwidth: 250
   - id: cA3
     attach: A
     tenant: 231
     prefix: fd7a:3921:e7:2::/64
     portal_id: 32522cc7549b
-    reservation_bandwidth: 50
+    reservation_bandwidth: 400
   - id: cA4
     attach: G
     tenant: 231
     prefix: fd7a:3921:e7:bb24::/64
     portal_id: 32527fa75219
-    reservation_bandwidth: 50
+    reservation_bandwidth: 300
   - id: cC
     attach: C
     tenant: 273
     prefix: fd7a:3921:111:2::/64
     portal_id: aa400723fee3
-    reservation_bandwidth: 150
+    reservation_bandwidth: 600
 
 links:
   - a: A
@@ -85,7 +85,7 @@ links:
     parallel:
       - bandwidth: 1000
         delay: 5
-      - bandwidth: 1000
+      - bandwidth: 1400
         delay: 6
   - a: B
     b: D
@@ -117,7 +117,7 @@ links:
   - a: E
     b: F
     parallel:
-      - bandwidth: 1000
+      - bandwidth: 1200
         delay: 5
   - a: F
     b: G

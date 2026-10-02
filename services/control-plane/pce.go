@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
-	"sort"
 	"sync"
 	"time"
 
@@ -13,7 +12,10 @@ import (
 )
 
 type PCE struct {
-	costGraph  *CostGraph
+	costGraph               *CostGraph
+	tenants                 TenantRepository
+	bandwidthReservationReg BandwidthReservationRegistry
+
 	reportChan chan<- PathSet
 	logger     *slog.Logger
 	PathStore  *PathStore
@@ -24,13 +26,15 @@ type PCE struct {
 	previousCosts map[EdgeID]*Cost
 }
 
-func NewPCE(costGraph *CostGraph, reportChan chan<- PathSet, logger *slog.Logger) *PCE {
+func NewPCE(costGraph *CostGraph, tenants TenantRepository, reportChan chan<- PathSet, logger *slog.Logger) *PCE {
 	return &PCE{
-		costGraph:  costGraph,
-		logger:     logger,
-		reportChan: reportChan,
-		PathStore:  NewPathStore(),
-		Changes:    NewPathChangeStore(),
+		costGraph:               costGraph,
+		tenants:                 tenants,
+		logger:                  logger,
+		reportChan:              reportChan,
+		PathStore:               NewPathStore(),
+		Changes:                 NewPathChangeStore(),
+		bandwidthReservationReg: NewBandwidthReservationRegistry(),
 	}
 }
 
@@ -55,96 +59,192 @@ func (p *PCE) Run(ctx context.Context, graph *Graph) {
 
 			graph.mu.RLock()
 
-			costSnapshot := p.costGraph.Costs()
-			for _, srcNode := range graph.nodes {
-				for _, destNode := range graph.nodes {
-					if srcNode.ID == destNode.ID {
+			// Blindly compute paths
+			for _, n1 := range graph.nodes {
+				for _, n2 := range graph.nodes {
+					if n1.ID == n2.ID {
 						continue
 					}
 
-					path, err := p.ComputePath(graph, srcNode.ID, destNode.ID, func(e *Edge, c *Cost) float64 {
-						return c.Costs[COSTDIM_LATENCY]
-					})
+					for _, dim := range []CostDimension{COSTDIM_LATENCY} {
+						path, err := p.ComputePath(graph, n1.ID, n2.ID, MinDimension(dim))
+						if err != nil {
+							p.logger.ErrorContext(ctx, "failed to compute paths", "from", n1.ID, "to", n2.ID, "dimension", dim)
+							continue
+						}
 
-					if err != nil {
-						p.logger.ErrorContext(
-							ctx,
-							"failed to compute paths",
-							log.Err(err),
-							slog.String("fromNode", string(srcNode.ID)),
-							slog.String("toNode", string(destNode.ID)),
-						)
-						continue
+						paths.Set(n1.ID, n2.ID, dim, path)
 					}
-
-					previousPath := p.PathStore.Get(srcNode.ID, destNode.ID, COSTDIM_LATENCY)
-					// First pass, no previous path to compare to
-					if previousPath == nil {
-						p.logger.InfoContext(
-							ctx,
-							"no previous path found; likely first pass",
-							slog.String("fromNode", string(srcNode.ID)),
-							slog.String("toNode", string(destNode.ID)),
-							slog.String("dimension", string(COSTDIM_LATENCY)),
-						)
-
-						// Reroute
-						tickReport.Reroutes = append(tickReport.Reroutes, PCETickReportReroute{
-							At:       tickReport.Timestamp,
-							Src:      srcNode.ID,
-							Dst:      destNode.ID,
-							Dim:      COSTDIM_LATENCY,
-							Kind:     PathChangeNew,
-							FromPath: Path{},
-							ToPath:   *path,
-						})
-						paths.Set(srcNode.ID, destNode.ID, COSTDIM_LATENCY, path)
-
-						continue
-					}
-
-					previousPath.Cost = p.rescorePath(previousPath, COSTDIM_LATENCY, graph, costSnapshot)
-
-					// Same path just cost changed?
-					if previousPath.Equal(path) {
-						paths.Set(srcNode.ID, destNode.ID, COSTDIM_LATENCY, path)
-						continue
-					}
-
-					// Gate reroute
-					if (previousPath.Cost / path.Cost) < 1.1 { // Must be at least 10% better
-						// Remain at the previous Path
-						tickReport.GatedReroutes = append(tickReport.GatedReroutes, PCETickReportReroute{
-							At:       tickReport.Timestamp,
-							Src:      srcNode.ID,
-							Dst:      destNode.ID,
-							Dim:      COSTDIM_LATENCY,
-							Kind:     PathChangeGated,
-							FromPath: *previousPath,
-							ToPath:   *path,
-							Causes:   attributeCauses(previousPath, COSTDIM_LATENCY, p.previousCosts, costSnapshot),
-						})
-
-						paths.Set(srcNode.ID, destNode.ID, COSTDIM_LATENCY, previousPath)
-						continue
-					}
-
-					tickReport.Reroutes = append(tickReport.Reroutes, PCETickReportReroute{
-						At:       tickReport.Timestamp,
-						Src:      srcNode.ID,
-						Dst:      destNode.ID,
-						Dim:      COSTDIM_LATENCY,
-						Kind:     PathChangeRerouted,
-						FromPath: *previousPath,
-						ToPath:   *path,
-						Causes:   attributeCauses(previousPath, COSTDIM_LATENCY, p.previousCosts, costSnapshot),
-					})
-					paths.Set(srcNode.ID, destNode.ID, COSTDIM_LATENCY, path)
-
 				}
 			}
 
-			p.logger.InfoContext(ctx, "computed all paths", slog.Any("paths", paths))
+			costSnapshot := p.costGraph.Costs()
+
+			// TODO: Have a semi-determinstic priority-based loop
+			for _, tenant := range p.tenants.Tenants() {
+				for _, tenantSiteFrom := range tenant.Sites {
+				TenantLoopInner:
+					for _, tenantSiteTo := range tenant.Sites {
+						if tenantSiteFrom.Identity == tenantSiteTo.Identity {
+							continue
+						}
+
+						fromNodeId := NodeID(tenantSiteFrom.Attach)
+						toNodeId := NodeID(tenantSiteTo.Attach)
+
+						// TODO: This does overprovisiong, do per POP pair, but im too lazy rn
+						requiredReservation := math.Min(tenantSiteFrom.ReservationMbps, tenantSiteTo.ReservationMbps)
+						computedPath, ok := paths[fromNodeId][toNodeId][COSTDIM_LATENCY]
+						if !ok {
+							var err error
+							computedPath, err = p.ComputePath(graph, fromNodeId, toNodeId, MinDimension(COSTDIM_LATENCY))
+							if err != nil {
+								continue
+							}
+						}
+
+						// Verify that the currently computed path has the bandwidth to support it
+						residualOk := true
+						for _, edgeID := range computedPath.Edges {
+							edge, ok := graph.edges[edgeID]
+							if !ok {
+								residualOk = false
+								p.logger.ErrorContext(ctx, "PCE assigned an unknown Edge ?", slog.String("edgeID", string(edgeID)))
+								break
+							}
+
+							hasCapacity := p.bandwidthReservationReg.CheckCapacity(edge, requiredReservation)
+							if !hasCapacity {
+								residualOk = false
+								break
+							}
+						}
+
+						// The naive path exhausted its capacity
+						if !residualOk {
+							// Prune graph with bandwidth requirements and test
+							prunedGraph, err := p.bandwidthReservationReg.PruneGraph(graph, requiredReservation)
+							if err != nil {
+								continue
+							}
+							computedPath, err = p.ComputePath(prunedGraph, fromNodeId, toNodeId, MinDimension(COSTDIM_LATENCY))
+							if err != nil {
+								p.logger.ErrorContext(ctx, "failed to compute paths; likely exhausted paths", "from", fromNodeId, "to", toNodeId)
+								continue
+							}
+						}
+
+						// Get list of *Edge for registering
+						computedPathEdges := make([]*Edge, len(computedPath.Edges))
+						for i, edgeID := range computedPath.Edges {
+							edge, ok := graph.edges[edgeID]
+							if !ok {
+								p.logger.ErrorContext(ctx, "PCE assigned an unknown Edge ?", slog.String("edgeID", string(edgeID)))
+								continue TenantLoopInner
+							}
+
+							computedPathEdges[i] = edge
+						}
+
+						previousPath := p.PathStore.Get(fromNodeId, toNodeId, COSTDIM_LATENCY)
+						if previousPath == nil {
+							p.logger.InfoContext(
+								ctx,
+								"no previous path found; likely first pass",
+								slog.String("fromNode", string(fromNodeId)),
+								slog.String("toNode", string(toNodeId)),
+								slog.String("dimension", string(COSTDIM_LATENCY)),
+							)
+
+							err := p.bandwidthReservationReg.Move(nil, computedPathEdges, BandwidthReservationAction{
+								ActionType:     BandwidthAdmit,
+								TenantSiteFrom: tenantSiteFrom.Identity,
+								TenantSiteTo:   tenantSiteTo.Identity,
+								Bandwidth:      requiredReservation,
+							})
+							if err != nil {
+								p.logger.ErrorContext(ctx, "failed to admit bandwidth for first pass",
+									"from", fromNodeId, "to", toNodeId, log.Err(err))
+								continue
+							}
+
+							tickReport.Reroutes = append(tickReport.Reroutes, PCETickReportReroute{
+								At:       tickReport.Timestamp,
+								Src:      fromNodeId,
+								Dst:      toNodeId,
+								Dim:      COSTDIM_LATENCY,
+								Kind:     PathChangeNew,
+								FromPath: Path{},
+								ToPath:   *computedPath,
+							})
+
+							paths.Set(fromNodeId, toNodeId, COSTDIM_LATENCY, computedPath)
+							continue
+						}
+
+						// The previous path contains cost of the topology then
+						// realign score to what it is currently
+						previousPath.Cost = p.rescorePath(previousPath, COSTDIM_LATENCY, graph, costSnapshot)
+
+						if previousPath.Equal(computedPath) {
+							paths.Set(fromNodeId, toNodeId, COSTDIM_LATENCY, computedPath)
+							continue
+						}
+
+						// If path change not worth it.
+						if (previousPath.Cost / computedPath.Cost) < 1.1 {
+							tickReport.GatedReroutes = append(tickReport.GatedReroutes, PCETickReportReroute{
+								At:       tickReport.Timestamp,
+								Src:      fromNodeId,
+								Dst:      toNodeId,
+								Dim:      COSTDIM_LATENCY,
+								Kind:     PathChangeGated,
+								FromPath: *previousPath,
+								ToPath:   *computedPath,
+								Causes:   attributeCauses(previousPath, COSTDIM_LATENCY, p.previousCosts, costSnapshot),
+							})
+
+							paths.Set(fromNodeId, toNodeId, COSTDIM_LATENCY, previousPath)
+							continue
+						}
+
+						// freeing an edge that left the graph is a no-op
+						previousPathEdges := make([]*Edge, 0, len(previousPath.Edges))
+						for _, edgeID := range previousPath.Edges {
+							if edge, ok := graph.edges[edgeID]; ok {
+								previousPathEdges = append(previousPathEdges, edge)
+							}
+						}
+
+						err := p.bandwidthReservationReg.Move(previousPathEdges, computedPathEdges, BandwidthReservationAction{
+							ActionType:     BandwidthAdmit,
+							TenantSiteFrom: tenantSiteFrom.Identity,
+							TenantSiteTo:   tenantSiteTo.Identity,
+							Bandwidth:      requiredReservation,
+						})
+						if err != nil {
+							p.logger.ErrorContext(ctx, "failed to move bandwidth reservation",
+								"from", fromNodeId, "to", toNodeId, log.Err(err))
+							continue
+						}
+
+						tickReport.Reroutes = append(tickReport.Reroutes, PCETickReportReroute{
+							At:       tickReport.Timestamp,
+							Src:      fromNodeId,
+							Dst:      toNodeId,
+							Dim:      COSTDIM_LATENCY,
+							Kind:     PathChangeRerouted,
+							FromPath: *previousPath,
+							ToPath:   *computedPath,
+							Causes:   attributeCauses(previousPath, COSTDIM_LATENCY, p.previousCosts, costSnapshot),
+						})
+
+						paths.Set(fromNodeId, toNodeId, COSTDIM_LATENCY, computedPath)
+					}
+				}
+			}
+
+			// the channel send can block; nothing below reads the graph
 			graph.mu.RUnlock()
 
 			tickReport.NewPathSet = paths
@@ -154,8 +254,8 @@ func (p *PCE) Run(ctx context.Context, graph *Graph) {
 			p.Changes.Record(tickReport.Reroutes...)
 			p.Changes.Record(tickReport.GatedReroutes...)
 			p.previousCosts = costSnapshot
-			p.reportChan <- paths
 
+			p.reportChan <- paths
 		}
 	}
 }
@@ -165,11 +265,15 @@ func (p *PCE) rescorePath(path *Path, dim CostDimension, g *Graph, costs map[Edg
 	for _, edgeID := range path.Edges {
 		_, exists := g.edges[edgeID]
 		if !exists {
-			path.Cost = math.Inf(1)
-			break
+			return math.Inf(1)
 		}
 
-		totalCost += costs[edgeID].Costs[dim]
+		cost, exists := costs[edgeID]
+		if !exists {
+			return math.Inf(1)
+		}
+
+		totalCost += cost.Costs[dim]
 	}
 
 	return totalCost
@@ -220,180 +324,4 @@ func (s *PathStore) Load() PathSet {
 	defer s.mu.RUnlock()
 
 	return s.paths
-}
-
-// Carries information on reroute decisions and metrics
-type PCETickReport struct {
-	Reroutes []PCETickReportReroute `json:"reroutes"`
-	// Reroutes that were gated due to not meeting the reroute threshold
-	GatedReroutes []PCETickReportReroute `json:"gated_reroutes"`
-
-	PreviousPathSet PathSet `json:"previous_path_set"`
-	NewPathSet      PathSet `json:"new_path_set"`
-
-	Timestamp time.Time `json:"timestamp"`
-
-	Logger *slog.Logger
-}
-
-type PathChangeKind string
-
-const (
-	PathChangeRerouted PathChangeKind = "rerouted"
-	PathChangeGated    PathChangeKind = "gated"
-	PathChangeNew      PathChangeKind = "new"
-)
-
-type PCETickReportReroute struct {
-	At   time.Time      `json:"at"`
-	Src  NodeID         `json:"src"`
-	Dst  NodeID         `json:"dst"`
-	Dim  CostDimension  `json:"dimension"`
-	Kind PathChangeKind `json:"kind"`
-
-	FromPath Path `json:"from_path"`
-	ToPath   Path `json:"to_path"`
-
-	// edges of the departing path whose cost rose, ranked by how much of the
-	// increase each accounts for. empty on a first-pass path.
-	Causes []PathChangeCause `json:"causes,omitempty"`
-}
-
-type PathChangeCause struct {
-	Edge  EdgeID        `json:"edge"`
-	Dim   CostDimension `json:"dimension"`
-	Was   float64       `json:"was"`
-	Now   float64       `json:"now"`
-	Delta float64       `json:"delta"`
-	Share float64       `json:"share"`
-}
-
-// an edge has to carry at least this share of the increase to be named, so a
-// reroute is not explained by a list of rounding errors
-const causeShareFloor = 0.05
-
-// attributeCauses ranks the departing path's edges by how much their cost rose
-// between two snapshots. Edges that got cheaper are dropped -- they are not why
-// the path was abandoned.
-func attributeCauses(from *Path, dim CostDimension, was, now map[EdgeID]*Cost) []PathChangeCause {
-	if from == nil || len(was) == 0 {
-		return nil
-	}
-
-	causes := make([]PathChangeCause, 0, len(from.Edges))
-	total := 0.0
-
-	for _, id := range from.Edges {
-		prev, hadPrev := was[id]
-		curr, hasCurr := now[id]
-		if !hadPrev || !hasCurr || prev == nil || curr == nil {
-			continue
-		}
-
-		delta := curr.Costs[dim] - prev.Costs[dim]
-		if delta <= 0 {
-			continue
-		}
-
-		total += delta
-		causes = append(causes, PathChangeCause{
-			Edge:  id,
-			Dim:   dim,
-			Was:   prev.Costs[dim],
-			Now:   curr.Costs[dim],
-			Delta: delta,
-		})
-	}
-
-	if total <= 0 {
-		return nil
-	}
-
-	ranked := causes[:0]
-	for _, c := range causes {
-		c.Share = c.Delta / total
-		if c.Share < causeShareFloor {
-			continue
-		}
-
-		ranked = append(ranked, c)
-	}
-
-	sort.Slice(ranked, func(i, j int) bool { return ranked[i].Delta > ranked[j].Delta })
-
-	return ranked
-}
-
-// how far back the frontend can scroll. tick reports are discarded each tick,
-// so retention lives here rather than in the report.
-const recentPathChangeLimit = 64
-
-type PathChangeStore struct {
-	mu      sync.RWMutex
-	changes []PCETickReportReroute
-}
-
-func NewPathChangeStore() *PathChangeStore {
-	return &PathChangeStore{changes: make([]PCETickReportReroute, 0, recentPathChangeLimit)}
-}
-
-func (s *PathChangeStore) Record(changes ...PCETickReportReroute) {
-	if s == nil || len(changes) == 0 {
-		return
-	}
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	s.changes = append(changes, s.changes...)
-	if len(s.changes) > recentPathChangeLimit {
-		s.changes = s.changes[:recentPathChangeLimit]
-	}
-}
-
-// Recent returns the newest changes first.
-func (s *PathChangeStore) Recent() []PCETickReportReroute {
-	if s == nil {
-		return []PCETickReportReroute{}
-	}
-
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	out := make([]PCETickReportReroute, len(s.changes))
-	copy(out, s.changes)
-
-	return out
-}
-
-func (r *PCETickReport) Log(ctx context.Context) {
-	reroutes := make([]slog.Attr, len(r.Reroutes))
-	for i, rr := range r.Reroutes {
-		reroutes[i] = slog.Attr{
-			Key: fmt.Sprintf("%s>%s", rr.Src, rr.Dst),
-			Value: slog.GroupValue(
-				slog.Any("from", &rr.FromPath),
-				slog.Any("to", &rr.ToPath),
-				slog.String("kind", string(rr.Kind)),
-			),
-		}
-	}
-
-	gated := make([]slog.Attr, len(r.GatedReroutes))
-	for i, rr := range r.GatedReroutes {
-		gated[i] = slog.Attr{
-			Key: fmt.Sprintf("%s>%s", rr.Src, rr.Dst),
-			Value: slog.GroupValue(
-				slog.Any("from", &rr.FromPath),
-				slog.Any("to", &rr.ToPath),
-				slog.String("kind", string(rr.Kind)),
-			),
-		}
-	}
-
-	r.Logger.LogAttrs(ctx, slog.LevelInfo, "pce tick report",
-		slog.Time("timestamp", r.Timestamp),
-		slog.Attr{Key: "reroutes", Value: slog.GroupValue(reroutes...)},
-		slog.Attr{Key: "gated_reroutes", Value: slog.GroupValue(gated...)},
-	)
 }

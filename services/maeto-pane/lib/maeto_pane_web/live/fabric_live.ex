@@ -127,12 +127,23 @@ defmodule MaetoPaneWeb.FabricLive do
   # probe has landed for the edge, which is not the same as zero cost.
   defp edge_cost(edge), do: get_in(edge, ["costs", "LATENCY"]) || 0
 
+  defp reservation(edge, field), do: get_in(edge, ["reservation", field]) || 0
+
+  defp utilisation(_booked, bookable) when bookable <= 0, do: 0
+  defp utilisation(booked, bookable), do: booked / bookable
+
+  defp load_tone(ratio) when ratio >= 0.9, do: "bad"
+  defp load_tone(ratio) when ratio >= 0.6, do: "warn"
+  defp load_tone(_ratio), do: "faint"
+
   # One row per physical link. The control snapshot carries a single edge record
   # per interface pair, so a per-direction cost is not available here yet.
   defp links(graph) do
     Enum.map(graph.links, fn link ->
       Map.merge(link, %{
         cost: link.edges |> Enum.map(&edge_cost/1) |> Enum.min(fn -> 0 end),
+        booked: link.edges |> Enum.map(&reservation(&1, "booked_mbps")) |> Enum.sum(),
+        bookable: link.edges |> Enum.map(&reservation(&1, "bookable_mbps")) |> Enum.sum(),
         role: link.edges |> List.first() |> then(&(&1 && &1["role"])),
         metric: link.edges |> Enum.map(&(&1["metric"] || 0)) |> Enum.max(fn -> 0 end),
         te_metric: link.edges |> Enum.map(&(&1["te_metric"] || 0)) |> Enum.max(fn -> 0 end),
@@ -656,6 +667,7 @@ defmodule MaetoPaneWeb.FabricLive do
           <th class="py-2.5">Role</th>
           <th class="py-2.5">Members</th>
           <th class="py-2.5 text-right">Delay</th>
+          <th class="py-2.5 text-right">Reserved</th>
           <th class="py-2.5 text-right">IGP</th>
           <th class="py-2.5 text-right">TE</th>
           <th class="px-4 py-2.5 text-right">State</th>
@@ -682,6 +694,12 @@ defmodule MaetoPaneWeb.FabricLive do
             <span :if={link.down > 0} class="ml-1 text-bad">{link.down} down</span>
           </td>
           <td class="py-2.5 text-right font-mono tabular-nums">{num(link.cost)} ms</td>
+          <td class="py-2.5 text-right font-mono text-xs tabular-nums whitespace-nowrap">
+            <.pill tone={load_tone(utilisation(link.booked, link.bookable))}>
+              {round(utilisation(link.booked, link.bookable) * 100)}%
+            </.pill>
+            <span class="ml-1 text-muted">{num(link.booked)}/{num(link.bookable)}</span>
+          </td>
           <td class="py-2.5 text-right font-mono tabular-nums text-muted">{link.metric}</td>
           <td class="py-2.5 text-right font-mono tabular-nums text-muted">{link.te_metric}</td>
           <td class="px-4 py-2.5 text-right">
@@ -691,7 +709,7 @@ defmodule MaetoPaneWeb.FabricLive do
           </td>
         </tr>
         <tr :if={@links == []}>
-          <td colspan="7" class="px-4 py-10 text-center text-muted">
+          <td colspan="8" class="px-4 py-10 text-center text-muted">
             No adjacency in the control snapshot.
           </td>
         </tr>

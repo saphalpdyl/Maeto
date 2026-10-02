@@ -133,6 +133,7 @@ func NewController(
 		costGraph:           costGraph,
 		pce: NewPCE(
 			costGraph,
+			tenants,
 			pceUpdatesChan,
 			logger.With(log.Domain(log.DomainPCE)),
 		),
@@ -548,6 +549,7 @@ func (c *Controller) startSnapshotPublisher(ctx context.Context) error {
 		c.pce.PathStore,
 		c.costGraph,
 		c.pce.Changes,
+		&c.pce.bandwidthReservationReg,
 	)
 
 	go snapshots.Run(ctx)
