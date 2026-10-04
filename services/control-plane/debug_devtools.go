@@ -111,7 +111,8 @@ func (c *Controller) costGraphOverride(
 		c.pce.costGraph.mu.Lock()
 		defer c.pce.costGraph.mu.Unlock()
 
-		cost, exists := c.pce.costGraph.graph[EdgeID(*payload.EdgeID)]
+		key, exists := c.pce.costGraph.byID[EdgeID(*payload.EdgeID)]
+		cost := c.pce.costGraph.graph[key]
 		if !exists {
 			logger.ErrorContext(ctx, "edge does not exist in cost graph",
 				slog.String("edge_id", *payload.EdgeID))
@@ -143,13 +144,13 @@ func (c *Controller) costGraphOverride(
 		c.pce.costGraph.mu.RLock()
 		defer c.pce.costGraph.mu.RUnlock()
 
-		for _, edgeID := range slices.Sorted(maps.Keys(c.pce.costGraph.graph)) {
+		for _, edgeID := range slices.Sorted(maps.Keys(c.pce.costGraph.byID)) {
 			if len(payload.ListFilterEdgeIDs) > 0 &&
 				!slices.Contains(payload.ListFilterEdgeIDs, string(edgeID)) {
 				continue
 			}
 
-			costs := c.pce.costGraph.graph[edgeID].Costs
+			costs := c.pce.costGraph.graph[c.pce.costGraph.byID[edgeID]].Costs
 			for _, dim := range slices.Sorted(maps.Keys(costs)) {
 				if len(payload.ListFilterCostDimensions) > 0 &&
 					!slices.Contains(payload.ListFilterCostDimensions, dim) {

@@ -22,6 +22,7 @@ var whatIf = struct {
 
 func TestWhatIf(t *testing.T) {
 	g := loadTestGraph(t)
+	pg := NewPCEGraph(g)
 
 	costGraph, err := NewTestCostGraph(g)
 	if err != nil {
@@ -29,21 +30,21 @@ func TestWhatIf(t *testing.T) {
 	}
 
 	before := costGraph.Costs()
-	after := applyOverrides(g, before, whatIf.Overrides)
+	after := applyOverrides(before, whatIf.Overrides)
 
 	objective := whatIf.Objective
 
 	pairs := whatIf.Pairs
 	if len(pairs) == 0 {
-		pairs = allPairs(g)
+		pairs = allPairs(pg)
 	}
 
 	changed := 0
 	t.Logf("%-10s %-22s %-22s %s", "PAIR", "BEFORE", "AFTER", "COST")
 
 	for _, pair := range pairs {
-		wasPath, wasCost := describePath(g, before, pair, objective)
-		nowPath, nowCost := describePath(g, after, pair, objective)
+		wasPath, wasCost := describePath(pg, before, pair, objective)
+		nowPath, nowCost := describePath(pg, after, pair, objective)
 
 		mark := ""
 		if wasPath != nowPath {
@@ -58,7 +59,7 @@ func TestWhatIf(t *testing.T) {
 	t.Logf("%d of %d pairs moved", changed, len(pairs))
 }
 
-func describePath(g *Graph, costs map[EdgeID]*Cost, pair [2]NodeID, obj Objective) (string, float64) {
+func describePath(g *PCEGraph, costs map[CostGraphEdge]*Cost, pair [2]NodeID, obj Objective) (string, float64) {
 	path, err := computePath(g, costs, pair[0], pair[1], obj)
 	if err != nil {
 		return "unreachable", 0
@@ -77,22 +78,17 @@ func describePath(g *Graph, costs map[EdgeID]*Cost, pair [2]NodeID, obj Objectiv
 	return out, path.Cost
 }
 
-func applyOverrides(g *Graph, base map[EdgeID]*Cost, overrides map[[2]NodeID]map[CostDimension]float64) map[EdgeID]*Cost {
-	out := make(map[EdgeID]*Cost, len(base))
-	for id, c := range base {
-		out[id] = &Cost{Edge: c.Edge, Costs: maps.Clone(c.Costs)}
+func applyOverrides(base map[CostGraphEdge]*Cost, overrides map[[2]NodeID]map[CostDimension]float64) map[CostGraphEdge]*Cost {
+	out := make(map[CostGraphEdge]*Cost, len(base))
+	for key, c := range base {
+		out[key] = &Cost{Edge: c.Edge, Costs: maps.Clone(c.Costs)}
 	}
 
 	for pair, dims := range overrides {
-		for id, edge := range g.edges {
-			forward := edge.Local == pair[0] && edge.Remote == pair[1]
-			reverse := edge.Local == pair[1] && edge.Remote == pair[0]
+		for key, cost := range out {
+			forward := key.From == pair[0] && key.To == pair[1]
+			reverse := key.From == pair[1] && key.To == pair[0]
 			if !forward && !reverse {
-				continue
-			}
-
-			cost, exists := out[id]
-			if !exists {
 				continue
 			}
 
@@ -105,7 +101,7 @@ func applyOverrides(g *Graph, base map[EdgeID]*Cost, overrides map[[2]NodeID]map
 	return out
 }
 
-func allPairs(g *Graph) [][2]NodeID {
+func allPairs(g *PCEGraph) [][2]NodeID {
 	nodes := slices.Sorted(maps.Keys(g.nodes))
 
 	pairs := make([][2]NodeID, 0, len(nodes)*(len(nodes)-1))

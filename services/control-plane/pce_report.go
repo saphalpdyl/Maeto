@@ -62,7 +62,7 @@ const causeShareFloor = 0.05
 // attributeCauses ranks the departing path's edges by how much their cost rose
 // between two snapshots. Edges that got cheaper are dropped -- they are not why
 // the path was abandoned.
-func attributeCauses(from *Path, dim CostDimension, was, now map[EdgeID]*Cost) []PathChangeCause {
+func attributeCauses(from *Path, dim CostDimension, was, now map[CostGraphEdge]*Cost) []PathChangeCause {
 	if from == nil || len(was) == 0 {
 		return nil
 	}
@@ -70,26 +70,27 @@ func attributeCauses(from *Path, dim CostDimension, was, now map[EdgeID]*Cost) [
 	causes := make([]PathChangeCause, 0, len(from.Edges))
 	total := 0.0
 
-	for _, id := range from.Edges {
-		prev, hadPrev := was[id]
-		curr, hasCurr := now[id]
-		if !hadPrev || !hasCurr || prev == nil || curr == nil {
-			continue
-		}
+	for i := 0; i+1 < len(from.Nodes); i++ {
+		for key, prev := range CostsBetween(was, from.Nodes[i], from.Nodes[i+1]) {
+			curr, hasCurr := now[key]
+			if !hasCurr || prev == nil || curr == nil {
+				continue
+			}
 
-		delta := curr.Costs[dim] - prev.Costs[dim]
-		if delta <= 0 {
-			continue
-		}
+			delta := curr.Costs[dim] - prev.Costs[dim]
+			if delta <= 0 {
+				continue
+			}
 
-		total += delta
-		causes = append(causes, PathChangeCause{
-			Edge:  id,
-			Dim:   dim,
-			Was:   prev.Costs[dim],
-			Now:   curr.Costs[dim],
-			Delta: delta,
-		})
+			total += delta
+			causes = append(causes, PathChangeCause{
+				Edge:  key.ID,
+				Dim:   dim,
+				Was:   prev.Costs[dim],
+				Now:   curr.Costs[dim],
+				Delta: delta,
+			})
+		}
 	}
 
 	if total <= 0 {

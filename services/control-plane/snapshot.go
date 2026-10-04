@@ -86,19 +86,19 @@ type RegistrySnapshot struct {
 }
 
 type SiteSnapshot struct {
-	TenantID   int    `json:"tenant_id"`
-	CPE        string `json:"cpe"`
-	PortalID   string `json:"portal_id"`
-	Node       string `json:"node"`
-	Prefix     string `json:"prefix"`
-	Attach     string `json:"attach"`
-	AttachNode string `json:"attach_node"`
-	IfID       uint32 `json:"if_id"`
-	Identity   string `json:"identity"`
+	TenantID   TenantID `json:"tenant_id"`
+	CPE        string   `json:"cpe"`
+	PortalID   string   `json:"portal_id"`
+	Node       string   `json:"node"`
+	Prefix     string   `json:"prefix"`
+	Attach     string   `json:"attach"`
+	AttachNode string   `json:"attach_node"`
+	IfID       uint32   `json:"if_id"`
+	Identity   string   `json:"identity"`
 }
 
 type TenantSnapshot struct {
-	ID         int            `json:"id"`
+	ID         TenantID       `json:"id"`
 	Allocation string         `json:"allocation"`
 	VRFTable   int            `json:"vrf_table"`
 	Sites      []SiteSnapshot `json:"sites"`
@@ -155,16 +155,22 @@ func SnapshotTopology(graph *Graph, domain SRv6DomainMetadata, costs *CostGraph,
 	}
 
 	costSnapshot := costs.Costs()
-	reservationSnapshot := reservations.Snapshot(graph)
+	pceGraph := NewPCEGraph(graph)
+	reservationSnapshot := reservations.Snapshot(pceGraph)
 
 	for _, edge := range dedupeEdges(graph.edges) {
 		var edgeCosts map[CostDimension]float64
-		if cost, ok := costSnapshot[edge.ID]; ok && cost != nil {
+		if cost, ok := costSnapshot[CostKey(edge)]; ok && cost != nil {
 			edgeCosts = cost.Costs
 		}
 
 		var reservation *BandwidthReservationState
-		if state, ok := reservationSnapshot[edge.ID]; ok {
+		bundle, up := pceGraph.edges[NewPCEEdgeID(edge.Local, edge.Remote)]
+		if state, ok := reservationSnapshot[NewCanonicalEdgeID(string(edge.Local), string(edge.Remote))]; ok && up {
+			members := float64(len(bundle.RealEdges))
+			state.Bookable /= members
+			state.Booked /= members
+			state.Free /= members
 			reservation = &state
 		}
 

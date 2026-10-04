@@ -11,8 +11,10 @@ import (
 	"sync"
 )
 
+type TenantID int
+
 type Tenant struct {
-	ID         int
+	ID         TenantID
 	Allocation netip.Prefix
 	// Tier is the tenant's service class, carried verbatim from the topology.
 	Tier     string
@@ -21,7 +23,7 @@ type Tenant struct {
 }
 
 type Site struct {
-	TenantID   int
+	TenantID   TenantID
 	CPE        string
 	PortalID   string
 	Node       string
@@ -36,7 +38,7 @@ type Site struct {
 
 type TenantRepository interface {
 	Load(ctx context.Context) error
-	Tenant(id int) (*Tenant, bool)
+	Tenant(id TenantID) (*Tenant, bool)
 	Tenants() []*Tenant
 	SiteByIdentity(identity string) (*Site, bool)
 	SiteByPortalID(portalID string) (*Site, bool)
@@ -46,10 +48,10 @@ type TenantRepository interface {
 type rawTenantDB struct {
 	GeneratorVersion string `json:"generator_version"`
 	Tenants          []struct {
-		ID         int    `json:"id"`
-		Allocation string `json:"allocation"`
-		Tier       string `json:"tier"`
-		VRFTable   int    `json:"vrf_table"`
+		ID         TenantID `json:"id"`
+		Allocation string   `json:"allocation"`
+		Tier       string   `json:"tier"`
+		VRFTable   int      `json:"vrf_table"`
 		Sites      []struct {
 			CPE             string  `json:"cpe"`
 			PortalID        string  `json:"portal_id"`
@@ -73,7 +75,7 @@ type JSONTenantRepository struct {
 	config TenantRepositoryConfig
 
 	mu         sync.RWMutex
-	byID       map[int]*Tenant
+	byID       map[TenantID]*Tenant
 	byIdentity map[string]*Site
 	byPortalID map[string]*Site
 	byPop      map[string][]*Site
@@ -84,7 +86,7 @@ var _ TenantRepository = (*JSONTenantRepository)(nil)
 func NewJSONTenantRepository(cfg TenantRepositoryConfig) *JSONTenantRepository {
 	return &JSONTenantRepository{
 		config:     cfg,
-		byID:       map[int]*Tenant{},
+		byID:       map[TenantID]*Tenant{},
 		byIdentity: map[string]*Site{},
 		byPortalID: map[string]*Site{},
 		byPop:      map[string][]*Site{},
@@ -108,7 +110,7 @@ func (r *JSONTenantRepository) Load(_ context.Context) error {
 		return fmt.Errorf("failed to parse %s: %w", path, err)
 	}
 
-	byID := make(map[int]*Tenant, len(raw.Tenants))
+	byID := make(map[TenantID]*Tenant, len(raw.Tenants))
 	byIdentity := map[string]*Site{}
 	byPortalID := map[string]*Site{}
 	byPop := map[string][]*Site{}
@@ -182,7 +184,7 @@ func (r *JSONTenantRepository) Load(_ context.Context) error {
 	return nil
 }
 
-func (r *JSONTenantRepository) Tenant(id int) (*Tenant, bool) {
+func (r *JSONTenantRepository) Tenant(id TenantID) (*Tenant, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 

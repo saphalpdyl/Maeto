@@ -7,16 +7,21 @@ import (
 	"sync"
 )
 
-type CostGraph struct {
-	mu    sync.RWMutex
-	graph map[EdgeID]*Cost // interface->interface pair
+type CostGraphEdge struct {
+	ID   EdgeID
+	From NodeID
+	To   NodeID
 }
 
-// func NewCostGraph() *CostGraph {
-// 	return &CostGraph{
-// 		graph: make(map[[2]NodeID]map[CostDimension]*Cost),
-// 	}
-// }
+func CostKey(e *Edge) CostGraphEdge {
+	return CostGraphEdge{ID: e.ID, From: e.Local, To: e.Remote}
+}
+
+type CostGraph struct {
+	mu    sync.RWMutex
+	graph map[CostGraphEdge]*Cost // interface->interface pair
+	byID  map[EdgeID]CostGraphEdge
+}
 
 type CostDimension string
 
@@ -35,7 +40,8 @@ func NewTestCostGraph(
 	g *Graph,
 ) (*CostGraph, error) {
 	cg := &CostGraph{
-		graph: make(map[EdgeID]*Cost),
+		graph: make(map[CostGraphEdge]*Cost),
+		byID:  make(map[EdgeID]CostGraphEdge),
 	}
 
 	g.mu.RLock()
@@ -49,12 +55,13 @@ func NewTestCostGraph(
 				return nil, fmt.Errorf("Edge %s does not exists", string(e))
 			}
 
-			_, exists = cg.graph[e]
-			if exists {
+			key := CostKey(edge)
+			if _, exists = cg.graph[key]; exists {
 				continue
 			}
 
-			cg.graph[e] = &Cost{
+			cg.byID[e] = key
+			cg.graph[key] = &Cost{
 				Edge: edge,
 				Costs: map[CostDimension]float64{
 					COSTDIM_LOSS:    5,
@@ -72,15 +79,26 @@ func (c *CostGraph) UpdateCost(id EdgeID, dim CostDimension, cost float64) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	edge, exists := c.graph[id]
+	key, exists := c.byID[id]
 	if !exists {
 		return
 	}
 
-	edge.Costs[dim] = cost
+	c.graph[key].Costs[dim] = cost
 }
 
-func (c *CostGraph) Costs() map[EdgeID]*Cost {
+func CostsBetween(costs map[CostGraphEdge]*Cost, from, to NodeID) map[CostGraphEdge]*Cost {
+	out := make(map[CostGraphEdge]*Cost)
+	for key, cost := range costs {
+		if key.From == from && key.To == to {
+			out[key] = cost
+		}
+	}
+
+	return out
+}
+
+func (c *CostGraph) Costs() map[CostGraphEdge]*Cost {
 	if c == nil {
 		return nil
 	}
@@ -88,7 +106,7 @@ func (c *CostGraph) Costs() map[EdgeID]*Cost {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	costs := make(map[EdgeID]*Cost, len(c.graph))
+	costs := make(map[CostGraphEdge]*Cost, len(c.graph))
 	for id, cost := range c.graph {
 		costs[id] = &Cost{
 			Edge:  cost.Edge,

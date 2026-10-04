@@ -15,11 +15,12 @@ var (
 	ErrUnknownNode = errors.New("node not in topology")
 )
 
-type Objective func(*Edge, *Cost) float64
+type Objective func(*PCEEdge, *Cost) float64
 
 type Path struct {
 	Nodes []NodeID `json:"nodes"`
-	Edges []EdgeID `json:"edges"`
+	Edges []string `json:"pce_edges"`
+	Links []EdgeID `json:"edges"`
 	Cost  float64  `json:"cost"`
 }
 
@@ -105,7 +106,7 @@ func MinDimension(dim CostDimension) Objective {
 }
 
 func WeightedCost(weights map[CostDimension]float64) Objective {
-	return func(_ *Edge, c *Cost) float64 {
+	return func(_ *PCEEdge, c *Cost) float64 {
 		if c == nil {
 			return math.Inf(1)
 		}
@@ -119,11 +120,11 @@ func WeightedCost(weights map[CostDimension]float64) Objective {
 	}
 }
 
-func (p *PCE) ComputePath(g *Graph, src, dst NodeID, obj Objective) (*Path, error) {
+func (p *PCE) ComputePath(g *PCEGraph, src, dst NodeID, obj Objective) (*Path, error) {
 	return computePath(g, p.costGraph.Costs(), src, dst, obj)
 }
 
-func computePath(g *Graph, costs map[EdgeID]*Cost, src, dst NodeID, obj Objective) (*Path, error) {
+func computePath(g *PCEGraph, costs map[CostGraphEdge]*Cost, src, dst NodeID, obj Objective) (*Path, error) {
 	if g == nil {
 		return nil, errors.New("compute path: nil graph")
 	}
@@ -141,13 +142,13 @@ func computePath(g *Graph, costs map[EdgeID]*Cost, src, dst NodeID, obj Objectiv
 	}
 
 	if src == dst {
-		return &Path{Nodes: []NodeID{src}, Edges: []EdgeID{}}, nil
+		return &Path{Nodes: []NodeID{src}, Edges: []string{}, Links: []EdgeID{}}, nil
 	}
 
 	nodes := slices.Sorted(maps.Keys(g.nodes))
 
 	dist := make(map[NodeID]float64, len(nodes))
-	prev := make(map[NodeID]EdgeID, len(nodes))
+	prev := make(map[NodeID]string, len(nodes))
 	visited := make(map[NodeID]bool, len(nodes))
 
 	for _, n := range nodes {
@@ -176,13 +177,13 @@ func computePath(g *Graph, costs map[EdgeID]*Cost, src, dst NodeID, obj Objectiv
 
 		for _, edgeID := range slices.Sorted(slices.Values(g.adj[current])) {
 			edge, exists := g.edges[edgeID]
-			if !exists || !edge.Up || visited[edge.Remote] {
+			if !exists || visited[edge.NodeTo] {
 				continue
 			}
 
-			if candidate := dist[current] + obj(edge, costs[edgeID]); candidate < dist[edge.Remote] {
-				dist[edge.Remote] = candidate
-				prev[edge.Remote] = edgeID
+			if candidate := dist[current] + obj(edge, edge.Cost(costs)); candidate < dist[edge.NodeTo] {
+				dist[edge.NodeTo] = candidate
+				prev[edge.NodeTo] = edgeID
 			}
 		}
 	}
@@ -201,10 +202,11 @@ func computePath(g *Graph, costs map[EdgeID]*Cost, src, dst NodeID, obj Objectiv
 	return path, nil
 }
 
-func reconstruct(g *Graph, src, dst NodeID, prev map[NodeID]EdgeID) (*Path, error) {
+func reconstruct(g *PCEGraph, src, dst NodeID, prev map[NodeID]string) (*Path, error) {
 	path := &Path{
 		Nodes: []NodeID{dst},
-		Edges: []EdgeID{},
+		Edges: []string{},
+		Links: []EdgeID{},
 	}
 
 	for current := dst; current != src; {
@@ -219,13 +221,15 @@ func reconstruct(g *Graph, src, dst NodeID, prev map[NodeID]EdgeID) (*Path, erro
 		}
 
 		path.Edges = append(path.Edges, edgeID)
+		path.Links = append(path.Links, edge.Links()...)
 
-		current = edge.Local
+		current = edge.NodeFrom
 		path.Nodes = append(path.Nodes, current)
 	}
 
 	slices.Reverse(path.Nodes)
 	slices.Reverse(path.Edges)
+	slices.Reverse(path.Links)
 
 	return path, nil
 }
