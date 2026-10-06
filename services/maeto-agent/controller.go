@@ -140,8 +140,27 @@ func (a *Agent) waitForReady(ctx context.Context) bool {
 	}
 }
 
+func (a *Agent) fanOutToFeeds(ctx context.Context, item *nodesync.NodeIntent) {
+	select {
+	case a.dataplaneIntentFeed <- item.Clone():
+	default:
+		a.logger.WarnContext(ctx, "dropped dataplane intent, feed seems full", slog.Any("item", item.Clone()))
+	}
+
+	select {
+	case a.probeIntentFeed <- item.Clone():
+	default:
+		a.logger.WarnContext(ctx, "dropped probe intent, feed seems full", slog.Any("item", item.Clone()))
+	}
+}
+
 func (a *Agent) setupIntentWatch(ctx context.Context) {
 	aggregateFeed := make(chan *nodesync.NodeIntent, 32)
+
+	resync := time.NewTicker(20 * time.Second)
+	defer resync.Stop()
+
+	var last *nodesync.NodeIntent
 
 	// Fan-out intent to multiple receivers
 	go func(ctx context.Context) {
@@ -153,17 +172,11 @@ func (a *Agent) setupIntentWatch(ctx context.Context) {
 				if !ok {
 					return
 				}
-
-				select {
-				case a.dataplaneIntentFeed <- item.Clone():
-				default:
-					a.logger.WarnContext(ctx, "dropped dataplane intent, feed seems full", slog.Any("item", item.Clone()))
-				}
-
-				select {
-				case a.probeIntentFeed <- item.Clone():
-				default:
-					a.logger.WarnContext(ctx, "dropped probe intent, feed seems full", slog.Any("item", item.Clone()))
+				a.fanOutToFeeds(ctx, item)
+				last = item.Clone()
+			case <-resync.C:
+				if last != nil {
+					a.fanOutToFeeds(ctx, last)
 				}
 			}
 		}

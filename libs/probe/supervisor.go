@@ -141,7 +141,7 @@ func (s *Supervisor) Start(ctx context.Context) error {
 				if len(intent.Peers) <= 0 {
 					continue
 				}
-				s.logger.InfoContext(ctx, "got peer intent ", slog.Any("intent", intent.Peers))
+				s.logger.DebugContext(ctx, "got peer intent ", slog.Any("intent", intent.Peers))
 
 				var localLoopback *netip.Prefix
 
@@ -165,7 +165,7 @@ func (s *Supervisor) Start(ctx context.Context) error {
 						EgressInterface: p.LocalInterface,
 					}
 
-					s.logger.InfoContext(ctx, "completed stampConfig", slog.Any("config", stampConfig))
+					s.logger.DebugContext(ctx, "completed stampConfig", slog.Any("config", stampConfig))
 
 					cfgMap[stampConfig.GetID()] = &stampConfig
 				}
