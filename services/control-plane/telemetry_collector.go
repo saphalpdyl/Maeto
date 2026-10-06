@@ -202,7 +202,7 @@ func (t *TelemetryCollector) handleTelemetryConsume(ctx context.Context, msg jet
 		if !ok {
 			ewma = &Ewma{
 				config: EwmaConfig{
-					Alpha:   0.1,
+					Alpha:   0.3,
 					Epsilon: 0.000001,
 				},
 			}
@@ -213,6 +213,7 @@ func (t *TelemetryCollector) handleTelemetryConsume(ctx context.Context, msg jet
 		duration := stampPayload.ReceiveTimestamp.Sub(*stampPayload.SenderTimestamp)
 		if duration < 0 {
 			t.logger.ErrorContext(ctx, "duration is negative")
+			t.mu.Unlock()
 			return errors.New("duration is negative")
 		}
 		ewma.Observe(time.Now(), float64(duration.Milliseconds()))

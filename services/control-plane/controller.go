@@ -186,6 +186,12 @@ func (c *Controller) Start(ctx context.Context) {
 				continue
 			}
 
+			peerPrefix, err := netip.ParsePrefix(e.RemoteAddr)
+			if err != nil {
+				c.logger.ErrorContext(ctx, "failed to parse remote node address", log.NodeID(string(e.Remote)))
+				continue
+			}
+
 			peerIntent := nodesync.PeerIntent{
 				PeerID:         string(e.Remote),
 				PeerLoopback:   remoteNode.Loopback,
@@ -193,6 +199,7 @@ func (c *Controller) Start(ctx context.Context) {
 				PeerInterface:  e.RemoteIface,
 				LocalInterface: e.LocalIface,
 				TelemetryKey:   fmt.Sprintf("%s:%s-%s:%s", string(n.ID), e.LocalIface, string(remoteNode.ID), e.RemoteIface),
+				PeerAddress:    peerPrefix.Addr(),
 			}
 
 			peers[e.LocalIface] = peerIntent

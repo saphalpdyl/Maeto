@@ -143,24 +143,25 @@ func (s *Supervisor) Start(ctx context.Context) error {
 				}
 				s.logger.DebugContext(ctx, "got peer intent ", slog.Any("intent", intent.Peers))
 
-				var localLoopback *netip.Prefix
-
 				// Convert the peer intents into STAMP configs
 				cfgMap := make(map[string]ProbeConfig)
 				for _, p := range intent.Peers {
-					if localLoopback == nil {
-						localLoopback = &p.LocalLoopback
+					if !p.PeerAddress.IsValid() {
+						s.logger.WarnContext(ctx, "peer has no link address, not probing",
+							slog.String("peer", p.PeerID),
+							slog.String("interface", p.LocalInterface),
+						)
+						continue
 					}
 
 					stampConfig := ProbeConfigSTAMP{
 						ProbeType:       ProbeTypeSTAMP,
-						LocalLoopback:   &p.LocalLoopback,
-						PeerDestination: p.PeerLoopback,
+						PeerDestination: p.PeerAddress,
 						TelemetryKey:    p.TelemetryKey,
 						IsSender:        true,
 						NoReply:         true,
 						DestPort:        DefaultSTAMPPort,
-						ProbeInterval:   10 * time.Second,
+						ProbeInterval:   2 * time.Second,
 						EncapSegments:   []netip.Addr{},
 						EgressInterface: p.LocalInterface,
 					}
@@ -171,11 +172,10 @@ func (s *Supervisor) Start(ctx context.Context) error {
 				}
 
 				reflectorStampConfig := ProbeConfigSTAMP{
-					ProbeType:     ProbeTypeSTAMP,
-					LocalLoopback: localLoopback,
-					IsSender:      false,
-					NoReply:       true,
-					DestPort:      862,
+					ProbeType: ProbeTypeSTAMP,
+					IsSender:  false,
+					NoReply:   true,
+					DestPort:  862,
 				}
 
 				cfgMap[reflectorStampConfig.GetID()] = &reflectorStampConfig

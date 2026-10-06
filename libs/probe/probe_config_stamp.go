@@ -9,7 +9,7 @@ import (
 type ProbeConfigSTAMP struct {
 	ProbeType       ProbeType     `json:"probe_type"`
 	LocalLoopback   *netip.Prefix `json:"local_loopback"`
-	PeerDestination netip.Prefix  `json:"peer_destination"`
+	PeerDestination netip.Addr    `json:"peer_destination"`
 	TelemetryKey    string        `json:"telemetry_key"`
 	IsSender        bool          `json:"is_sender"`
 	NoReply         bool          `json:"no_reply"`
@@ -33,7 +33,7 @@ func (p *ProbeConfigSTAMP) GetID() string {
 		"%s.%s.%s.%d.%s.%s.%s",
 		p.ProbeType,
 		role,
-		p.PeerDestination.Addr().String(),
+		p.PeerDestination.String(),
 		stampPort(p),
 		p.EgressInterface,
 		p.TelemetryKey,
@@ -46,7 +46,7 @@ func (p *ProbeConfigSTAMP) Validate() error {
 		return fmt.Errorf("probe type must be %s, got %q", ProbeTypeSTAMP, p.ProbeType)
 	}
 
-	if p.IsSender && !p.PeerDestination.Addr().IsValid() {
+	if p.IsSender && !p.PeerDestination.IsValid() {
 		return fmt.Errorf("invalid peer destination %q", p.PeerDestination)
 	}
 

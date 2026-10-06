@@ -68,7 +68,7 @@ func awaitSTAMPResult(t *testing.T, sink *collector, isSender bool) (probe.Resul
 func stampProbe(sender bool, telemetryKey string) *probe.ProbeConfigSTAMP {
 	return &probe.ProbeConfigSTAMP{
 		ProbeType:       probe.ProbeTypeSTAMP,
-		PeerDestination: netip.MustParsePrefix("127.0.0.1/32"),
+		PeerDestination: netip.MustParseAddr("127.0.0.1"),
 		TelemetryKey:    telemetryKey,
 		DestPort:        loopbackPort,
 		IsSender:        sender,

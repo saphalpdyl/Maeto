@@ -59,7 +59,7 @@ func srExtensions(cfg *ProbeConfigSTAMP) *stamp.SRExtensions {
 }
 
 func runSTAMPSender(ctx context.Context, cfg *ProbeConfigSTAMP, dispatcher Dispatcher, logger *slog.Logger) error {
-	peer := cfg.PeerDestination.Addr()
+	peer := cfg.PeerDestination
 
 	localAddr := ":0"
 	if cfg.LocalLoopback != nil {
@@ -265,7 +265,7 @@ func reflectorResult(cfg *ProbeConfigSTAMP, pkt *stamp.ReflectorPacket) (Result,
 	stampResult := STAMPResult{
 		IsSender:         false,
 		Sequence:         pkt.SequenceNumber,
-		Peer:             cfg.PeerDestination.Addr(),
+		Peer:             cfg.PeerDestination,
 		SenderSequence:   &senderSequence,
 		SenderTimestamp:  senderTimestamp,
 		ReceiveTimestamp: receiveTimestamp,

@@ -218,7 +218,7 @@ func Test_ReconcileFailsOnCancelledContext(t *testing.T) {
 func newSTAMPConfig() *ProbeConfigSTAMP {
 	return &ProbeConfigSTAMP{
 		ProbeType:       ProbeTypeSTAMP,
-		PeerDestination: netip.MustParsePrefix("2001:db8::1/128"),
+		PeerDestination: netip.MustParseAddr("2001:db8::1"),
 		TelemetryKey:    "key",
 		IsSender:        true,
 		NoReply:         true,
@@ -264,6 +264,6 @@ func Test_STAMPConfigValidate(t *testing.T) {
 	assert.Error(t, noInterval.Validate())
 
 	noPeer := newSTAMPConfig()
-	noPeer.PeerDestination = netip.Prefix{}
+	noPeer.PeerDestination = netip.Addr{}
 	assert.Error(t, noPeer.Validate())
 }
