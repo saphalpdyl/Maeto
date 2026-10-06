@@ -65,3 +65,29 @@ func TestSnapshotEdgesAreStableAcrossRuns(t *testing.T) {
 		}
 	}
 }
+
+func TestSnapshotPCEEdgesCoverEveryLinkOnceInItsOwnDirection(t *testing.T) {
+	graph := loadTestGraph(t)
+	snapshot := SnapshotTopology(graph, SRv6DomainMetadata{}, nil, nil)
+
+	owner := make(map[string]string)
+	for _, pceEdge := range snapshot.PCEEdges {
+		for _, member := range pceEdge.Members {
+			if previous, taken := owner[member]; taken {
+				t.Fatalf("link %s is in both %s and %s", member, previous, pceEdge.ID)
+			}
+			owner[member] = pceEdge.ID.String()
+
+			edge := graph.edges[EdgeID(member)]
+			if string(edge.Local) != pceEdge.From || string(edge.Remote) != pceEdge.To {
+				t.Fatalf("link %s runs %s->%s but sits in %s->%s", member, edge.Local, edge.Remote, pceEdge.From, pceEdge.To)
+			}
+		}
+	}
+
+	for id, edge := range graph.edges {
+		if _, covered := owner[string(id)]; edge.Up && !covered {
+			t.Fatalf("up link %s is missing from the pce edges", id)
+		}
+	}
+}

@@ -27,6 +27,7 @@ defmodule MaetoPane.Fabric.Analysis do
       nodes: Enum.map(raw_nodes, &graph_node(&1, inventory, by_id, faults)),
       links: links,
       edges: Enum.flat_map(links, &members/1),
+      pce_edges: get_in(control, ["topology", "pce_edges"]) || [],
       domain: get_in(control, ["topology", "domain"]) || %{},
       published_at: control["published_at"]
     }

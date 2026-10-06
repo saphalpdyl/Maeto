@@ -25,23 +25,32 @@ type TopologyNodeSnapshot struct {
 }
 
 type TopologyEdgeSnapshot struct {
-	ID                 string                     `json:"id"`
-	Local              string                     `json:"local"`
-	Remote             string                     `json:"remote"`
-	Role               string                     `json:"role"`
-	LocalIface         string                     `json:"local_iface"`
-	RemoteIface        string                     `json:"remote_iface"`
-	LocalAddr          string                     `json:"local_addr"`
-	RemoteAddr         string                     `json:"remote_addr"`
-	Subnet             string                     `json:"subnet"`
-	Metric             int                        `json:"metric"`
-	TEMetric           int                        `json:"te_metric"`
-	Bandwidth          float64                    `json:"bandwidth"`
-	DelayMS            float64                    `json:"delay_ms"`
-	Costs              map[CostDimension]float64  `json:"costs,omitempty"`
-	Reservation        *BandwidthReservationState `json:"reservation,omitempty"`
-	ReverseReservation *BandwidthReservationState `json:"reverse_reservation,omitempty"`
-	Up                 bool                       `json:"up"`
+	ID          string                    `json:"id"`
+	Local       string                    `json:"local"`
+	Remote      string                    `json:"remote"`
+	Role        string                    `json:"role"`
+	LocalIface  string                    `json:"local_iface"`
+	RemoteIface string                    `json:"remote_iface"`
+	LocalAddr   string                    `json:"local_addr"`
+	RemoteAddr  string                    `json:"remote_addr"`
+	Subnet      string                    `json:"subnet"`
+	Metric      int                       `json:"metric"`
+	TEMetric    int                       `json:"te_metric"`
+	Bandwidth   float64                   `json:"bandwidth"`
+	DelayMS     float64                   `json:"delay_ms"`
+	Costs       map[CostDimension]float64 `json:"costs,omitempty"`
+	Up          bool                      `json:"up"`
+}
+
+type PCEEdgeSnapshot struct {
+	ID          PCEEdgeID                  `json:"id"`
+	Kind        string                     `json:"kind"`
+	From        string                     `json:"from"`
+	To          string                     `json:"to"`
+	Members     []string                   `json:"members"`
+	Capacity    float64                    `json:"capacity_mbps"`
+	Costs       map[CostDimension]float64  `json:"costs,omitempty"`
+	Reservation *BandwidthReservationState `json:"reservation,omitempty"`
 }
 
 type TopologyPrefixSnapshot struct {
@@ -59,6 +68,7 @@ type DomainSnapshot struct {
 type TopologySnapshot struct {
 	Nodes    []TopologyNodeSnapshot   `json:"nodes"`
 	Edges    []TopologyEdgeSnapshot   `json:"edges"`
+	PCEEdges []PCEEdgeSnapshot        `json:"pce_edges"`
 	Prefixes []TopologyPrefixSnapshot `json:"prefixes"`
 	Domain   DomainSnapshot           `json:"domain"`
 }
@@ -132,6 +142,7 @@ func SnapshotTopology(graph *Graph, domain SRv6DomainMetadata, costs *CostGraph,
 	snapshot := TopologySnapshot{
 		Nodes:    []TopologyNodeSnapshot{},
 		Edges:    []TopologyEdgeSnapshot{},
+		PCEEdges: []PCEEdgeSnapshot{},
 		Prefixes: []TopologyPrefixSnapshot{},
 		Domain: DomainSnapshot{
 			LocatorPrefix: prefixString(domain.LocatorPrefix),
@@ -169,29 +180,26 @@ func SnapshotTopology(graph *Graph, domain SRv6DomainMetadata, costs *CostGraph,
 			edgeCosts = cost.Costs
 		}
 
-		reservation := memberReservation(pceGraph, reservationSnapshot, edge.Local, edge.Remote)
-		reverseReservation := memberReservation(pceGraph, reservationSnapshot, edge.Remote, edge.Local)
-
 		snapshot.Edges = append(snapshot.Edges, TopologyEdgeSnapshot{
-			ID:                 string(edge.ID),
-			Local:              string(edge.Local),
-			Remote:             string(edge.Remote),
-			Role:               edge.Role,
-			LocalIface:         edge.LocalIface,
-			RemoteIface:        edge.RemoteIface,
-			LocalAddr:          edge.LocalAddr,
-			RemoteAddr:         edge.RemoteAddr,
-			Subnet:             edge.Subnet,
-			Metric:             edge.Metric,
-			TEMetric:           edge.TEMetric,
-			Bandwidth:          edge.Bandwidth,
-			DelayMS:            float64(edge.Delay) / float64(time.Millisecond),
-			Costs:              edgeCosts,
-			Reservation:        reservation,
-			ReverseReservation: reverseReservation,
-			Up:                 edge.Up,
+			ID:          string(edge.ID),
+			Local:       string(edge.Local),
+			Remote:      string(edge.Remote),
+			Role:        edge.Role,
+			LocalIface:  edge.LocalIface,
+			RemoteIface: edge.RemoteIface,
+			LocalAddr:   edge.LocalAddr,
+			RemoteAddr:  edge.RemoteAddr,
+			Subnet:      edge.Subnet,
+			Metric:      edge.Metric,
+			TEMetric:    edge.TEMetric,
+			Bandwidth:   edge.Bandwidth,
+			DelayMS:     float64(edge.Delay) / float64(time.Millisecond),
+			Costs:       edgeCosts,
+			Up:          edge.Up,
 		})
 	}
+
+	snapshot.PCEEdges = snapshotPCEEdges(pceGraph, costSnapshot, reservationSnapshot)
 
 	for _, prefix := range graph.prefixes {
 		snapshot.Prefixes = append(snapshot.Prefixes, TopologyPrefixSnapshot{
@@ -210,25 +218,42 @@ func SnapshotTopology(graph *Graph, domain SRv6DomainMetadata, costs *CostGraph,
 	return snapshot
 }
 
-func memberReservation(
+func snapshotPCEEdges(
 	pceGraph *PCEGraph,
-	states map[PCEEdgeID]BandwidthReservationState,
-	from, to NodeID,
-) *BandwidthReservationState {
-	id := NewBundleID(from, to, "")
+	costs map[CostGraphEdge]*Cost,
+	reservations map[PCEEdgeID]BandwidthReservationState,
+) []PCEEdgeSnapshot {
+	out := make([]PCEEdgeSnapshot, 0, len(pceGraph.edges))
 
-	bundle, up := pceGraph.edges[id]
-	state, ok := states[id]
-	if !ok || !up {
-		return nil
+	for _, id := range slices.SortedFunc(maps.Keys(pceGraph.edges), PCEEdgeID.Compare) {
+		edge := pceGraph.edges[id]
+
+		members := make([]string, len(edge.RealEdges))
+		for i, member := range edge.RealEdges {
+			members[i] = string(member.ID)
+		}
+
+		entry := PCEEdgeSnapshot{
+			ID:       id,
+			Kind:     id.Kind.String(),
+			From:     string(edge.NodeFrom),
+			To:       string(edge.NodeTo),
+			Members:  members,
+			Capacity: edge.Capacity(),
+		}
+
+		if cost := edge.Cost(costs); cost != nil {
+			entry.Costs = cost.Costs
+		}
+
+		if state, ok := reservations[id]; ok {
+			entry.Reservation = &state
+		}
+
+		out = append(out, entry)
 	}
 
-	members := float64(len(bundle.RealEdges))
-	state.Bookable /= members
-	state.Booked /= members
-	state.Free /= members
-
-	return &state
+	return out
 }
 
 func dedupeEdges(edges map[EdgeID]*Edge) []*Edge {

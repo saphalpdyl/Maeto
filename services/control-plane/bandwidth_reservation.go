@@ -181,6 +181,7 @@ func (b *BandwidthReservationRegistry) checkCapacity(
 		for tID, entry := range reservationEdge.Bookings {
 			if tID != tenantID {
 				booked += entry.CalculateBandwidth()
+				continue
 			}
 
 			for key, r := range entry.Reservations {

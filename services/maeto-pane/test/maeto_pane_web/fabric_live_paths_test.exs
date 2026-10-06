@@ -45,6 +45,28 @@ defmodule MaetoPaneWeb.FabricLivePathsTest do
           "te_metric" => 0,
           "delay_ms" => 3
         }
+      ],
+      "pce_edges" => [
+        %{
+          "id" => "bundle:A->B",
+          "kind" => "bundle",
+          "from" => "A",
+          "to" => "B",
+          "members" => ["A:eth2-B:eth2", "A:eth3-B:eth3"],
+          "capacity_mbps" => 800,
+          "costs" => %{"LATENCY" => 25.4},
+          "reservation" => %{"bookable_mbps" => 760, "booked_mbps" => 600}
+        },
+        %{
+          "id" => "bundle:B->A",
+          "kind" => "bundle",
+          "from" => "B",
+          "to" => "A",
+          "members" => ["B:eth2-A:eth2", "B:eth3-A:eth3"],
+          "capacity_mbps" => 800,
+          "costs" => %{"LATENCY" => 7.2},
+          "reservation" => %{"bookable_mbps" => 760, "booked_mbps" => 300}
+        }
       ]
     },
     "inventory" => [],
@@ -274,7 +296,21 @@ defmodule MaetoPaneWeb.FabricLivePathsTest do
     html = view |> element("#nav-links") |> render_click()
 
     assert html =~ "Adjacency"
-    assert html =~ "not yet per direction"
+    assert html =~ "One line per PCE edge and direction"
+  end
+
+  test "the links section shows each pce edge per direction", %{conn: conn} do
+    {:ok, view, _html} = live(conn, "/")
+
+    html = view |> element("#nav-links") |> render_click()
+
+    # A -> B holds 600 of 760 at 25.4 ms, B -> A holds 300 at 7.2 ms
+    assert html =~ "bundle ×2"
+    assert html =~ "25.4 ms"
+    assert html =~ "7.2 ms"
+    assert html =~ "600/760"
+    assert html =~ "300/760"
+    assert html =~ "79%"
   end
 
   test "the cost overlay labels every link with its latency cost", %{conn: conn} do

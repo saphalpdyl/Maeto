@@ -23,6 +23,14 @@ type PCEEdgeID struct {
 	Link  EdgeID
 }
 
+func (k PCEEdgeKind) String() string {
+	if k == PCEEdgeLink {
+		return "link"
+	}
+
+	return "bundle"
+}
+
 func NewBundleID(from, to NodeID, group string) PCEEdgeID {
 	return PCEEdgeID{Kind: PCEEdgeBundle, From: from, To: to, Group: group}
 }

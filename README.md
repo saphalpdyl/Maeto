@@ -31,6 +31,15 @@ The generator builds the physical fabric and the control plane measures it. Prop
 
 Costs are continuous and shortest-path over continuous costs flaps. The PCE will not move a path unless the alternative is at least 10% cheaper, and it records the near-misses too.
 
+### Bandwidth reservation
+![Bandwidth reservation hose model](docs/images/arch/hose-model.png)
+
+Sites reserve bandwidth, not pairs of sites. A tenant's sites at the same PoP add up to one rate for that PoP, so PE1 above sends and receives at most 500 + 200 = 700 Mbps.
+
+The PCE books a hose bound on every directed edge a tenant's paths cross: the smaller of what the PoPs on one side can send and what the PoPs on the other side can receive, each PoP counted once. On the shared path out of PE1 that is min(700, 600 + 800) = 700 Mbps. Booking each pair on its own would reserve 600 + 700 = 1300 Mbps for traffic that can never exceed 700.
+
+Each direction of a link is its own edge with its own capacity, so the way back into PE1 gets its own bound. Traffic classes get a bound each and add up. A path is admitted only if the sum over tenants stays under 95% of every edge it crosses. Paths are computed per pair, so the bound is an upper bound rather than exact, which errs on the safe side.
+
 ### CPE onboarding
 ![How a CPE reaches its ingress PoP](docs/images/screenshots/cpe-pe-conn-architecture.png)
 
@@ -88,13 +97,14 @@ Done/In-progress:
 - Per-link one-way STAMP probing (RFC 8762). The reflector exports its own receive timestamps instead of reflecting
 - Latency cost graph fed from the probes. PCE recomputes every tick, 10% gate before it will actually move a path
 - maeto-pane: topology, per-link cost, and path changes with the edge whose cost caused them
+- Bandwidth-aware hose-modeled path computation
 
 Not yet:
 - Loss and jitter are seeded values, only latency is measured
-- Bandwidth-aware path computation
 - Argus detectors exist but nothing is wired to them. Argus implemented have been ported over to control plane temporarily for "Make it work, before making it right".
 
 ## Screenshots 
+![Link View](docs/images/screenshots/link_view.png)
 ![Screenshot of the Segment lists menu](docs/images/screenshots/screenshot_1.png)
 ![Path computation example](docs/images/screenshots/screenshot_2.png)
 

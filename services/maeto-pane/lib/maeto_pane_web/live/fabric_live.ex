@@ -123,11 +123,24 @@ defmodule MaetoPaneWeb.FabricLive do
 
   defp trace(_selected), do: %{nodes: [], pairs: MapSet.new()}
 
-  # Measured latency cost, written by the telemetry pipeline. Absent until a
-  # probe has landed for the edge, which is not the same as zero cost.
-  defp edge_cost(edge), do: get_in(edge, ["costs", "LATENCY"]) || 0
+  # A PCE edge is what the PCE routes and books on: directed, either a bundle of
+  # parallel members or a single member. Cost is the worst member's latency, and
+  # stays nil until a probe has landed, which is not the same as zero.
+  defp pce_edge_view(edge) do
+    state = edge["reservation"] || %{}
+    booked = state["booked_mbps"] || 0
+    bookable = state["bookable_mbps"] || 0
 
-  defp reservation(edge, field), do: get_in(edge, ["reservation", field]) || 0
+    %{
+      id: edge["id"],
+      kind: edge["kind"],
+      members: edge["members"] || [],
+      cost: get_in(edge, ["costs", "LATENCY"]),
+      booked: booked,
+      bookable: bookable,
+      ratio: utilisation(booked, bookable)
+    }
+  end
 
   defp utilisation(_booked, bookable) when bookable <= 0, do: 0
   defp utilisation(booked, bookable), do: booked / bookable
@@ -136,14 +149,18 @@ defmodule MaetoPaneWeb.FabricLive do
   defp load_tone(ratio) when ratio >= 0.6, do: "warn"
   defp load_tone(_ratio), do: "faint"
 
-  # One row per physical link. The control snapshot carries a single edge record
-  # per interface pair, so a per-direction cost is not available here yet.
+  # One row per node pair, one line per PCE edge in each direction
   defp links(graph) do
+    pce = Enum.group_by(graph.pce_edges, &{&1["from"], &1["to"]}, &pce_edge_view/1)
+
     Enum.map(graph.links, fn link ->
+      forward = Map.get(pce, {link.a, link.b}, [])
+      reverse = Map.get(pce, {link.b, link.a}, [])
+
       Map.merge(link, %{
-        cost: link.edges |> Enum.map(&edge_cost/1) |> Enum.min(fn -> 0 end),
-        booked: link.edges |> Enum.map(&reservation(&1, "booked_mbps")) |> Enum.sum(),
-        bookable: link.edges |> Enum.map(&reservation(&1, "bookable_mbps")) |> Enum.sum(),
+        directions: Enum.map(forward, &{"→", &1}) ++ Enum.map(reverse, &{"←", &1}),
+        peak: (forward ++ reverse) |> Enum.map(& &1.ratio) |> Enum.max(fn -> 0 end),
+        cost: (forward ++ reverse) |> Enum.map(&(&1.cost || 0)) |> Enum.max(fn -> 0 end),
         role: link.edges |> List.first() |> then(&(&1 && &1["role"])),
         metric: link.edges |> Enum.map(&(&1["metric"] || 0)) |> Enum.max(fn -> 0 end),
         te_metric: link.edges |> Enum.map(&(&1["te_metric"] || 0)) |> Enum.max(fn -> 0 end),
@@ -266,7 +283,7 @@ defmodule MaetoPaneWeb.FabricLive do
     do: "Least cost per dimension, recomputed on every PCE tick (#{facts.computed} pairs)"
 
   defp section_caption(:links, _facts, _registry),
-    do: "Cost is published per link, not yet per direction"
+    do: "One line per PCE edge and direction: what the PCE routes, costs and books on"
 
   defp section_caption(:sites, facts, _registry),
     do: "#{facts.sites_up} of #{facts.sites} portals reporting in"
@@ -665,7 +682,7 @@ defmodule MaetoPaneWeb.FabricLive do
         <tr>
           <th class="px-4 py-2.5">Adjacency</th>
           <th class="py-2.5">Role</th>
-          <th class="py-2.5">Members</th>
+          <th class="py-2.5">PCE edges</th>
           <th class="py-2.5 text-right">Delay</th>
           <th class="py-2.5 text-right">Reserved</th>
           <th class="py-2.5 text-right">IGP</th>
@@ -690,15 +707,26 @@ defmodule MaetoPaneWeb.FabricLive do
           </td>
           <td class="py-2.5 text-muted">{link.role}</td>
           <td class="py-2.5 font-mono text-xs tabular-nums text-muted">
-            ×{length(link.edges)}
-            <span :if={link.down > 0} class="ml-1 text-bad">{link.down} down</span>
+            <div :for={{arrow, edge} <- link.directions} title={Enum.join(edge.members, "\n")}>
+              {arrow} {edge.kind} ×{length(edge.members)}
+            </div>
+            <span :if={link.down > 0} class="text-bad">{link.down} down</span>
           </td>
-          <td class="py-2.5 text-right font-mono tabular-nums">{num(link.cost)} ms</td>
+          <td class="py-2.5 text-right font-mono tabular-nums">
+            <div :for={{arrow, edge} <- link.directions}>
+              <span class="text-muted">{arrow}</span>
+              {if edge.cost, do: "#{num(edge.cost)} ms", else: "–"}
+            </div>
+          </td>
           <td class="py-2.5 text-right font-mono text-xs tabular-nums whitespace-nowrap">
-            <.pill tone={load_tone(utilisation(link.booked, link.bookable))}>
-              {round(utilisation(link.booked, link.bookable) * 100)}%
-            </.pill>
-            <span class="ml-1 text-muted">{num(link.booked)}/{num(link.bookable)}</span>
+            <div class="flex items-center justify-end gap-2">
+              <.pill tone={load_tone(link.peak)}>{round(link.peak * 100)}%</.pill>
+              <div class="text-muted">
+                <div :for={{arrow, edge} <- link.directions}>
+                  {arrow} {num(edge.booked)}/{num(edge.bookable)}
+                </div>
+              </div>
+            </div>
           </td>
           <td class="py-2.5 text-right font-mono tabular-nums text-muted">{link.metric}</td>
           <td class="py-2.5 text-right font-mono tabular-nums text-muted">{link.te_metric}</td>

@@ -100,47 +100,15 @@ func (p *PCE) Run(ctx context.Context, graph *Graph) {
 							SinkBandwidth:   farReservation,
 						}
 
-						computedPath, ok := paths[pathKey]
-						if !ok {
-							prunedGraph, err := p.bandwidthReservationReg.PruneGraph(pceGraph, tenant.ID, candidateReservation)
-							if err != nil {
-								continue
-							}
-							computedPath, err = p.ComputePath(prunedGraph, fromNodeId, toNodeId, MinDimension(COSTDIM_LATENCY))
-							if err != nil {
-								continue
-							}
+						prunedGraph, err := p.bandwidthReservationReg.PruneGraph(pceGraph, tenant.ID, candidateReservation)
+						if err != nil {
+							continue
 						}
 
-						// Verify that the currently computed path has the bandwidth to support it
-						residualOk := true
-						for _, edgeID := range computedPath.Edges {
-							edge, ok := pceGraph.edges[edgeID]
-							if !ok {
-								residualOk = false
-								p.logger.ErrorContext(ctx, "PCE assigned an unknown Edge ?", slog.String("edgeID", edgeID.String()))
-								break
-							}
-
-							hasCapacity := p.bandwidthReservationReg.CheckCapacity(edge, tenant.ID, candidateReservation)
-							if !hasCapacity {
-								residualOk = false
-								break
-							}
-						}
-
-						// The naive path exhausted its capacity
-						if !residualOk {
-							// Prune graph with bandwidth requirements and test
-							prunedGraph, err := p.bandwidthReservationReg.PruneGraph(pceGraph, tenant.ID, candidateReservation)
-							if err != nil {
-								continue
-							}
-							computedPath, err = p.ComputePath(prunedGraph, fromNodeId, toNodeId, MinDimension(COSTDIM_LATENCY))
-							if err != nil {
-								p.logger.ErrorContext(ctx, "failed to compute paths; likely exhausted paths", "from", fromNodeId, "to", toNodeId)
-								continue
-							}
+						computedPath, err := p.ComputePath(prunedGraph, fromNodeId, toNodeId, MinDimension(COSTDIM_LATENCY))
+						if err != nil {
+							p.logger.WarnContext(ctx, "no path fits the reservation; keeping previous", "from", fromNodeId, "to", toNodeId, log.Err(err))
+							continue
 						}
 
 						// Get list of *PCEEdge for registering
@@ -217,7 +185,7 @@ func (p *PCE) Run(ctx context.Context, graph *Graph) {
 						}
 
 						// freeing an edge that left the graph is a no-op
-						err := p.bandwidthReservationReg.Move(ctx, previousPath.Edges, computedPathEdges, tenant.ID, candidateReservation)
+						err = p.bandwidthReservationReg.Move(ctx, previousPath.Edges, computedPathEdges, tenant.ID, candidateReservation)
 						if err != nil {
 							p.logger.ErrorContext(ctx, "failed to move bandwidth reservation",
 								"from", fromNodeId, "to", toNodeId, log.Err(err))
