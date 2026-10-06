@@ -49,6 +49,7 @@ defmodule MaetoPane.Fabric.PathsTest do
       ],
       "paths" => [
         %{
+          "tenant" => 273,
           "source" => "A",
           "dest" => "C",
           "dimension" => "latency",

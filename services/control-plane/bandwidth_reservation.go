@@ -1,140 +1,224 @@
 package controlplane
 
 import (
+	"context"
 	"fmt"
+	"log/slog"
+	"math"
 	"slices"
 	"sync"
 )
 
+// Notes and thoughts for the future me:
+//   Sources and Sinks cannot be attributed to a POP
+//		There will be multiple paths between two pops: voice, bulk etc. colored paths
+// 		Make it so that its suffixed by another element
+
 type BandwidthReservationRegistry struct {
 	mu       sync.RWMutex
-	registry map[CanonicalEdgeID]map[TenantID]*BandwidthReservation
+	registry map[PCEEdgeID]*BandwidthReservationEdge
+	logger   *slog.Logger
 }
 
-func NewBandwidthReservationRegistry() BandwidthReservationRegistry {
+func NewBandwidthReservationRegistry(logger *slog.Logger) BandwidthReservationRegistry {
 	return BandwidthReservationRegistry{
 		mu:       sync.RWMutex{},
-		registry: make(map[CanonicalEdgeID]map[TenantID]*BandwidthReservation),
+		registry: make(map[PCEEdgeID]*BandwidthReservationEdge),
+		logger:   logger,
 	}
 }
 
-type BandwidthReservation struct {
-	ForEdge CanonicalEdgeID
-	Tenant  TenantID
-	Booked  float64
-	History []BandwidthReservationAction
+// Directional, one physical link will have two reservation edge
+type BandwidthReservationEdge struct {
+	ForEdge *PCEEdge
+
+	Bookings map[TenantID]*BandwidthReservationTenantEntry
 }
 
-type BandwidthReservationActionType string
+type BandwidthReservationTenantEntry struct {
+	Tenant TenantID
 
-const (
-	BandwidthAdmit BandwidthReservationActionType = "bandwidth_admit"
-)
-
-type BandwidthReservationAction struct {
-	ActionType BandwidthReservationActionType
-	Tenant     TenantID
-	FromPop    NodeID
-	ToPop      NodeID
-
-	Bandwidth float64
+	Reservations map[BandwidthReservationKey]*BandwidthReservation
 }
 
-const capacityHeadroom = 0.05
-
-func (b *BandwidthReservationRegistry) Move(from, to []*PCEEdge, action BandwidthReservationAction) error {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-
-	delta := make(map[CanonicalEdgeID]float64, len(from)+len(to))
-	bookable := make(map[CanonicalEdgeID]float64, len(from)+len(to))
-
-	for _, edge := range from {
-		id := edge.CanonicalID()
-		entry, booked := b.registry[id][action.Tenant]
-		if !booked {
-			continue
-		}
-
-		delta[id] -= min(action.Bandwidth, entry.Booked)
-	}
-
-	for _, edge := range to {
-		id := edge.CanonicalID()
-		delta[id] += action.Bandwidth
-
-		capacity := edge.Bandwidth() * (1 - capacityHeadroom)
-		if current, seen := bookable[id]; !seen || capacity < current {
-			bookable[id] = capacity
-		}
-	}
-
-	for id, change := range delta {
-		if change <= 0 {
-			continue
-		}
-
-		if free := bookable[id] - b.booked(id); change > free {
-			return fmt.Errorf("edge %s holds %.2f, needs %.2f", id, free, change)
-		}
-	}
-
-	for id, change := range delta {
-		if change == 0 {
-			continue
-		}
-
-		tenants, exists := b.registry[id]
-		if !exists {
-			tenants = make(map[TenantID]*BandwidthReservation)
-			b.registry[id] = tenants
-		}
-
-		entry, booked := tenants[action.Tenant]
-		if !booked {
-			entry = &BandwidthReservation{ForEdge: id, Tenant: action.Tenant}
-			tenants[action.Tenant] = entry
-		}
-
-		entry.Booked += change
-		entry.History = append(entry.History, action)
-	}
-
-	return nil
+type bandwidthPopLabel struct {
+	Pop   NodeID
+	Label int64
 }
 
-func (b *BandwidthReservationRegistry) booked(id CanonicalEdgeID) float64 {
+func (e *BandwidthReservationTenantEntry) getBandwidthSums() (map[int64]float64, map[int64]float64) {
+	sumSources := make(map[int64]float64)
+	sumSinks := make(map[int64]float64)
+
+	seenSources := make(map[bandwidthPopLabel]struct{})
+	seenSinks := make(map[bandwidthPopLabel]struct{})
+
+	for _, r := range e.Reservations {
+		source := bandwidthPopLabel{Pop: r.Key.SourcePop, Label: r.Key.Label}
+		if _, exists := seenSources[source]; !exists {
+			seenSources[source] = struct{}{}
+			sumSources[r.Key.Label] += r.SourceBandwidth
+		}
+
+		sink := bandwidthPopLabel{Pop: r.Key.SinkPop, Label: r.Key.Label}
+		if _, exists := seenSinks[sink]; !exists {
+			seenSinks[sink] = struct{}{}
+			sumSinks[r.Key.Label] += r.SinkBandwidth
+		}
+	}
+
+	return sumSources, sumSinks
+}
+
+func (e *BandwidthReservationTenantEntry) CalculateBandwidth() float64 {
+	sumSources, sumSinks := e.getBandwidthSums()
+
 	total := 0.0
-	for _, reservation := range b.registry[id] {
-		total += reservation.Booked
+	for label := range sumSources {
+		total += math.Min(sumSources[label], sumSinks[label])
 	}
 
 	return total
 }
 
-func (b *BandwidthReservationRegistry) CheckCapacity(edge *PCEEdge, bandwidth float64) bool {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-
-	free := edge.Bandwidth()*(1-capacityHeadroom) - b.booked(edge.CanonicalID())
-	return free-bandwidth >= 0
+type BandwidthReservationKey struct {
+	SourcePop NodeID
+	SinkPop   NodeID
+	Label     int64 // identifies color, tiers etc.
 }
 
-func (b *BandwidthReservationRegistry) PruneGraph(graph *PCEGraph, reserveBandwidth float64) (*PCEGraph, error) {
+type BandwidthReservation struct {
+	Key BandwidthReservationKey
+
+	// Assume per-pop bandwidth consolidation (summing bandwidth of sites of same tenant) has
+	// 	already been done by this point
+	SourceBandwidth float64
+	SinkBandwidth   float64
+}
+
+const capacityHeadroom = 0.05
+
+func (b *BandwidthReservationRegistry) Move(
+	ctx context.Context,
+	from []PCEEdgeID,
+	to []*PCEEdge,
+	tenantID TenantID,
+	candidate *BandwidthReservation,
+) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	for _, edge := range to {
+		if !b.checkCapacity(edge, tenantID, candidate) {
+			return fmt.Errorf("one of the edges cannot support capacity, edge: %s", edge.ID)
+		}
+	}
+
+	// Remove reservations
+	for _, edgeID := range from {
+		if rEdge, exists := b.registry[edgeID]; exists {
+			if tenantEntry, exists := rEdge.Bookings[tenantID]; exists {
+				delete(tenantEntry.Reservations, candidate.Key)
+
+				if len(tenantEntry.Reservations) == 0 {
+					delete(rEdge.Bookings, tenantID)
+				}
+			}
+
+			if len(rEdge.Bookings) == 0 {
+				delete(b.registry, edgeID)
+			}
+		}
+	}
+
+	// Add reservations
+	for _, edge := range to {
+		rEdge, exists := b.registry[edge.ID]
+		if !exists {
+			b.registry[edge.ID] = &BandwidthReservationEdge{
+				ForEdge:  edge,
+				Bookings: make(map[TenantID]*BandwidthReservationTenantEntry),
+			}
+			rEdge = b.registry[edge.ID]
+		}
+
+		tenantEntry, exists := rEdge.Bookings[tenantID]
+		if !exists {
+			rEdge.Bookings[tenantID] = &BandwidthReservationTenantEntry{
+				Tenant:       tenantID,
+				Reservations: make(map[BandwidthReservationKey]*BandwidthReservation),
+			}
+			tenantEntry = rEdge.Bookings[tenantID]
+		}
+
+		r := *candidate
+		tenantEntry.Reservations[candidate.Key] = &r
+	}
+
+	return nil
+}
+
+func (b *BandwidthReservationRegistry) checkCapacity(
+	edge *PCEEdge,
+	tenantID TenantID,
+	candidate *BandwidthReservation,
+) bool {
+	var booked float64
+
+	// Create a testReservation and add the source/sink to check
+	// CalculateBandwidth() automatically handles the deduplication
+	// 	Otherwise, we'd have to manage the oncoming candidate's source/sink pop dedupe
+	//	ourselves/
+	testTenantReservation := &BandwidthReservationTenantEntry{
+		Tenant: tenantID,
+		Reservations: map[BandwidthReservationKey]*BandwidthReservation{
+			candidate.Key: candidate,
+		},
+	}
+
+	// If !ok, then edge is empty, test directly if math.Min(source,sink) <= capacity
+	if reservationEdge, ok := b.registry[edge.ID]; ok {
+		for tID, entry := range reservationEdge.Bookings {
+			if tID != tenantID {
+				booked += entry.CalculateBandwidth()
+			}
+
+			for key, r := range entry.Reservations {
+				if key != candidate.Key {
+					testTenantReservation.Reservations[key] = r
+				}
+			}
+		}
+	}
+
+	return booked+testTenantReservation.CalculateBandwidth() <= edge.Capacity()*(1-capacityHeadroom)
+}
+
+func (b *BandwidthReservationRegistry) CheckCapacity(
+	edge *PCEEdge,
+	tenantID TenantID,
+	candidate *BandwidthReservation,
+) bool {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.checkCapacity(edge, tenantID, candidate)
+}
+
+func (b *BandwidthReservationRegistry) PruneGraph(graph *PCEGraph, tenantID TenantID, candidate *BandwidthReservation) (*PCEGraph, error) {
 	pruned := &PCEGraph{
 		nodes: graph.nodes, // read-only
-		edges: make(map[string]*PCEEdge, len(graph.edges)),
-		adj:   make(map[NodeID][]string, len(graph.adj)),
+		edges: make(map[PCEEdgeID]*PCEEdge, len(graph.edges)),
+		adj:   make(map[NodeID][]PCEEdgeID, len(graph.adj)),
 	}
 
 	for id, edge := range graph.edges {
-		if b.CheckCapacity(edge, reserveBandwidth) {
+		if b.CheckCapacity(edge, tenantID, candidate) {
 			pruned.edges[id] = edge
 		}
 	}
 
 	for n, ids := range graph.adj {
-		kept := slices.DeleteFunc(slices.Clone(ids), func(id string) bool {
+		kept := slices.DeleteFunc(slices.Clone(ids), func(id PCEEdgeID) bool {
 			_, ok := pruned.edges[id]
 			return !ok
 		})
@@ -146,15 +230,15 @@ func (b *BandwidthReservationRegistry) PruneGraph(graph *PCEGraph, reserveBandwi
 }
 
 type BandwidthReservationState struct {
-	Edge     CanonicalEdgeID `json:"edge"`
-	Bookable float64         `json:"bookable_mbps"`
-	Booked   float64         `json:"booked_mbps"`
-	Free     float64         `json:"free_mbps"`
-	Bookings int             `json:"bookings"`
+	Edge     PCEEdgeID `json:"edge"`
+	Bookable float64   `json:"bookable_mbps"`
+	Booked   float64   `json:"booked_mbps"`
+	Free     float64   `json:"free_mbps"`
+	Bookings int       `json:"bookings"`
 }
 
 // Reports every edge in the graph: unbooked is fully free, not absent.
-func (b *BandwidthReservationRegistry) Snapshot(graph *PCEGraph) map[CanonicalEdgeID]BandwidthReservationState {
+func (b *BandwidthReservationRegistry) Snapshot(graph *PCEGraph) map[PCEEdgeID]BandwidthReservationState {
 	if b == nil || graph == nil {
 		return nil
 	}
@@ -162,19 +246,17 @@ func (b *BandwidthReservationRegistry) Snapshot(graph *PCEGraph) map[CanonicalEd
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 
-	states := make(map[CanonicalEdgeID]BandwidthReservationState, len(graph.edges))
-	for _, edge := range graph.edges {
-		id := edge.CanonicalID()
-		if _, seen := states[id]; seen {
-			continue
-		}
+	states := make(map[PCEEdgeID]BandwidthReservationState, len(graph.edges))
+	for id, edge := range graph.edges {
+		bookable := edge.Capacity() * (1 - capacityHeadroom)
 
-		bookable := edge.Bandwidth() * (1 - capacityHeadroom)
-		booked := b.booked(id)
-
+		booked := 0.0
 		bookings := 0
-		for _, reservation := range b.registry[id] {
-			bookings += len(reservation.History)
+		if rEdge, exists := b.registry[id]; exists {
+			for _, tenantEntry := range rEdge.Bookings {
+				booked += tenantEntry.CalculateBandwidth()
+				bookings += len(tenantEntry.Reservations)
+			}
 		}
 
 		states[id] = BandwidthReservationState{

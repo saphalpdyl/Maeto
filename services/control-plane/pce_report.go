@@ -32,7 +32,10 @@ const (
 )
 
 type PCETickReportReroute struct {
-	At   time.Time      `json:"at"`
+	At     time.Time `json:"at"`
+	Tenant TenantID  `json:"tenant"`
+	Label  int64     `json:"label"`
+
 	Src  NodeID         `json:"src"`
 	Dst  NodeID         `json:"dst"`
 	Dim  CostDimension  `json:"dimension"`
@@ -158,7 +161,7 @@ func (r *PCETickReport) Log(ctx context.Context) {
 	reroutes := make([]slog.Attr, len(r.Reroutes))
 	for i, rr := range r.Reroutes {
 		reroutes[i] = slog.Attr{
-			Key: fmt.Sprintf("%s>%s", rr.Src, rr.Dst),
+			Key: fmt.Sprintf("%d:%s>%s", rr.Tenant, rr.Src, rr.Dst),
 			Value: slog.GroupValue(
 				slog.Any("from", &rr.FromPath),
 				slog.Any("to", &rr.ToPath),
@@ -170,7 +173,7 @@ func (r *PCETickReport) Log(ctx context.Context) {
 	gated := make([]slog.Attr, len(r.GatedReroutes))
 	for i, rr := range r.GatedReroutes {
 		gated[i] = slog.Attr{
-			Key: fmt.Sprintf("%s>%s", rr.Src, rr.Dst),
+			Key: fmt.Sprintf("%d:%s>%s", rr.Tenant, rr.Src, rr.Dst),
 			Value: slog.GroupValue(
 				slog.Any("from", &rr.FromPath),
 				slog.Any("to", &rr.ToPath),

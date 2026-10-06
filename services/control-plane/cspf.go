@@ -1,6 +1,7 @@
 package controlplane
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -18,10 +19,10 @@ var (
 type Objective func(*PCEEdge, *Cost) float64
 
 type Path struct {
-	Nodes []NodeID `json:"nodes"`
-	Edges []string `json:"pce_edges"`
-	Links []EdgeID `json:"edges"`
-	Cost  float64  `json:"cost"`
+	Nodes []NodeID    `json:"nodes"`
+	Edges []PCEEdgeID `json:"pce_edges"`
+	Links []EdgeID    `json:"edges"`
+	Cost  float64     `json:"cost"`
 }
 
 func (p *Path) Equal(other *Path) bool {
@@ -61,44 +62,41 @@ func (p *Path) LogValue() slog.Value {
 	)
 }
 
-type PathSet map[NodeID]map[NodeID]map[CostDimension]*Path
-
-func (ps PathSet) Set(src, dst NodeID, dim CostDimension, path *Path) {
-	byDst, exists := ps[src]
-	if !exists {
-		byDst = make(map[NodeID]map[CostDimension]*Path)
-		ps[src] = byDst
-	}
-
-	byDim, exists := byDst[dst]
-	if !exists {
-		byDim = make(map[CostDimension]*Path)
-		byDst[dst] = byDim
-	}
-
-	byDim[dim] = path
+type PathKey struct {
+	Tenant TenantID
+	From   NodeID
+	To     NodeID
+	Label  int64
+	Dim    CostDimension
 }
 
+func (k PathKey) String() string {
+	return fmt.Sprintf("%d/%s->%s/%d/%s", k.Tenant, k.From, k.To, k.Label, k.Dim)
+}
+
+func (k PathKey) MarshalText() ([]byte, error) {
+	return []byte(k.String()), nil
+}
+
+func (k PathKey) Compare(other PathKey) int {
+	return cmp.Or(
+		cmp.Compare(k.Tenant, other.Tenant),
+		cmp.Compare(k.From, other.From),
+		cmp.Compare(k.To, other.To),
+		cmp.Compare(k.Label, other.Label),
+		cmp.Compare(k.Dim, other.Dim),
+	)
+}
+
+type PathSet map[PathKey]*Path
+
 func (ps PathSet) LogValue() slog.Value {
-	sources := make([]slog.Attr, 0, len(ps))
-
-	for _, src := range slices.Sorted(maps.Keys(ps)) {
-		dests := make([]slog.Attr, 0, len(ps[src]))
-
-		for _, dst := range slices.Sorted(maps.Keys(ps[src])) {
-			dims := make([]slog.Attr, 0, len(ps[src][dst]))
-
-			for _, dim := range slices.Sorted(maps.Keys(ps[src][dst])) {
-				dims = append(dims, slog.Any(string(dim), ps[src][dst][dim]))
-			}
-
-			dests = append(dests, slog.Attr{Key: string(dst), Value: slog.GroupValue(dims...)})
-		}
-
-		sources = append(sources, slog.Attr{Key: string(src), Value: slog.GroupValue(dests...)})
+	attrs := make([]slog.Attr, 0, len(ps))
+	for _, key := range slices.SortedFunc(maps.Keys(ps), PathKey.Compare) {
+		attrs = append(attrs, slog.Any(key.String(), ps[key]))
 	}
 
-	return slog.GroupValue(sources...)
+	return slog.GroupValue(attrs...)
 }
 
 func MinDimension(dim CostDimension) Objective {
@@ -142,13 +140,13 @@ func computePath(g *PCEGraph, costs map[CostGraphEdge]*Cost, src, dst NodeID, ob
 	}
 
 	if src == dst {
-		return &Path{Nodes: []NodeID{src}, Edges: []string{}, Links: []EdgeID{}}, nil
+		return &Path{Nodes: []NodeID{src}, Edges: []PCEEdgeID{}, Links: []EdgeID{}}, nil
 	}
 
 	nodes := slices.Sorted(maps.Keys(g.nodes))
 
 	dist := make(map[NodeID]float64, len(nodes))
-	prev := make(map[NodeID]string, len(nodes))
+	prev := make(map[NodeID]PCEEdgeID, len(nodes))
 	visited := make(map[NodeID]bool, len(nodes))
 
 	for _, n := range nodes {
@@ -175,7 +173,7 @@ func computePath(g *PCEGraph, costs map[CostGraphEdge]*Cost, src, dst NodeID, ob
 
 		visited[current] = true
 
-		for _, edgeID := range slices.Sorted(slices.Values(g.adj[current])) {
+		for _, edgeID := range slices.SortedFunc(slices.Values(g.adj[current]), PCEEdgeID.Compare) {
 			edge, exists := g.edges[edgeID]
 			if !exists || visited[edge.NodeTo] {
 				continue
@@ -202,10 +200,10 @@ func computePath(g *PCEGraph, costs map[CostGraphEdge]*Cost, src, dst NodeID, ob
 	return path, nil
 }
 
-func reconstruct(g *PCEGraph, src, dst NodeID, prev map[NodeID]string) (*Path, error) {
+func reconstruct(g *PCEGraph, src, dst NodeID, prev map[NodeID]PCEEdgeID) (*Path, error) {
 	path := &Path{
 		Nodes: []NodeID{dst},
-		Edges: []string{},
+		Edges: []PCEEdgeID{},
 		Links: []EdgeID{},
 	}
 

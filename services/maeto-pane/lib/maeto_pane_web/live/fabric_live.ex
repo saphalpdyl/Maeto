@@ -737,6 +737,7 @@ defmodule MaetoPaneWeb.FabricLive do
         <tr :for={path <- @computed} class="border-b border-line last:border-0 hover:bg-sunken/70">
           <td class="px-4 py-2 font-mono font-medium whitespace-nowrap">
             {path.source} &rarr; {path.dest}
+            <span :if={path.tenant} class="ml-1.5 text-xs text-muted">tenant {path.tenant}</span>
           </td>
           <td class="py-2 font-mono text-xs text-muted">{Enum.join(path.nodes, " › ")}</td>
           <td class="py-2 text-muted">{path.dimension}</td>

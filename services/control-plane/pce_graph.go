@@ -8,38 +8,61 @@ import (
 	"strings"
 )
 
-type CanonicalEdgeID string
+type PCEEdgeKind uint8
 
-func NewCanonicalEdgeID(a, b string) CanonicalEdgeID {
-	if b < a {
-		a, b = b, a
+const (
+	PCEEdgeBundle PCEEdgeKind = iota
+	PCEEdgeLink
+)
+
+type PCEEdgeID struct {
+	Kind  PCEEdgeKind
+	From  NodeID
+	To    NodeID
+	Group string
+	Link  EdgeID
+}
+
+func NewBundleID(from, to NodeID, group string) PCEEdgeID {
+	return PCEEdgeID{Kind: PCEEdgeBundle, From: from, To: to, Group: group}
+}
+
+func NewLinkID(edge *Edge) PCEEdgeID {
+	return PCEEdgeID{Kind: PCEEdgeLink, From: edge.Local, To: edge.Remote, Link: edge.ID}
+}
+
+func (id PCEEdgeID) String() string {
+	if id.Kind == PCEEdgeLink {
+		return "link:" + string(id.Link)
 	}
 
-	return CanonicalEdgeID(fmt.Sprintf("%s-%s", a, b))
+	if id.Group == "" {
+		return fmt.Sprintf("bundle:%s->%s", id.From, id.To)
+	}
+
+	return fmt.Sprintf("bundle:%s->%s#%s", id.From, id.To, id.Group)
+}
+
+func (id PCEEdgeID) MarshalText() ([]byte, error) {
+	return []byte(id.String()), nil
+}
+
+func (id PCEEdgeID) Compare(other PCEEdgeID) int {
+	return strings.Compare(id.String(), other.String())
 }
 
 type PCEEdge struct {
-	ID        string // Can be bundled edge C-D or single edge with interface names C:eth4-D:eth1
-	IsBundle  bool
+	ID        PCEEdgeID
 	NodeFrom  NodeID
 	NodeTo    NodeID
 	RealEdges []*Edge
 }
 
-func (e *PCEEdge) CanonicalID() CanonicalEdgeID {
-	if e.IsBundle {
-		return NewCanonicalEdgeID(string(e.NodeFrom), string(e.NodeTo))
-	}
-
-	ids := strings.Split(e.ID, "-") // gives: ["C:eth1", "D:eth2"]
-	if len(ids) != 2 {
-		return "incorrect-id"
-	}
-
-	return NewCanonicalEdgeID(ids[0], ids[1])
+func (e *PCEEdge) IsBundle() bool {
+	return e.ID.Kind == PCEEdgeBundle
 }
 
-func (e *PCEEdge) Bandwidth() float64 {
+func (e *PCEEdge) Capacity() float64 {
 	if len(e.RealEdges) == 0 {
 		return 0
 	}
@@ -84,25 +107,21 @@ func (e *PCEEdge) Cost(costs map[CostGraphEdge]*Cost) *Cost {
 	return worst
 }
 
-func NewPCEEdgeID(from, to NodeID) string {
-	return fmt.Sprintf("%s->%s", from, to)
-}
-
 // PCEGraph is the abstracted representation of the actual topology graph that
 // consolidates parallel links into bundles for easier ECMP-based path calaculation
 // In the future, it will also support having explicitly marked non-ECMP node pairs
 // that allow End.X SID assignments.
 type PCEGraph struct {
 	nodes map[NodeID]*Node
-	edges map[string]*PCEEdge
-	adj   map[NodeID][]string
+	edges map[PCEEdgeID]*PCEEdge
+	adj   map[NodeID][]PCEEdgeID
 }
 
 func NewPCEGraph(g *Graph) *PCEGraph {
 	pg := &PCEGraph{
 		nodes: g.nodes,
-		edges: make(map[string]*PCEEdge),
-		adj:   make(map[NodeID][]string),
+		edges: make(map[PCEEdgeID]*PCEEdge),
+		adj:   make(map[NodeID][]PCEEdgeID),
 	}
 
 	for _, id := range slices.Sorted(maps.Keys(g.edges)) {
@@ -111,12 +130,12 @@ func NewPCEGraph(g *Graph) *PCEGraph {
 			continue
 		}
 
-		pceID := NewPCEEdgeID(edge.Local, edge.Remote)
+		//pceID := NewBundleID(edge.Local, edge.Remote, "")
+		pceID := NewLinkID(edge)
 		pceEdge, exists := pg.edges[pceID]
 		if !exists {
 			pceEdge = &PCEEdge{
 				ID:       pceID,
-				IsBundle: true,
 				NodeFrom: edge.Local,
 				NodeTo:   edge.Remote,
 			}

@@ -4,7 +4,9 @@ package controlplane
 import (
 	"context"
 	"log/slog"
+	"maps"
 	"net/netip"
+	"slices"
 	"sort"
 	"time"
 
@@ -23,22 +25,23 @@ type TopologyNodeSnapshot struct {
 }
 
 type TopologyEdgeSnapshot struct {
-	ID          string                     `json:"id"`
-	Local       string                     `json:"local"`
-	Remote      string                     `json:"remote"`
-	Role        string                     `json:"role"`
-	LocalIface  string                     `json:"local_iface"`
-	RemoteIface string                     `json:"remote_iface"`
-	LocalAddr   string                     `json:"local_addr"`
-	RemoteAddr  string                     `json:"remote_addr"`
-	Subnet      string                     `json:"subnet"`
-	Metric      int                        `json:"metric"`
-	TEMetric    int                        `json:"te_metric"`
-	Bandwidth   float64                    `json:"bandwidth"`
-	DelayMS     float64                    `json:"delay_ms"`
-	Costs       map[CostDimension]float64  `json:"costs,omitempty"`
-	Reservation *BandwidthReservationState `json:"reservation,omitempty"`
-	Up          bool                       `json:"up"`
+	ID                 string                     `json:"id"`
+	Local              string                     `json:"local"`
+	Remote             string                     `json:"remote"`
+	Role               string                     `json:"role"`
+	LocalIface         string                     `json:"local_iface"`
+	RemoteIface        string                     `json:"remote_iface"`
+	LocalAddr          string                     `json:"local_addr"`
+	RemoteAddr         string                     `json:"remote_addr"`
+	Subnet             string                     `json:"subnet"`
+	Metric             int                        `json:"metric"`
+	TEMetric           int                        `json:"te_metric"`
+	Bandwidth          float64                    `json:"bandwidth"`
+	DelayMS            float64                    `json:"delay_ms"`
+	Costs              map[CostDimension]float64  `json:"costs,omitempty"`
+	Reservation        *BandwidthReservationState `json:"reservation,omitempty"`
+	ReverseReservation *BandwidthReservationState `json:"reverse_reservation,omitempty"`
+	Up                 bool                       `json:"up"`
 }
 
 type TopologyPrefixSnapshot struct {
@@ -105,6 +108,8 @@ type TenantSnapshot struct {
 }
 
 type PathSnapshot struct {
+	Tenant    TenantID `json:"tenant"`
+	Label     int64    `json:"label"`
 	Source    string   `json:"source"`
 	Dest      string   `json:"dest"`
 	Dimension string   `json:"dimension"`
@@ -164,33 +169,27 @@ func SnapshotTopology(graph *Graph, domain SRv6DomainMetadata, costs *CostGraph,
 			edgeCosts = cost.Costs
 		}
 
-		var reservation *BandwidthReservationState
-		bundle, up := pceGraph.edges[NewPCEEdgeID(edge.Local, edge.Remote)]
-		if state, ok := reservationSnapshot[NewCanonicalEdgeID(string(edge.Local), string(edge.Remote))]; ok && up {
-			members := float64(len(bundle.RealEdges))
-			state.Bookable /= members
-			state.Booked /= members
-			state.Free /= members
-			reservation = &state
-		}
+		reservation := memberReservation(pceGraph, reservationSnapshot, edge.Local, edge.Remote)
+		reverseReservation := memberReservation(pceGraph, reservationSnapshot, edge.Remote, edge.Local)
 
 		snapshot.Edges = append(snapshot.Edges, TopologyEdgeSnapshot{
-			ID:          string(edge.ID),
-			Local:       string(edge.Local),
-			Remote:      string(edge.Remote),
-			Role:        edge.Role,
-			LocalIface:  edge.LocalIface,
-			RemoteIface: edge.RemoteIface,
-			LocalAddr:   edge.LocalAddr,
-			RemoteAddr:  edge.RemoteAddr,
-			Subnet:      edge.Subnet,
-			Metric:      edge.Metric,
-			TEMetric:    edge.TEMetric,
-			Bandwidth:   edge.Bandwidth,
-			DelayMS:     float64(edge.Delay) / float64(time.Millisecond),
-			Costs:       edgeCosts,
-			Reservation: reservation,
-			Up:          edge.Up,
+			ID:                 string(edge.ID),
+			Local:              string(edge.Local),
+			Remote:             string(edge.Remote),
+			Role:               edge.Role,
+			LocalIface:         edge.LocalIface,
+			RemoteIface:        edge.RemoteIface,
+			LocalAddr:          edge.LocalAddr,
+			RemoteAddr:         edge.RemoteAddr,
+			Subnet:             edge.Subnet,
+			Metric:             edge.Metric,
+			TEMetric:           edge.TEMetric,
+			Bandwidth:          edge.Bandwidth,
+			DelayMS:            float64(edge.Delay) / float64(time.Millisecond),
+			Costs:              edgeCosts,
+			Reservation:        reservation,
+			ReverseReservation: reverseReservation,
+			Up:                 edge.Up,
 		})
 	}
 
@@ -209,6 +208,27 @@ func SnapshotTopology(graph *Graph, domain SRv6DomainMetadata, costs *CostGraph,
 	})
 
 	return snapshot
+}
+
+func memberReservation(
+	pceGraph *PCEGraph,
+	states map[PCEEdgeID]BandwidthReservationState,
+	from, to NodeID,
+) *BandwidthReservationState {
+	id := NewBundleID(from, to, "")
+
+	bundle, up := pceGraph.edges[id]
+	state, ok := states[id]
+	if !ok || !up {
+		return nil
+	}
+
+	members := float64(len(bundle.RealEdges))
+	state.Bookable /= members
+	state.Booked /= members
+	state.Free /= members
+
+	return &state
 }
 
 func dedupeEdges(edges map[EdgeID]*Edge) []*Edge {
@@ -337,45 +357,33 @@ func SnapshotTenants(tenants TenantRepository) []TenantSnapshot {
 func SnapshotPaths(paths PathSet) []PathSnapshot {
 	out := []PathSnapshot{}
 
-	for src, byDst := range paths {
-		for dst, byDim := range byDst {
-			for dim, path := range byDim {
-				if path == nil {
-					continue
-				}
-
-				entry := PathSnapshot{
-					Source:    string(src),
-					Dest:      string(dst),
-					Dimension: string(dim),
-					Nodes:     make([]string, 0, len(path.Nodes)),
-					Edges:     make([]string, 0, len(path.Edges)),
-					Cost:      path.Cost,
-				}
-
-				for _, node := range path.Nodes {
-					entry.Nodes = append(entry.Nodes, string(node))
-				}
-
-				for _, edge := range path.Edges {
-					entry.Edges = append(entry.Edges, string(edge))
-				}
-
-				out = append(out, entry)
-			}
+	for _, key := range slices.SortedFunc(maps.Keys(paths), PathKey.Compare) {
+		path := paths[key]
+		if path == nil {
+			continue
 		}
+
+		entry := PathSnapshot{
+			Tenant:    key.Tenant,
+			Label:     key.Label,
+			Source:    string(key.From),
+			Dest:      string(key.To),
+			Dimension: string(key.Dim),
+			Nodes:     make([]string, 0, len(path.Nodes)),
+			Edges:     make([]string, 0, len(path.Links)),
+			Cost:      path.Cost,
+		}
+
+		for _, node := range path.Nodes {
+			entry.Nodes = append(entry.Nodes, string(node))
+		}
+
+		for _, link := range path.Links {
+			entry.Edges = append(entry.Edges, string(link))
+		}
+
+		out = append(out, entry)
 	}
-
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].Source != out[j].Source {
-			return out[i].Source < out[j].Source
-		}
-		if out[i].Dest != out[j].Dest {
-			return out[i].Dest < out[j].Dest
-		}
-
-		return out[i].Dimension < out[j].Dimension
-	})
 
 	return out
 }

@@ -25,13 +25,14 @@ defmodule MaetoPane.Fabric.Paths do
     end)
   end
 
-  @doc "Every CSPF path the controller last computed, keyed by {source, dest}."
+  @doc "Every CSPF path the controller last computed, one per tenant and PoP pair."
   def computed(snapshot) do
     control = Map.get(snapshot, :control) || %{}
 
     (control["paths"] || [])
     |> Enum.map(fn path ->
       %{
+        tenant: tenant_key(path["tenant"]),
         source: path["source"],
         dest: path["dest"],
         dimension: path["dimension"],
@@ -41,7 +42,7 @@ defmodule MaetoPane.Fabric.Paths do
         hops: max(length(path["nodes"] || []) - 1, 0)
       }
     end)
-    |> Enum.sort_by(&{&1.source, &1.dest, &1.dimension})
+    |> Enum.sort_by(&{&1.source, &1.dest, &1.tenant, &1.dimension})
   end
 
   @doc """
@@ -59,6 +60,7 @@ defmodule MaetoPane.Fabric.Paths do
 
       %{
         at: change["at"],
+        tenant: tenant_key(change["tenant"]),
         src: change["src"],
         dst: change["dst"],
         dimension: change["dimension"],
@@ -84,8 +86,11 @@ defmodule MaetoPane.Fabric.Paths do
   end
 
   def computed_index(computed) do
-    Map.new(computed, fn path -> {{path.source, path.dest, path.dimension}, path} end)
+    Map.new(computed, fn path -> {{path.tenant, path.source, path.dest, path.dimension}, path} end)
   end
+
+  defp tenant_key(nil), do: nil
+  defp tenant_key(tenant), do: to_string(tenant)
 
   @doc """
   One row per segment list, over the union of what the controller asked for and
@@ -223,7 +228,7 @@ defmodule MaetoPane.Fabric.Paths do
       segments: segments,
       hops: hops,
       observed: first_of([got], :segments, nil),
-      cost: first_of([Map.get(costs, {id, egress.node, @latency})], :cost, nil),
+      cost: first_of([Map.get(costs, {tenant_key(tenant), id, egress.node, @latency})], :cost, nil),
       status: status(want, sides.planned, got)
     }
   end
