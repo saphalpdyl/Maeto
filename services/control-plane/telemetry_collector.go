@@ -220,6 +220,7 @@ func (t *TelemetryCollector) handleTelemetryConsume(ctx context.Context, msg jet
 		t.mu.Unlock()
 
 		t.costGraph.UpdateCost(EdgeID(telemetryKey), COSTDIM_LATENCY, ewma.Mean())
+		t.costGraph.MarkSeen(EdgeID(telemetryKey), time.Now())
 
 	default:
 		t.logger.WarnContext(ctx, "unknown result probe type", slog.String("probe_type", string(resultPayload.ProbeType)))

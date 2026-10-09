@@ -29,6 +29,7 @@ const (
 	PathChangeRerouted PathChangeKind = "rerouted"
 	PathChangeGated    PathChangeKind = "gated"
 	PathChangeNew      PathChangeKind = "new"
+	PathChangeLinkDown PathChangeKind = "link_down"
 )
 
 type PCETickReportReroute struct {

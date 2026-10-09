@@ -96,24 +96,19 @@ links:
     b: E
     parallel:
       - bandwidth: 1000
-        delay: 4
-      - bandwidth: 500
-        delay: 8
-      - bandwidth: 250
-        delay: 15
-        start_jitter: 0.1
+        delay: 9
   - a: C
     b: F
     parallel:
       - bandwidth: 1000
         delay: 6
-      - bandwidth: 400
-        delay: 12
   - a: D
     b: E
     parallel:
       - bandwidth: 800
         delay: 7
+      - bandwidth: 500
+        delay: 9
   - a: E
     b: F
     parallel:

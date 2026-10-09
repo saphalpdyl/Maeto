@@ -11,6 +11,8 @@ import (
 	"github.com/saphalpdyl/maeto/services/control-plane/log"
 )
 
+const linkStaleAfter = 15 * time.Second
+
 type PCE struct {
 	costGraph               *CostGraph
 	tenants                 TenantRepository
@@ -58,6 +60,8 @@ func (p *PCE) Run(ctx context.Context, graph *Graph) {
 				Reroutes:        make([]PCETickReportReroute, 0),
 				GatedReroutes:   make([]PCETickReportReroute, 0),
 			}
+
+			p.updateLinkStates(ctx, graph)
 
 			graph.mu.RLock()
 			pceGraph := NewPCEGraph(graph)
@@ -158,7 +162,11 @@ func (p *PCE) Run(ctx context.Context, graph *Graph) {
 
 						// The previous path contains cost of the topology then
 						// realign score to what it is currently
-						previousPath.Cost = p.rescorePath(previousPath, COSTDIM_LATENCY, pceGraph, costSnapshot)
+						previousCost := p.rescorePath(previousPath, COSTDIM_LATENCY, pceGraph, costSnapshot)
+						previousPathIsBroken := math.IsInf(previousCost, 1)
+						if !previousPathIsBroken {
+							previousPath.Cost = previousCost
+						}
 
 						if previousPath.Equal(computedPath) {
 							paths[pathKey] = computedPath
@@ -166,7 +174,7 @@ func (p *PCE) Run(ctx context.Context, graph *Graph) {
 						}
 
 						// If path change not worth it.
-						if (previousPath.Cost / computedPath.Cost) < 1.1 {
+						if !previousPathIsBroken && (previousPath.Cost/computedPath.Cost) < 1.1 {
 							tickReport.GatedReroutes = append(tickReport.GatedReroutes, PCETickReportReroute{
 								At:       tickReport.Timestamp,
 								Tenant:   tenant.ID,
@@ -192,6 +200,11 @@ func (p *PCE) Run(ctx context.Context, graph *Graph) {
 							continue
 						}
 
+						rerouteKind := PathChangeRerouted
+						if previousPathIsBroken {
+							rerouteKind = PathChangeLinkDown
+						}
+
 						tickReport.Reroutes = append(tickReport.Reroutes, PCETickReportReroute{
 							At:       tickReport.Timestamp,
 							Tenant:   tenant.ID,
@@ -199,7 +212,7 @@ func (p *PCE) Run(ctx context.Context, graph *Graph) {
 							Src:      fromNodeId,
 							Dst:      toNodeId,
 							Dim:      COSTDIM_LATENCY,
-							Kind:     PathChangeRerouted,
+							Kind:     rerouteKind,
 							FromPath: *previousPath,
 							ToPath:   *computedPath,
 							Causes:   attributeCauses(previousPath, COSTDIM_LATENCY, p.previousCosts, costSnapshot),
@@ -222,6 +235,40 @@ func (p *PCE) Run(ctx context.Context, graph *Graph) {
 			p.previousCosts = costSnapshot
 
 			p.reportChan <- paths
+		}
+	}
+}
+
+// A link that has been probed before but has gone quiet is treated as down.
+// Links that were never probed keep whatever state the topology gave them.
+func (p *PCE) updateLinkStates(ctx context.Context, graph *Graph) {
+	lastSeen := p.costGraph.LastSeen()
+	now := time.Now()
+
+	graph.mu.Lock()
+	defer graph.mu.Unlock()
+
+	for _, edge := range graph.edges {
+		seenAt, probed := lastSeen[edge.ID]
+		if !probed {
+			continue
+		}
+
+		silentFor := now.Sub(seenAt)
+		up := silentFor < linkStaleAfter
+
+		if up == edge.Up {
+			continue
+		}
+
+		edge.Up = up
+
+		if up {
+			p.logger.InfoContext(ctx, "link is back up", slog.String("edge", string(edge.ID)))
+		} else {
+			p.logger.WarnContext(ctx, "link is down; no probe results",
+				slog.String("edge", string(edge.ID)),
+				slog.Duration("silent_for", silentFor))
 		}
 	}
 }

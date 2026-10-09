@@ -667,6 +667,7 @@ defmodule MaetoPaneWeb.FabricLive do
 
   defp kind_tone("rerouted"), do: "ok"
   defp kind_tone("gated"), do: "warn"
+  defp kind_tone("link_down"), do: "bad"
   defp kind_tone(_), do: "faint"
 
   defp pct(nil), do: "-"

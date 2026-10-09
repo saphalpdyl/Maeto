@@ -135,7 +135,7 @@ func NewPCEGraph(g *Graph) *PCEGraph {
 	for _, id := range slices.Sorted(maps.Keys(g.edges)) {
 		edge := g.edges[id]
 		if !edge.Up {
-			continue
+			continue // Remove link-down edges from the graph
 		}
 
 		//pceID := NewBundleID(edge.Local, edge.Remote, "")

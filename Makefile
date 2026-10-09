@@ -57,10 +57,10 @@ sync:
 # The services including NATS, DB etc. will run inside the VM as to
 # not fragment deployment during development and makes things simpler
 dev:
-	DEBUG=$(DEBUG) docker compose up --build maeto-control-plane
+	DEBUG=$(DEBUG) docker compose up --build --force-recreate maeto-control-plane
 
 fe:
-	docker compose up --build maeto-pane
+	docker compose up --build --force-recreate maeto-pane
 
 ddbg: # dev debug
 	DEBUG=1 MAETO_DLV_LISTEN=[::]:2345 docker compose up --build maeto-control-plane

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"maps"
 	"sync"
+	"time"
 )
 
 type CostGraphEdge struct {
@@ -21,6 +22,8 @@ type CostGraph struct {
 	mu    sync.RWMutex
 	graph map[CostGraphEdge]*Cost // interface->interface pair
 	byID  map[EdgeID]CostGraphEdge
+
+	lastSeen map[EdgeID]time.Time
 }
 
 type CostDimension string
@@ -40,8 +43,9 @@ func NewTestCostGraph(
 	g *Graph,
 ) (*CostGraph, error) {
 	cg := &CostGraph{
-		graph: make(map[CostGraphEdge]*Cost),
-		byID:  make(map[EdgeID]CostGraphEdge),
+		graph:    make(map[CostGraphEdge]*Cost),
+		byID:     make(map[EdgeID]CostGraphEdge),
+		lastSeen: make(map[EdgeID]time.Time),
 	}
 
 	g.mu.RLock()
@@ -85,6 +89,20 @@ func (c *CostGraph) UpdateCost(id EdgeID, dim CostDimension, cost float64) {
 	}
 
 	c.graph[key].Costs[dim] = cost
+}
+
+func (c *CostGraph) MarkSeen(id EdgeID, at time.Time) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.lastSeen[id] = at
+}
+
+func (c *CostGraph) LastSeen() map[EdgeID]time.Time {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	return maps.Clone(c.lastSeen)
 }
 
 func CostsBetween(costs map[CostGraphEdge]*Cost, from, to NodeID) map[CostGraphEdge]*Cost {
