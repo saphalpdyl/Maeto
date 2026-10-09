@@ -1,0 +1,32 @@
+# rates are totals per flow; tfsim splits them across streams
+# The scenario must match tenant ids and host names with the
+#    topology that's running
+
+duration: 120
+
+defaults:
+  protocol: udp
+  length: 1200
+  streams: 1
+
+flows:
+  # Constant 150M load from cA -> cC
+  - from: cA
+    to: cC
+    rate: 150M
+
+  # Constant 50M load form cC -> cA
+  - from: cC
+    to: cA
+    rate: 50M
+
+  # For all sites of tenant 231, have 20M load for each pair
+  - mesh: 231
+    rate: 20M
+
+  # 150M load from cA3 -> cA4 starting t=40s and ends at t=80s
+  - from: cA3
+    to: cA4
+    rate: 150M
+    start: 40
+    duration: 40

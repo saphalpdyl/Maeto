@@ -1,4 +1,4 @@
-.PHONY: lint lint.editorconfig generate deploy install-virtual-environments fe ap ddbg dev ips
+.PHONY: lint lint.editorconfig generate deploy install-virtual-environments fe ap ddbg dev ips tfsim tfsim-plan
 
 TOPOLOGY_YAML := clab/topologies/eight-pop.yaml
 TOPOLOGY_NAME := eight-pop
@@ -21,10 +21,17 @@ setup: install-virtual-environments
 install-virtual-environments:
 	python3 -m venv --clear clab/.venv
 	$(CLAB_PY) -m pip install -q --upgrade pip
-	$(CLAB_PY) -m pip install -q -r clab/generator/requirements.txt
+	$(CLAB_PY) -m pip install -q -r clab/requirements.txt
 	python3 -m venv --clear $(CGOVER_DIR)/.venv
 	$(CGOVER_PY) -m pip install -q --upgrade pip
 	$(CGOVER_PY) -m pip install -q -r $(CGOVER_DIR)/requirements.txt
+
+# Traffic simulation
+tfsim-plan:
+	sudo $(CLAB_PY) clab/tfsim/main.py -s scene1 --dry-run
+
+tfsim:
+	sudo $(CLAB_PY) clab/tfsim/main.py -s scene1
 
 # generate containerlab + frr config from the topology dsl into build/<hash>
 generate:
