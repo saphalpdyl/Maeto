@@ -212,7 +212,13 @@ defmodule MaetoPane.Fabric.Paths do
     %{want: want, got: got} = sides
 
     segments = first_of([want, got], :segments, [])
-    hops = Enum.map(segments, &resolve(&1, locators))
+    last = length(segments) - 1
+
+    hops =
+      segments
+      |> Enum.with_index()
+      |> Enum.map(fn {sid, index} -> resolve(sid, locators, index == last) end)
+
     egress = List.last(hops) || %{node: nil, node_name: nil}
 
     %{
@@ -228,7 +234,8 @@ defmodule MaetoPane.Fabric.Paths do
       segments: segments,
       hops: hops,
       observed: first_of([got], :segments, nil),
-      cost: first_of([Map.get(costs, {tenant_key(tenant), id, egress.node, @latency})], :cost, nil),
+      cost:
+        first_of([Map.get(costs, {tenant_key(tenant), id, egress.node, @latency})], :cost, nil),
       status: status(want, sides.planned, got)
     }
   end
@@ -274,19 +281,25 @@ defmodule MaetoPane.Fabric.Paths do
     if want.segments == got.segments, do: :installed, else: :drifted
   end
 
-  defp resolve(sid, locators) do
+  # the last segment is always the egress decap; before it, a locator's base
+  # address is an End and anything else in the locator is an End.X
+  defp resolve(sid, locators, last?) do
     with {:ok, address} <- Net.parse_addr(sid),
          %{} = owner <- Enum.find(locators, &Net.contains?(&1.prefix, address)) do
       %{
         sid: sid,
         node: owner.id,
         node_name: owner.name,
-        role: if(address == owner.base, do: :transit, else: :decap)
+        role: hop_role(address, owner, last?)
       }
     else
       _ -> %{sid: sid, node: nil, node_name: nil, role: :unknown}
     end
   end
+
+  defp hop_role(_address, _owner, true), do: :decap
+  defp hop_role(address, %{base: address}, false), do: :transit
+  defp hop_role(_address, _owner, false), do: :end_x
 
   defp vrf_tables(nil), do: %{}
 

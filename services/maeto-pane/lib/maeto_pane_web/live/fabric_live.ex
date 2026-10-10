@@ -665,6 +665,19 @@ defmodule MaetoPaneWeb.FabricLive do
     """
   end
 
+  defp hop_chip(:decap), do: "border-accent/25 bg-accent-soft text-accent"
+  defp hop_chip(:transit), do: "border-steer/30 bg-steer-soft text-steer"
+  defp hop_chip(:end_x), do: "border-steer/60 text-steer"
+  defp hop_chip(_role), do: "border-line bg-sunken text-muted"
+
+  defp hop_text(:decap), do: "text-accent"
+  defp hop_text(role) when role in [:transit, :end_x], do: "text-steer"
+  defp hop_text(_role), do: "text-faint"
+
+  defp hop_behavior(:decap), do: "end.dt46"
+  defp hop_behavior(:end_x), do: "end.x"
+  defp hop_behavior(_role), do: "end"
+
   defp kind_tone("rerouted"), do: "ok"
   defp kind_tone("gated"), do: "warn"
   defp kind_tone("link_down"), do: "bad"
@@ -941,15 +954,18 @@ defmodule MaetoPaneWeb.FabricLive do
         <span
           class={[
             "inline-flex items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-[11px]",
-            if(hop.role == :decap,
+            if(hop.role == :transit,
               do: "border-accent/25 bg-accent-soft text-accent",
-              else: "border-line bg-sunken text-muted"
-            )
+              else: ""
+            ),
+            hop_chip(hop.role)
           ]}
           title={hop.node_name || "no locator owns this segment"}
         >
           {hop.sid}
           <span :if={hop.role == :decap} class="text-[9px] uppercase opacity-70">dt46</span>
+          <span :if={hop.role == :end_x} class="text-[9px] uppercase opacity-70">end.x</span>
+          <span :if={hop.role == :transit} class="text-[9px] uppercase opacity-70">End.X</span>
         </span>
       </span>
     </div>
@@ -1015,9 +1031,9 @@ defmodule MaetoPaneWeb.FabricLive do
           <span class="ml-auto text-[11px] text-muted">{hop.node_name || "unresolved"}</span>
           <span class={[
             "font-mono text-[9px] uppercase",
-            if(hop.role == :decap, do: "text-accent", else: "text-faint")
+            hop_text(hop.role)
           ]}>
-            {if hop.role == :decap, do: "end.dt46", else: "end"}
+            {hop_behavior(hop.role)}
           </span>
         </li>
       </ol>

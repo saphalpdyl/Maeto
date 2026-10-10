@@ -162,6 +162,21 @@ defmodule MaetoPane.Fabric.PathsTest do
       assert Enum.map(row.hops, & &1.role) == [:transit, :decap]
     end
 
+    test "a transit sid that is not its locator's base is an end.x, not a decap" do
+      segments = ["fc00:0:2:2::", "fc00:0:3:f4e0::"]
+
+      [row] =
+        Paths.rows(
+          snapshot(
+            intents: %{"pop.A" => intent(segments)},
+            states: %{"pop.A" => state([sr_route(segments)], [sr_route(segments)])}
+          )
+        )
+
+      assert Enum.map(row.hops, & &1.role) == [:end_x, :decap]
+      assert Enum.map(row.hops, & &1.node) == ["B", "C"]
+    end
+
     test "the row carries the destination site and the computed cost" do
       [row] = Paths.rows(installed_snapshot())
 

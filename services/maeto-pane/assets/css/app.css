@@ -122,6 +122,8 @@
   --color-bad-soft: var(--mt-bad-soft);
   --color-idle: var(--mt-idle);
   --color-idle-soft: var(--mt-idle-soft);
+  --color-steer: var(--mt-steer);
+  --color-steer-soft: var(--mt-steer-soft);
 
   --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", "Cascadia Mono", Menlo, monospace;
 }
@@ -146,6 +148,8 @@
   --mt-bad-soft: #2b1717;
   --mt-idle: #a78bfa;
   --mt-idle-soft: #201c31;
+  --mt-steer: #60a5fa;
+  --mt-steer-soft: #172235;
 }
 
 [data-theme="light"] {
@@ -168,6 +172,8 @@
   --mt-bad-soft: #fdeeee;
   --mt-idle: #7c3aed;
   --mt-idle-soft: #f3effe;
+  --mt-steer: #2563eb;
+  --mt-steer-soft: #eaf1fe;
 }
 
 body {
