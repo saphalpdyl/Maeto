@@ -32,26 +32,11 @@ type Controller struct {
 	pce                 *PCE
 	costGraph           *CostGraph
 	telemetryCollectors map[NodeID]*TelemetryCollector
+	topologyReports     *TopologyReportCollector
 
 	ready bool
 
 	pceUpdates chan PathSet
-}
-
-// Data reported by the node
-type NodeReport struct {
-	Node NodeID
-	Seq  uint64
-
-	Locator netip.Prefix
-
-	SystemID string
-	AdjSIDs  []AdjacencySID
-}
-
-type AdjacencySID struct {
-	SID          netip.Addr
-	PeerSystemID string
 }
 
 func NewController(
@@ -132,7 +117,12 @@ func NewController(
 		tenants:             tenants,
 		serviceRegistry:     sr,
 		telemetryCollectors: telemetryCollectors,
-		costGraph:           costGraph,
+		topologyReports: NewTopologyReportCollector(
+			js,
+			logger.With(log.Domain(log.DomainControlPlaneLifecycle)),
+			topology,
+		),
+		costGraph: costGraph,
 		pce: NewPCE(
 			costGraph,
 			tenants,
@@ -162,6 +152,7 @@ func (c *Controller) Start(ctx context.Context) {
 	})
 
 	go c.pce.Run(ctx, c.topology.Graph())
+	go c.topologyReports.Run(ctx)
 
 	if err := c.startSnapshotPublisher(ctx); err != nil {
 		c.logger.ErrorContext(ctx, "failed to start snapshot publisher",
@@ -541,7 +532,7 @@ func (c *Controller) handlePETunnelUpdate(ctx context.Context, data []byte) erro
 }
 
 func (c *Controller) startSnapshotPublisher(ctx context.Context) error {
-	publisher, err := nodesync.NewPublisher(ctx, c.js, nodesync.ControlStateBucket)
+	publisher, err := nodesync.NewPublisher(ctx, c.js, nodesync.PaneControlBucket)
 	if err != nil {
 		return fmt.Errorf("create control snapshot publisher: %w", err)
 	}
@@ -633,14 +624,15 @@ func (c *Controller) startPCEUpdatesDispatcher(ctx context.Context) {
 				}
 			}
 
-			for nodeID, byTenant := range tenantPathCombinationByNode {
-				c.logger.InfoContext(
-					ctx,
-					fmt.Sprintf("all site-site combination from Node %s", nodeID),
-					slog.Any("combination", byTenant),
-				)
-			}
+			//for nodeID, byTenant := range tenantPathCombinationByNode {
+			//	c.logger.InfoContext(
+			//		ctx,
+			//		fmt.Sprintf("all site-site combination from Node %s", nodeID),
+			//		slog.Any("combination", byTenant),
+			//	)
+			//}
 
+			pceGraph := NewPCEGraph(c.topology.Graph().Clone())
 			for nodeID, tenantsMap := range tenantPathCombinationByNode {
 				localNode, exists := c.topology.GetNodeByID(nodeID)
 				if !exists {
@@ -670,26 +662,13 @@ func (c *Controller) startPCEUpdatesDispatcher(ctx context.Context) {
 							continue
 						}
 
-						sidAddrList := make([]netip.Addr, 0)
-
-						// Convert A>B>C -> fc00:0:1::,fc00:0:2::,fc00:0:3::
-						for _, p := range comb.Path.Nodes {
-							if p == NodeID(comb.Local.Attach) {
-								continue
-							}
-
-							if p == NodeID(comb.Remote.Attach) {
-								// The last SID will be a DT46 SID, not the End SID of the remote node.
-								continue
-							}
-
-							node, exists := c.topology.GetNodeByID(p)
-							if !exists {
-								c.logger.ErrorContext(ctx, "failed to get Node entry inside inner loop", log.NodeID(string(nodeID)))
-								continue
-							}
-
-							sidAddrList = append(sidAddrList, node.Locator.Addr())
+						sidAddrList, err := transitSegments(pceGraph, comb.Path)
+						if err != nil {
+							c.logger.ErrorContext(ctx, "failed to build segment list; skipping site pair",
+								slog.Int("tenant", int(tenantID)),
+								log.NodeID(string(nodeID)),
+								log.Err(err))
+							continue
 						}
 
 						sidAddrList = append(sidAddrList, dt46)

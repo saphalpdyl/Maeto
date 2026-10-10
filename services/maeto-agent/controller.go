@@ -187,7 +187,7 @@ func (a *Agent) setupIntentWatch(ctx context.Context) {
 		a.js,
 		a.logger.With(log.Domain(log.DomainControlPlane)),
 		nodesync.IntentBucket,
-		nodesync.Key(nodesync.PrefixPE, a.node.ID),
+		nodesync.Key(nodesync.PrefixPE, a.node.ID, nodesync.LaneIntent),
 		aggregateFeed,
 	)
 

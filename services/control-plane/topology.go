@@ -1,7 +1,9 @@
 package controlplane
 
 import (
+	"maps"
 	"net/netip"
+	"slices"
 	"sync"
 	"time"
 )
@@ -35,6 +37,8 @@ type Edge struct {
 	Bandwidth float64
 	Delay     time.Duration
 	Up        bool
+
+	EndX netip.Addr
 }
 
 type Prefix struct {
@@ -50,38 +54,45 @@ type SRv6DomainMetadata struct {
 }
 
 type Graph struct {
-	mu       sync.RWMutex //nolint:unused // guards graph once concurrent access lands
+	mu       sync.RWMutex
 	nodes    map[NodeID]*Node
 	edges    map[EdgeID]*Edge
 	prefixes map[string]*Prefix
 	adj      map[NodeID][]EdgeID
 }
 
+// Clone returns a deep copy: nothing in the copy shares memory with g, so it
+// can be read and changed without g's lock.
 func (g *Graph) Clone() *Graph {
-	g.mu.Lock()
-	defer g.mu.Unlock()
+	g.mu.RLock()
+	defer g.mu.RUnlock()
 
 	newGraph := &Graph{
-		nodes:    make(map[NodeID]*Node),
-		edges:    make(map[EdgeID]*Edge),
-		prefixes: make(map[string]*Prefix),
-		adj:      make(map[NodeID][]EdgeID),
+		nodes:    make(map[NodeID]*Node, len(g.nodes)),
+		edges:    make(map[EdgeID]*Edge, len(g.edges)),
+		prefixes: make(map[string]*Prefix, len(g.prefixes)),
+		adj:      make(map[NodeID][]EdgeID, len(g.adj)),
 	}
 
-	for k, v := range g.nodes {
-		newGraph.nodes[k] = v
+	for id, node := range g.nodes {
+		nodeCopy := *node
+		nodeCopy.Attrs = maps.Clone(node.Attrs)
+		newGraph.nodes[id] = &nodeCopy
 	}
 
-	for k, v := range g.edges {
-		newGraph.edges[k] = v
+	for id, edge := range g.edges {
+		edgeCopy := *edge
+		newGraph.edges[id] = &edgeCopy
 	}
 
-	for k, v := range g.prefixes {
-		newGraph.prefixes[k] = v
+	for key, prefix := range g.prefixes {
+		prefixCopy := *prefix
+		prefixCopy.Attrs = maps.Clone(prefix.Attrs)
+		newGraph.prefixes[key] = &prefixCopy
 	}
 
-	for k, v := range g.adj {
-		newGraph.adj[k] = v
+	for id, edgeIDs := range g.adj {
+		newGraph.adj[id] = slices.Clone(edgeIDs)
 	}
 
 	return newGraph

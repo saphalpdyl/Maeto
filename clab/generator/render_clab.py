@@ -129,6 +129,7 @@ def render_clab(topo, plan):
         cmds = [
             "sysctl -w net.ipv6.conf.all.forwarding=1",
             "sysctl -w net.ipv6.conf.all.seg6_enabled=1",
+            "net.ipv6.seg6_flowlabel=1",
             "ip link add sr0 type dummy",
             "ip link set sr0 up",
             "sh -c '/usr/lib/frr/docker-start &'"

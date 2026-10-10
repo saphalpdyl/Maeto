@@ -272,11 +272,18 @@ func (c *ClabTopologyManager) IsReady() bool {
 	return c.ready
 }
 
+// Graph returns the live graph shared by everyone. Read or change edges only
+// under its lock; use Clone for a private copy.
 func (c *ClabTopologyManager) Graph() *Graph {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+	return c.graph
+}
 
-	return c.graph.Clone()
+func (c *ClabTopologyManager) GetPCEEdge(edgeID EdgeID) *Edge {
+	c.graph.mu.RLock()
+	defer c.graph.mu.RUnlock()
+
+	edge := c.graph.edges[edgeID]
+	return edge
 }
 
 func (c *ClabTopologyManager) GetNodeByID(nodeID NodeID) (*Node, bool) {
@@ -289,4 +296,26 @@ func (c *ClabTopologyManager) GetNodeByID(nodeID NodeID) (*Node, bool) {
 
 func (c *ClabTopologyManager) GetDomainMetadata() SRv6DomainMetadata {
 	return c.domainMetadata
+}
+
+func (c *ClabTopologyManager) SetEndXSIDs(node NodeID, sidsByIface map[string]netip.Addr) []EdgeID {
+	c.graph.mu.Lock()
+	defer c.graph.mu.Unlock()
+
+	changed := make([]EdgeID, 0)
+	for _, edge := range c.graph.edges {
+		if edge.Local != node {
+			continue
+		}
+
+		sid := sidsByIface[edge.LocalIface]
+		if sid == edge.EndX {
+			continue
+		}
+
+		edge.EndX = sid
+		changed = append(changed, edge.ID)
+	}
+
+	return changed
 }

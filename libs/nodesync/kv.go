@@ -18,6 +18,13 @@ const (
 	PrefixCPE = "cpe"
 )
 
+// every key ends in a lane, so readers can watch only the lane they understand
+const (
+	LaneIntent    = "intent"
+	LaneDataplane = "dataplane"
+	LaneTopology  = "topology"
+)
+
 const KeyControlSnapshot = "snapshot"
 
 type BucketConfig struct {
@@ -33,20 +40,20 @@ var (
 	}
 
 	NodeStateBucket = BucketConfig{
-		Name:        "maeto-state",
-		Description: "observed dataplane state per node",
+		Name:        "maeto-node-state",
+		Description: "what each node reports about itself, one key per lane",
 		TTL:         TTL,
 	}
 
-	ControlStateBucket = BucketConfig{
-		Name:        "maeto-control",
-		Description: "control plane topology, inventory and registry snapshot",
+	PaneControlBucket = BucketConfig{
+		Name:        "maeto-pane-control",
+		Description: "control plane snapshot for the pane",
 		TTL:         TTL,
 	}
 )
 
-func Key(prefix, id string) string {
-	return fmt.Sprintf("%s.%s", prefix, id)
+func Key(prefix, id, lane string) string {
+	return fmt.Sprintf("%s.%s.%s", prefix, id, lane)
 }
 
 // Publisher owns its bucket. Ensure is safe to call again after a nats

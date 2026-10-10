@@ -101,7 +101,7 @@ func Watch[T any](ctx context.Context, js jetstream.JetStream, logger *slog.Logg
 				continue
 			}
 
-			logger.InfoContext(ctx, "entry received",
+			logger.DebugContext(ctx, "entry received",
 				slog.String("bucket", cfg.Name),
 				slog.Uint64("revision", entry.Revision()),
 				slog.Any("value", value),

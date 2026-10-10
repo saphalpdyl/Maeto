@@ -177,7 +177,7 @@ func (r *ServiceRegistry) UpsertSIDSegsForTenantOnNode(
 	snapshot := current.Clone()
 	r.mu.Unlock()
 
-	if _, err := r.publisher.Publish(ctx, nodesync.Key(nodesync.PrefixPE, localNodeID), snapshot); err != nil {
+	if _, err := r.publisher.Publish(ctx, nodesync.Key(nodesync.PrefixPE, localNodeID, nodesync.LaneIntent), snapshot); err != nil {
 		return fmt.Errorf("publish pe intent for %s: %w", localNodeID, err)
 	}
 
@@ -220,7 +220,7 @@ func (r *ServiceRegistry) UpsertPEIntentForNode(
 
 	r.mu.Unlock()
 
-	if _, err := r.publisher.Publish(ctx, nodesync.Key(nodesync.PrefixPE, nodeID), snapshot); err != nil {
+	if _, err := r.publisher.Publish(ctx, nodesync.Key(nodesync.PrefixPE, nodeID, nodesync.LaneIntent), snapshot); err != nil {
 		return fmt.Errorf("publish pe intent for %s: %w", nodeID, err)
 	}
 
@@ -252,7 +252,7 @@ func (r *ServiceRegistry) UpsertCPEIntentForSite(ctx context.Context, tenantID s
 
 	r.mu.Unlock()
 
-	if _, err := r.publisher.Publish(ctx, nodesync.Key(nodesync.PrefixCPE, portalID), snapshot); err != nil {
+	if _, err := r.publisher.Publish(ctx, nodesync.Key(nodesync.PrefixCPE, portalID, nodesync.LaneIntent), snapshot); err != nil {
 		return fmt.Errorf("failed to publish intent for portalID: %s, err = %w", portalID, err)
 	}
 
@@ -275,11 +275,11 @@ func (r *ServiceRegistry) Restore(ctx context.Context) error {
 	for _, ni := range intents {
 		switch i := ni.Intent.(type) {
 		case *nodesync.CPEIntent:
-			if _, err := r.publisher.Publish(ctx, nodesync.Key(nodesync.PrefixCPE, i.PortalID), ni); err != nil {
+			if _, err := r.publisher.Publish(ctx, nodesync.Key(nodesync.PrefixCPE, i.PortalID, nodesync.LaneIntent), ni); err != nil {
 				return fmt.Errorf("republish intent for %s: %w", i.PortalID, err)
 			}
 		case *nodesync.PEIntent:
-			if _, err := r.publisher.Publish(ctx, nodesync.Key(nodesync.PrefixPE, i.NodeID), ni); err != nil {
+			if _, err := r.publisher.Publish(ctx, nodesync.Key(nodesync.PrefixPE, i.NodeID, nodesync.LaneIntent), ni); err != nil {
 				return fmt.Errorf("republish intent for %s: %w", i.NodeID, err)
 			}
 		}
@@ -310,7 +310,7 @@ func (r *ServiceRegistry) UpsertPeersForPE(
 
 	r.mu.Unlock()
 
-	if _, err := r.publisher.Publish(ctx, nodesync.Key(nodesync.PrefixPE, nodeID), snapshot); err != nil {
+	if _, err := r.publisher.Publish(ctx, nodesync.Key(nodesync.PrefixPE, nodeID, nodesync.LaneIntent), snapshot); err != nil {
 		return fmt.Errorf("publish pe intent for %s: %w", nodeID, err)
 	}
 

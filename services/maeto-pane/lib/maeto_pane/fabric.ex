@@ -8,8 +8,8 @@ defmodule MaetoPane.Fabric do
   alias Gnat.Jetstream.API.KV
 
   @intents_bucket "maeto-intents"
-  @state_bucket "maeto-state"
-  @control_bucket "maeto-control"
+  @state_bucket "maeto-node-state"
+  @control_bucket "maeto-pane-control"
   @topic "fabric"
   @retry_after 2_000
 
@@ -80,10 +80,15 @@ defmodule MaetoPane.Fabric do
   end
 
   def handle_info({:kv, bucket, :key_added, key, value}, state) do
-    case Jason.decode(value) do
-      {:ok, decoded} ->
-        {:noreply,
-         broadcast(Map.update(state, bucket, %{key => decoded}, &Map.put(&1, key, decoded)))}
+    with {:ok, node_key} <- node_key(bucket, key),
+         {:ok, decoded} <- Jason.decode(value) do
+      {:noreply,
+       broadcast(
+         Map.update(state, bucket, %{node_key => decoded}, &Map.put(&1, node_key, decoded))
+       )}
+    else
+      :other_lane ->
+        {:noreply, state}
 
       {:error, reason} ->
         Logger.warning("undecodable #{bucket} value for #{key}: #{inspect(reason)}")
@@ -94,10 +99,29 @@ defmodule MaetoPane.Fabric do
 
   def handle_info({:kv, bucket, action, key, _value}, state)
       when action in [:key_deleted, :key_purged] do
-    {:noreply, broadcast(Map.update(state, bucket, %{}, &Map.delete(&1, key)))}
+    case node_key(bucket, key) do
+      {:ok, node_key} ->
+        {:noreply, broadcast(Map.update(state, bucket, %{}, &Map.delete(&1, node_key)))}
+
+      :other_lane ->
+        {:noreply, state}
+    end
   end
 
   def handle_info(_message, state), do: {:noreply, state}
+
+  # keys are <prefix>.<id>.<lane>; the rest of the pane keys nodes by <prefix>.<id>
+  def node_key(bucket, key) do
+    lane = lane_for(bucket)
+
+    case String.split(key, ".") do
+      [prefix, id, ^lane] -> {:ok, "#{prefix}.#{id}"}
+      _ -> :other_lane
+    end
+  end
+
+  defp lane_for(:intents), do: "intent"
+  defp lane_for(:states), do: "dataplane"
 
   defp start_watchers do
     owner = self()

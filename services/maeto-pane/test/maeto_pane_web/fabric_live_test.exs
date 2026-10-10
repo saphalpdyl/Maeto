@@ -131,8 +131,8 @@ defmodule MaetoPaneWeb.FabricLiveTest do
     end)
 
     send(MaetoPane.Fabric, {:kv, :control, :key_added, "snapshot", Jason.encode!(@control)})
-    send(MaetoPane.Fabric, {:kv, :intents, :key_added, "pop.A", Jason.encode!(@intent)})
-    send(MaetoPane.Fabric, {:kv, :states, :key_added, "pop.A", Jason.encode!(state)})
+    send(MaetoPane.Fabric, {:kv, :intents, :key_added, "pop.A.intent", Jason.encode!(@intent)})
+    send(MaetoPane.Fabric, {:kv, :states, :key_added, "pop.A.dataplane", Jason.encode!(state)})
 
     :sys.get_state(MaetoPane.Fabric)
 
@@ -159,7 +159,7 @@ defmodule MaetoPaneWeb.FabricLiveTest do
       "current" => []
     }
 
-    send(MaetoPane.Fabric, {:kv, :states, :key_added, "pop.A", Jason.encode!(blind)})
+    send(MaetoPane.Fabric, {:kv, :states, :key_added, "pop.A.dataplane", Jason.encode!(blind)})
     :sys.get_state(MaetoPane.Fabric)
 
     {:ok, view, _html} = live(conn, "/")

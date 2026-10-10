@@ -201,7 +201,7 @@ func (p *Portal) Run(ctx context.Context) error {
 			p.js,
 			p.logger.With(log.Domain(log.DomainControlPlane)),
 			nodesync.IntentBucket,
-			nodesync.Key(nodesync.PrefixCPE, p.config.PortalID),
+			nodesync.Key(nodesync.PrefixCPE, p.config.PortalID, nodesync.LaneIntent),
 			p.intentFeed,
 		)
 

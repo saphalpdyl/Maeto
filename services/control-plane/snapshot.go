@@ -40,6 +40,7 @@ type TopologyEdgeSnapshot struct {
 	DelayMS     float64                   `json:"delay_ms"`
 	Costs       map[CostDimension]float64 `json:"costs,omitempty"`
 	Up          bool                      `json:"up"`
+	EndX        string                    `json:"end_x,omitempty"`
 }
 
 type PCEEdgeSnapshot struct {
@@ -196,6 +197,7 @@ func SnapshotTopology(graph *Graph, domain SRv6DomainMetadata, costs *CostGraph,
 			DelayMS:     float64(edge.Delay) / float64(time.Millisecond),
 			Costs:       edgeCosts,
 			Up:          edge.Up,
+			EndX:        endXString(edge.EndX),
 		})
 	}
 
@@ -504,4 +506,12 @@ func prefixString(prefix netip.Prefix) string {
 	}
 
 	return prefix.String()
+}
+
+func endXString(sid netip.Addr) string {
+	if !sid.IsValid() {
+		return ""
+	}
+
+	return sid.String()
 }

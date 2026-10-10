@@ -88,9 +88,18 @@ func (a *Agent) Run(ctx context.Context) {
 	} else {
 		a.reconciler.SetStateReporter(&stateReporter{
 			publisher: publisher,
-			key:       nodesync.Key(nodesync.PrefixPE, a.node.ID),
+			key:       nodesync.Key(nodesync.PrefixPE, a.node.ID, nodesync.LaneDataplane),
 			nodeID:    a.node.ID,
 		})
+
+		topology := &topologyReporter{
+			publisher: publisher,
+			key:       nodesync.Key(nodesync.PrefixPE, a.node.ID, nodesync.LaneTopology),
+			nodeID:    a.node.ID,
+			dp:        a.dp,
+			logger:    a.logger.With(log.Domain(log.DomainControlPlane)),
+		}
+		go topology.Run(ctx)
 	}
 
 	go a.reconciler.Start(ctx)      // nolint:errcheck
