@@ -1,4 +1,3 @@
-// Contains methods of interactions with the controller
 package maetoagent
 
 import (
@@ -10,11 +9,12 @@ import (
 	"time"
 
 	"github.com/saphalpdyl/maeto/libs/controlapi"
-	"github.com/saphalpdyl/maeto/libs/nodesync"
+	"github.com/saphalpdyl/maeto/libs/swan"
 	"github.com/saphalpdyl/maeto/services/maeto-agent/log"
+	"github.com/strongswan/govici/vici"
 )
 
-func (a *Agent) watchTunnelUpdates(ctx context.Context, eventChan <-chan *UpDownEvent) {
+func (a *Agent) watchTunnelUpdates(ctx context.Context, eventChan <-chan *swan.UpDownEvent) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -29,7 +29,7 @@ func (a *Agent) watchTunnelUpdates(ctx context.Context, eventChan <-chan *UpDown
 				continue
 			}
 
-			var cSa ChildSA
+			var cSa swan.ChildSA
 			for _, v := range e.IKE.ChildSAs {
 				cSa = v
 			}
@@ -97,105 +97,40 @@ func (a *Agent) watchTunnelUpdates(ctx context.Context, eventChan <-chan *UpDown
 	}
 }
 
-// Waits for the control plane to reach healthy status
-func (a *Agent) waitForReady(ctx context.Context) bool {
-	attempt := 0
+func (a *Agent) watchEvents(ctx context.Context, s *vici.Session) (<-chan *swan.UpDownEvent, error) {
+	viciEventChan := make(chan vici.Event, 16)
+	s.NotifyEvents(viciEventChan)
 
-	for {
-		select {
-		case <-ctx.Done():
-			return false
-		default:
-		}
+	eventChan := make(chan *swan.UpDownEvent, 32)
 
-		attempt++
-
-		data, err := a.js.Conn().Request(controlapi.SubjectHealthReady, nil, time.Second)
-		if err != nil {
-			a.logger.WarnContext(ctx, "control plane unreachable",
-				log.Domain(log.DomainControlPlane),
-				log.Attempt(attempt),
-				log.Err(err),
-			)
-		} else {
-			var resp struct {
-				Ready string `json:"ready"`
-			}
-
-			if err = json.Unmarshal(data.Data, &resp); err != nil {
-				a.logger.ErrorContext(ctx, "failed to parse health response",
-					log.Domain(log.DomainControlPlane),
-					log.Err(err),
-				)
-			} else if resp.Ready == "true" {
-				return true
-			}
-		}
-
-		select {
-		case <-ctx.Done():
-			return false
-		case <-time.After(2000 * time.Millisecond):
-		}
-	}
-}
-
-func (a *Agent) fanOutToFeeds(ctx context.Context, item *nodesync.NodeIntent) {
-	select {
-	case a.dataplaneIntentFeed <- item.Clone():
-	default:
-		a.logger.WarnContext(ctx, "dropped dataplane intent, feed seems full", slog.Any("item", item.Clone()))
+	if err := s.Subscribe("ike-updown", "child-updown"); err != nil {
+		a.logger.WarnContext(ctx, "ike-updown EVENT failed to subscribe", log.Err(err))
+		return nil, err
 	}
 
-	select {
-	case a.probeIntentFeed <- item.Clone():
-	default:
-		a.logger.WarnContext(ctx, "dropped probe intent, feed seems full", slog.Any("item", item.Clone()))
-	}
-}
+	go func() {
+		defer s.StopEvents(viciEventChan)
 
-func (a *Agent) setupIntentWatch(ctx context.Context) {
-	aggregateFeed := make(chan *nodesync.NodeIntent, 32)
-
-	resync := time.NewTicker(20 * time.Second)
-	defer resync.Stop()
-
-	var last *nodesync.NodeIntent
-
-	// Fan-out intent to multiple receivers
-	go func(ctx context.Context) {
 		for {
 			select {
 			case <-ctx.Done():
 				return
-			case item, ok := <-aggregateFeed:
+			case e, ok := <-viciEventChan:
 				if !ok {
-					return
+					a.logger.InfoContext(ctx, "ike/child even not ok")
+					continue
 				}
-				a.fanOutToFeeds(ctx, item)
-				last = item.Clone()
-			case <-resync.C:
-				if last != nil {
-					a.fanOutToFeeds(ctx, last)
+
+				parsedEvent, err := swan.ParseUpDownEvent(e.Name, e.Message)
+				if err != nil {
+					a.logger.ErrorContext(ctx, "failed to parse vici updown event", log.Err(err))
+					continue
 				}
+
+				eventChan <- parsedEvent
 			}
 		}
-	}(ctx)
+	}()
 
-	err := nodesync.Watch(
-		ctx,
-		a.js,
-		a.logger.With(log.Domain(log.DomainControlPlane)),
-		nodesync.IntentBucket,
-		nodesync.Key(nodesync.PrefixPE, a.node.ID, nodesync.LaneIntent),
-		aggregateFeed,
-	)
-
-	if err != nil {
-		a.logger.ErrorContext(ctx, "intent watch failed",
-			log.Domain(log.DomainControlPlane),
-			slog.String("intent_key", a.node.IntentKey()),
-			log.Err(err),
-		)
-	}
+	return eventChan, nil
 }

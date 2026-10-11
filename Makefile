@@ -103,17 +103,6 @@ apd:
 sqlc-gen:
 	UID=$(shell id -u) GID=$(shell id -g) docker compose -f docker-compose.dev.yml run --rm sqlc
 
-PROTO_RUN = docker run --rm -v $(PWD):/workspace -w /workspace/libs/proto
-
-proto-image:
-	docker build -t maeto-buf -f docker/gen/protobuf.gen.Dockerfile docker/gen
-
-proto-gen: proto-image
-	$(PROTO_RUN) -u $(shell id -u):$(shell id -g) -e HOME=/tmp maeto-buf generate
-
-proto-lint: proto-image
-	$(PROTO_RUN) maeto-buf lint
-
 # !VM ONLY!
 # One-time CA cert generation used by generator to generate PoP and CPE certs
 pki:

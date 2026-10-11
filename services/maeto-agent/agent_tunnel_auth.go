@@ -11,44 +11,6 @@ import (
 	"github.com/saphalpdyl/maeto/services/maeto-agent/log"
 )
 
-func (a *Agent) watchEvents(ctx context.Context, s *vici.Session) (<-chan *UpDownEvent, error) {
-	viciEventChan := make(chan vici.Event, 16)
-	s.NotifyEvents(viciEventChan)
-
-	eventChan := make(chan *UpDownEvent, 32)
-
-	if err := s.Subscribe("ike-updown", "child-updown"); err != nil {
-		a.logger.WarnContext(ctx, "ike-updown EVENT failed to subscribe", log.Err(err))
-		return nil, err
-	}
-
-	go func() {
-		defer s.StopEvents(viciEventChan)
-
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case e, ok := <-viciEventChan:
-				if !ok {
-					a.logger.InfoContext(ctx, "ike/child even not ok")
-					continue
-				}
-
-				parsedEvent, err := ParseUpDown(e.Name, e.Message)
-				if err != nil {
-					a.logger.ErrorContext(ctx, "failed to parse vici updown event", log.Err(err))
-					continue
-				}
-
-				eventChan <- parsedEvent
-			}
-		}
-	}()
-
-	return eventChan, nil
-}
-
 // charon runs as the ipsec user and cannot read the key itself, so the agent
 // reads it and ships the pem over vici
 func (a *Agent) loadCredentials(ctx context.Context, s *vici.Session) error {

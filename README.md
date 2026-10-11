@@ -10,8 +10,21 @@ Maeto is a SRv6-based SD-WAN control plane. Computes directional least-cost path
 [![Pipeline status](https://gitlab.com/saphalpdyl/maeto/badges/main/pipeline.svg)](https://gitlab.com/saphalpdyl/maeto/-/commits/main)
 ![GitLab Tag](https://img.shields.io/gitlab/v/tag/84541492?include_prereleases)
 
+## Contents
+- [Architecture](#architecture)
+  - [Reconciliation](#reconciliation)
+  - [Measurement](#measurement)
+  - [Bandwidth reservation](#bandwidth-reservation)
+  - [CPE onboarding](#cpe-onboarding)
+  - [Topology](#topology)
+- [Running it](#running-it)
+- [Layout](#layout)
+- [Writeups](#writeups)
+- [Status](#status)
+- [Screenshots](#screenshots)
+
 ## Architecture
-This is the conceptual architecture of the system excluding implementation features. v0 uses simple protobuf-based contracts instead of PCEP. The agent used to shell out for linux commands; it talks Netlink now.
+This is the conceptual architecture of the system excluding implementation features. v1 uses NATS w/ custom structs instead of PCEP. The agent used to shell out for linux commands; it talks Netlink now.
 
 ![Conceptual Architecture of Maeto](/docs/images/arch/basic_arch.svg)
 
@@ -57,7 +70,7 @@ The project ships with a default eight POP topology to test on. `PopX` represent
 ![Example topology](docs/images/screenshots/topology.png)
 
 ## Running it
-Needs docker, containerlab and python3. `pki` is VM-only, it shells out to strongSwan's `pki`.
+VM-based local deployment requires [Vagrant](https://developer.hashicorp.com/vagrant) to be installed with the `libvirt` provider. Highly recommend running inside a VM due to strict dependencies and to prevent stale network namespaces/configuration ending up on the host.
 
 ```sh
 vagrant up # Highly recommended to run in VMs
@@ -66,10 +79,16 @@ vagrant ssh
 make setup   # venvs + git hooks
 make pki     # one-time CA, the generator signs PoP and CPE certs off it
 make ap      # generate the topology, build the images, deploy the lab
+make dev     # start the controller
 make fe      # maeto-pane
-```
 
-`make ips` prints the container addresses. `make clean` tears the lab down.
+make clean   # to destroy the lab
+
+# Optional
+make dozzle  # for container logs (will later be replaced by Grafana stack)
+make nui     # to view NATS state
+make ips     # lists ipv6 addresses of interface of each node
+```
 
 ## Layout
 ```
@@ -83,10 +102,11 @@ services/maeto-agent    runs on each PoP, reconciles intent onto the kernel
 services/maeto-portal   runs on each CPE
 services/maeto-pane     phoenix liveview ui
 clab/generator          topology dsl -> containerlab, frr, addressing, link shaping
+clab/tfsim              custom dsl to inject faults deterministically and emulate scenarios
 ```
 
 ## Writeups
-Things I hit along the way, mostly SRv6 and FRR: [blogs.saphal.me/tags/srv6](https://blogs.saphal.me/tags/srv6/)
+Things I hit along the way, mostly SRv6 and FRR: [blogs.saphal.me/tags/maeto](https://blogs.saphal.me/tags/srv6/)
 
 ## Status
 Done/In-progress:
@@ -101,7 +121,6 @@ Done/In-progress:
 
 Not yet:
 - Loss and jitter are seeded values, only latency is measured
-- Argus detectors exist but nothing is wired to them. Argus implemented have been ported over to control plane temporarily for "Make it work, before making it right".
 
 ## Screenshots 
 ![Link View](docs/images/screenshots/link_view.png)

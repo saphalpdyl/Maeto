@@ -11,23 +11,6 @@ services:
 
   # NATS moved to Containerlab ( deploy/generator/render_clab.py )
 
-  maeto-argus:
-    image: maeto-argus:latest
-    container_name: maeto-argus
-    build:
-      context: .
-      dockerfile: docker/maeto-argus.Dockerfile
-    ports:
-      - 8087:8080
-    environment:
-      - OTEL_SINK=otel
-      - OTEL_ENDPOINT=otel-collector:4318
-      - DETECTION_INTERVAL_SECONDS=10
-      - maeto_DB_URL=postgres://postgres:admin@db:5432/postgres?sslmode=disable
-      - NATS_CONNECT_URL=nats://nats-server:4222
-    depends_on:
-      - db
-
   maeto-control-plane:
     image: maeto-control-plane:latest
     container_name: maeto-control-plane

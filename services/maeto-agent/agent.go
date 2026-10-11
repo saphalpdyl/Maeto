@@ -2,11 +2,13 @@ package maetoagent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"time"
 
 	"github.com/nats-io/nats.go/jetstream"
+	"github.com/saphalpdyl/maeto/libs/controlapi"
 	"github.com/strongswan/govici/vici"
 
 	"github.com/saphalpdyl/maeto/libs/dataplane"
@@ -134,4 +136,47 @@ func (a *Agent) Run(ctx context.Context) {
 	}
 
 	<-ctx.Done()
+}
+
+// Waits for the control plane to reach healthy status
+func (a *Agent) waitForReady(ctx context.Context) bool {
+	attempt := 0
+
+	for {
+		select {
+		case <-ctx.Done():
+			return false
+		default:
+		}
+
+		attempt++
+
+		data, err := a.js.Conn().Request(controlapi.SubjectHealthReady, nil, time.Second)
+		if err != nil {
+			a.logger.WarnContext(ctx, "control plane unreachable",
+				log.Domain(log.DomainControlPlane),
+				log.Attempt(attempt),
+				log.Err(err),
+			)
+		} else {
+			var resp struct {
+				Ready string `json:"ready"`
+			}
+
+			if err = json.Unmarshal(data.Data, &resp); err != nil {
+				a.logger.ErrorContext(ctx, "failed to parse health response",
+					log.Domain(log.DomainControlPlane),
+					log.Err(err),
+				)
+			} else if resp.Ready == "true" {
+				return true
+			}
+		}
+
+		select {
+		case <-ctx.Done():
+			return false
+		case <-time.After(2000 * time.Millisecond):
+		}
+	}
 }
