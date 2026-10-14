@@ -120,7 +120,13 @@ Done/In-progress:
 - Bandwidth-aware hose-modeled path computation
 
 Not yet:
+- BGP-LS defined topology instead of statically generated topology
+- Link and Node Utilization in Cost  Graph as logical links.
+- Flexible Bandwidth Reservation: CIR, PIR and best-effort traffic allocation
 - Loss and jitter are seeded values, only latency is measured
+- Hybrid: Fast greedy + Slow LP optimization with hold-down timer and partially moving traffic with observations as confirmation
+- Cost impact prediction before moving paths
+- Flowlet switching for elephant flows w/ eBPF for flow detection and switching itself.
 
 ## Screenshots 
 ![Link View](docs/images/screenshots/link_view.png)
