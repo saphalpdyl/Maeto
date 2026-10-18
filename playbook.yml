@@ -24,6 +24,7 @@
     - name: Install base deps
       ansible.builtin.apt:
         name:
+          - python3.14-venv
           - traceroute
           - iputils-ping
           - net-tools

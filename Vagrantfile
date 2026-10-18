@@ -1,5 +1,5 @@
 Vagrant.configure("2") do |config|
-  config.vm.box = "cloud-image/ubuntu-24.04"
+  config.vm.box = "cloud-image/ubuntu-26.04"
   config.vm.hostname = "dev"
 
   config.vm.provider "libvirt" do |lv|

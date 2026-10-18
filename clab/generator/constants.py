@@ -3,7 +3,7 @@
 GENERATOR_VERSION = "2.1.0"
 
 POP_IMAGE = "maeto-pop:latest"
-FRR_VERSION = "10.5.1"
+FRR_VERSION = "10.6.0"
 CPE_IMAGE = "maeto-portal:latest"
 # transit models the unmanaged internet: not ours, so stock upstream
 TRANSIT_IMAGE = "nicolaka/netshoot:latest"

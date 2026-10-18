@@ -23,7 +23,7 @@ RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache
     fi
 
 # PoP node: FRR for IS-IS + SRv6, strongSwan for customer IPsec termination.
-FROM quay.io/frrouting/frr:10.4.1
+FROM quay.io/frrouting/frr:10.6.0
 
 RUN apk add --no-cache strongswan nftables supervisor tcpdump
 
