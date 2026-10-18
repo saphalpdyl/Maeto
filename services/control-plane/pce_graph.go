@@ -110,6 +110,7 @@ func (e *PCEEdge) Cost(costs map[CostGraphEdge]*Cost) *Cost {
 				worst.Costs[dim] = value
 			}
 		}
+
 	}
 
 	return worst

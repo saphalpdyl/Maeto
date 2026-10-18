@@ -35,7 +35,6 @@ const (
 )
 
 type Cost struct {
-	Edge  *Edge
 	Costs map[CostDimension]float64
 }
 
@@ -66,7 +65,6 @@ func NewTestCostGraph(
 
 			cg.byID[e] = key
 			cg.graph[key] = &Cost{
-				Edge: edge,
 				Costs: map[CostDimension]float64{
 					COSTDIM_LOSS:    5,
 					COSTDIM_LATENCY: 5,
@@ -127,7 +125,6 @@ func (c *CostGraph) Costs() map[CostGraphEdge]*Cost {
 	costs := make(map[CostGraphEdge]*Cost, len(c.graph))
 	for id, cost := range c.graph {
 		costs[id] = &Cost{
-			Edge:  cost.Edge,
 			Costs: maps.Clone(cost.Costs),
 		}
 	}

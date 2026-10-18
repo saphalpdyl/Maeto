@@ -6,7 +6,7 @@ defmodule MaetoPane.Fabric.Paths do
 
   alias MaetoPane.Fabric.Net
 
-  @latency "latency"
+  @default_label 0
 
   def index(snapshot) do
     control = Map.get(snapshot, :control) || %{}
@@ -35,14 +35,14 @@ defmodule MaetoPane.Fabric.Paths do
         tenant: tenant_key(path["tenant"]),
         source: path["source"],
         dest: path["dest"],
-        dimension: path["dimension"],
+        label: path["label"],
         nodes: path["nodes"] || [],
         edges: path["edges"] || [],
         cost: path["cost"],
         hops: max(length(path["nodes"] || []) - 1, 0)
       }
     end)
-    |> Enum.sort_by(&{&1.source, &1.dest, &1.tenant, &1.dimension})
+    |> Enum.sort_by(&{&1.source, &1.dest, &1.tenant, &1.label})
   end
 
   @doc """
@@ -63,7 +63,7 @@ defmodule MaetoPane.Fabric.Paths do
         tenant: tenant_key(change["tenant"]),
         src: change["src"],
         dst: change["dst"],
-        dimension: change["dimension"],
+        label: change["label"],
         kind: change["kind"],
         from_nodes: from["nodes"] || [],
         to_nodes: to["nodes"] || [],
@@ -86,7 +86,7 @@ defmodule MaetoPane.Fabric.Paths do
   end
 
   def computed_index(computed) do
-    Map.new(computed, fn path -> {{path.tenant, path.source, path.dest, path.dimension}, path} end)
+    Map.new(computed, fn path -> {{path.tenant, path.source, path.dest, path.label}, path} end)
   end
 
   defp tenant_key(nil), do: nil
@@ -235,7 +235,7 @@ defmodule MaetoPane.Fabric.Paths do
       hops: hops,
       observed: first_of([got], :segments, nil),
       cost:
-        first_of([Map.get(costs, {tenant_key(tenant), id, egress.node, @latency})], :cost, nil),
+        first_of([Map.get(costs, {tenant_key(tenant), id, egress.node, @default_label})], :cost, nil),
       status: status(want, sides.planned, got)
     }
   end

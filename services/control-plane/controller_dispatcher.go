@@ -34,7 +34,8 @@ func (c *Controller) startPCEUpdatesDispatcher(ctx context.Context) {
 			tenantPathCombinationByNode := make(map[NodeID]map[TenantID][]pceUpdateSiteCombination)
 			for _, key := range slices.SortedFunc(maps.Keys(paths), PathKey.Compare) {
 				path := paths[key]
-				if path == nil || key.Dim != COSTDIM_LATENCY || key.From == key.To {
+				// TODO: key.Label == 0 refers to the bulk/default traffic. Multi-class switching will be implemented in the near-future
+				if path == nil || key.Label != 0 || key.From == key.To {
 					continue
 				}
 

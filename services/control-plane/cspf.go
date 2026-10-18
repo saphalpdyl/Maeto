@@ -66,12 +66,11 @@ type PathKey struct {
 	Tenant TenantID
 	From   NodeID
 	To     NodeID
-	Label  int64
-	Dim    CostDimension
+	Label  uint64
 }
 
 func (k PathKey) String() string {
-	return fmt.Sprintf("%d/%s->%s/%d/%s", k.Tenant, k.From, k.To, k.Label, k.Dim)
+	return fmt.Sprintf("%d/%s->%s/%d", k.Tenant, k.From, k.To, k.Label)
 }
 
 func (k PathKey) MarshalText() ([]byte, error) {
@@ -84,7 +83,6 @@ func (k PathKey) Compare(other PathKey) int {
 		cmp.Compare(k.From, other.From),
 		cmp.Compare(k.To, other.To),
 		cmp.Compare(k.Label, other.Label),
-		cmp.Compare(k.Dim, other.Dim),
 	)
 }
 
@@ -115,6 +113,26 @@ func WeightedCost(weights map[CostDimension]float64) Objective {
 		}
 
 		return total
+	}
+}
+
+// Static meaning reserved bandwidth instead of probed utilization
+func StaticBandwidthUtilization(reserved map[PCEEdgeID]float64) Objective {
+	return func(e *PCEEdge, c *Cost) float64 {
+		capacity := e.Capacity() * (1 - capacityHeadroom)
+		if capacity <= 0 {
+			return math.Inf(1)
+		}
+
+		frac := reserved[e.ID] / capacity
+		if frac >= 1 {
+			return math.Inf(1)
+		}
+
+		// Convex function because bulk traffic prioritizes less loaded paths
+		// 	without it, cspf chooses the heavy link even because the sum of
+		// 	the light n links otherwise have a greater cost.
+		return 1 / (1 - frac)
 	}
 }
 

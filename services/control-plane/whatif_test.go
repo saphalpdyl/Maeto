@@ -81,7 +81,7 @@ func describePath(g *PCEGraph, costs map[CostGraphEdge]*Cost, pair [2]NodeID, ob
 func applyOverrides(base map[CostGraphEdge]*Cost, overrides map[[2]NodeID]map[CostDimension]float64) map[CostGraphEdge]*Cost {
 	out := make(map[CostGraphEdge]*Cost, len(base))
 	for key, c := range base {
-		out[key] = &Cost{Edge: c.Edge, Costs: maps.Clone(c.Costs)}
+		out[key] = &Cost{Costs: maps.Clone(c.Costs)}
 	}
 
 	for pair, dims := range overrides {

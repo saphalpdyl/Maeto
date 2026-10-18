@@ -28,11 +28,54 @@ func NewBandwidthReservationRegistry(logger *slog.Logger) BandwidthReservationRe
 	}
 }
 
+// TODO: Inefficient at larger scale
+func (b *BandwidthReservationRegistry) ReservedMapExcluding(tenantID TenantID, key BandwidthReservationKey) map[PCEEdgeID]float64 {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+
+	rMap := make(map[PCEEdgeID]float64, len(b.registry))
+	for edgeID, rEdge := range b.registry {
+		rMap[edgeID] = rEdge.loadExcluding(tenantID, key, nil)
+	}
+
+	return rMap
+}
+
 // Directional, one physical link will have two reservation edge
 type BandwidthReservationEdge struct {
 	ForEdge *PCEEdge
 
 	Bookings map[TenantID]*BandwidthReservationTenantEntry
+}
+
+func (b *BandwidthReservationEdge) loadExcluding(tenantID TenantID, key BandwidthReservationKey, with *BandwidthReservation) float64 {
+	rest := &BandwidthReservationTenantEntry{
+		Tenant:       tenantID,
+		Reservations: make(map[BandwidthReservationKey]*BandwidthReservation),
+	}
+	if with != nil {
+		rest.Reservations[key] = with
+	}
+
+	if b == nil {
+		return rest.CalculateBandwidth()
+	}
+
+	load := 0.0
+	for tID, entry := range b.Bookings {
+		if tID != tenantID {
+			load += entry.CalculateBandwidth()
+			continue
+		}
+
+		for k, r := range entry.Reservations {
+			if k != key {
+				rest.Reservations[k] = r
+			}
+		}
+	}
+
+	return load + rest.CalculateBandwidth()
 }
 
 type BandwidthReservationTenantEntry struct {
@@ -43,12 +86,12 @@ type BandwidthReservationTenantEntry struct {
 
 type bandwidthPopLabel struct {
 	Pop   NodeID
-	Label int64
+	Label uint64
 }
 
-func (e *BandwidthReservationTenantEntry) getBandwidthSums() (map[int64]float64, map[int64]float64) {
-	sumSources := make(map[int64]float64)
-	sumSinks := make(map[int64]float64)
+func (e *BandwidthReservationTenantEntry) getBandwidthSums() (map[uint64]float64, map[uint64]float64) {
+	sumSources := make(map[uint64]float64)
+	sumSinks := make(map[uint64]float64)
 
 	seenSources := make(map[bandwidthPopLabel]struct{})
 	seenSinks := make(map[bandwidthPopLabel]struct{})
@@ -84,7 +127,7 @@ func (e *BandwidthReservationTenantEntry) CalculateBandwidth() float64 {
 type BandwidthReservationKey struct {
 	SourcePop NodeID
 	SinkPop   NodeID
-	Label     int64 // identifies color, tiers etc.
+	Label     uint64 // identifies color, tiers etc.
 }
 
 type BandwidthReservation struct {
@@ -163,36 +206,9 @@ func (b *BandwidthReservationRegistry) checkCapacity(
 	tenantID TenantID,
 	candidate *BandwidthReservation,
 ) bool {
-	var booked float64
+	load := b.registry[edge.ID].loadExcluding(tenantID, candidate.Key, candidate)
 
-	// Create a testReservation and add the source/sink to check
-	// CalculateBandwidth() automatically handles the deduplication
-	// 	Otherwise, we'd have to manage the oncoming candidate's source/sink pop dedupe
-	//	ourselves/
-	testTenantReservation := &BandwidthReservationTenantEntry{
-		Tenant: tenantID,
-		Reservations: map[BandwidthReservationKey]*BandwidthReservation{
-			candidate.Key: candidate,
-		},
-	}
-
-	// If !ok, then edge is empty, test directly if math.Min(source,sink) <= capacity
-	if reservationEdge, ok := b.registry[edge.ID]; ok {
-		for tID, entry := range reservationEdge.Bookings {
-			if tID != tenantID {
-				booked += entry.CalculateBandwidth()
-				continue
-			}
-
-			for key, r := range entry.Reservations {
-				if key != candidate.Key {
-					testTenantReservation.Reservations[key] = r
-				}
-			}
-		}
-	}
-
-	return booked+testTenantReservation.CalculateBandwidth() <= edge.Capacity()*(1-capacityHeadroom)
+	return load <= edge.Capacity()*(1-capacityHeadroom)
 }
 
 func (b *BandwidthReservationRegistry) CheckCapacity(

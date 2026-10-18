@@ -41,7 +41,7 @@ func res(source, sink NodeID, sourceMbps, sinkMbps float64) *BandwidthReservatio
 	return labeled(source, sink, 0, sourceMbps, sinkMbps)
 }
 
-func labeled(source, sink NodeID, label int64, sourceMbps, sinkMbps float64) *BandwidthReservation {
+func labeled(source, sink NodeID, label uint64, sourceMbps, sinkMbps float64) *BandwidthReservation {
 	return &BandwidthReservation{
 		Key:             BandwidthReservationKey{SourcePop: source, SinkPop: sink, Label: label},
 		SourceBandwidth: sourceMbps,

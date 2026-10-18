@@ -770,7 +770,7 @@ defmodule MaetoPaneWeb.FabricLive do
         <tr>
           <th class="px-4 py-2.5">Pair</th>
           <th class="py-2.5">Underlay hops</th>
-          <th class="py-2.5">Dimension</th>
+          <th class="py-2.5">Label</th>
           <th class="py-2.5 text-right">Cost</th>
           <th class="px-4 py-2.5 text-right">Programmed</th>
         </tr>
@@ -782,7 +782,7 @@ defmodule MaetoPaneWeb.FabricLive do
             <span :if={path.tenant} class="ml-1.5 text-xs text-muted">tenant {path.tenant}</span>
           </td>
           <td class="py-2 font-mono text-xs text-muted">{Enum.join(path.nodes, " › ")}</td>
-          <td class="py-2 text-muted">{path.dimension}</td>
+          <td class="py-2 text-muted">{path.label}</td>
           <td class="py-2 text-right font-mono tabular-nums">{num(path.cost)}</td>
           <td class="px-4 py-2 text-right">
             <.pill :if={MapSet.member?(@programmed, {path.source, path.dest})} tone="ok">

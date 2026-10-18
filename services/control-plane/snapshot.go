@@ -119,14 +119,13 @@ type TenantSnapshot struct {
 }
 
 type PathSnapshot struct {
-	Tenant    TenantID `json:"tenant"`
-	Label     int64    `json:"label"`
-	Source    string   `json:"source"`
-	Dest      string   `json:"dest"`
-	Dimension string   `json:"dimension"`
-	Nodes     []string `json:"nodes"`
-	Edges     []string `json:"edges"`
-	Cost      float64  `json:"cost"`
+	Tenant TenantID `json:"tenant"`
+	Label  uint64   `json:"label"`
+	Source string   `json:"source"`
+	Dest   string   `json:"dest"`
+	Nodes  []string `json:"nodes"`
+	Edges  []string `json:"edges"`
+	Cost   float64  `json:"cost"`
 }
 
 type ControlSnapshot struct {
@@ -391,14 +390,13 @@ func SnapshotPaths(paths PathSet) []PathSnapshot {
 		}
 
 		entry := PathSnapshot{
-			Tenant:    key.Tenant,
-			Label:     key.Label,
-			Source:    string(key.From),
-			Dest:      string(key.To),
-			Dimension: string(key.Dim),
-			Nodes:     make([]string, 0, len(path.Nodes)),
-			Edges:     make([]string, 0, len(path.Links)),
-			Cost:      path.Cost,
+			Tenant: key.Tenant,
+			Label:  key.Label,
+			Source: string(key.From),
+			Dest:   string(key.To),
+			Nodes:  make([]string, 0, len(path.Nodes)),
+			Edges:  make([]string, 0, len(path.Links)),
+			Cost:   path.Cost,
 		}
 
 		for _, node := range path.Nodes {

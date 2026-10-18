@@ -35,11 +35,10 @@ const (
 type PCETickReportReroute struct {
 	At     time.Time `json:"at"`
 	Tenant TenantID  `json:"tenant"`
-	Label  int64     `json:"label"`
+	Label  uint64    `json:"label"`
 
 	Src  NodeID         `json:"src"`
 	Dst  NodeID         `json:"dst"`
-	Dim  CostDimension  `json:"dimension"`
 	Kind PathChangeKind `json:"kind"`
 
 	FromPath Path `json:"from_path"`
