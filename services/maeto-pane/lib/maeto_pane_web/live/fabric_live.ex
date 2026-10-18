@@ -280,7 +280,7 @@ defmodule MaetoPaneWeb.FabricLive do
     do: "#{facts.paths_installed} of #{facts.paths} programmed, desired against the observed FIB"
 
   defp section_caption(:computed, facts, _registry),
-    do: "Least cost per dimension, recomputed on every PCE tick (#{facts.computed} pairs)"
+    do: "Least cost per class, recomputed on every PCE tick (#{facts.computed} paths)"
 
   defp section_caption(:links, _facts, _registry),
     do: "One line per PCE edge and direction: what the PCE routes, costs and books on"
@@ -770,7 +770,7 @@ defmodule MaetoPaneWeb.FabricLive do
         <tr>
           <th class="px-4 py-2.5">Pair</th>
           <th class="py-2.5">Underlay hops</th>
-          <th class="py-2.5">Label</th>
+          <th class="py-2.5">Class</th>
           <th class="py-2.5 text-right">Cost</th>
           <th class="px-4 py-2.5 text-right">Programmed</th>
         </tr>
@@ -782,7 +782,10 @@ defmodule MaetoPaneWeb.FabricLive do
             <span :if={path.tenant} class="ml-1.5 text-xs text-muted">tenant {path.tenant}</span>
           </td>
           <td class="py-2 font-mono text-xs text-muted">{Enum.join(path.nodes, " › ")}</td>
-          <td class="py-2 text-muted">{path.label}</td>
+          <td class="py-2 text-muted">
+            {path.class}
+            <span :if={path.label} class="ml-1 font-mono text-xs text-faint">{path.label}</span>
+          </td>
           <td class="py-2 text-right font-mono tabular-nums">{num(path.cost)}</td>
           <td class="px-4 py-2 text-right">
             <.pill :if={MapSet.member?(@programmed, {path.source, path.dest})} tone="ok">

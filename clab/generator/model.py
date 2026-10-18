@@ -44,6 +44,7 @@ class TrafficClass:
     name: str
     label: int          # opaque, carried as the sr-te color
     index: int          # placement priority, higher goes first
+    dscp: tuple         # codepoints classified into this class at the headend
     objective: dict     # dimension -> weight
 
 

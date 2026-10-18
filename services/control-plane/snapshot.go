@@ -118,6 +118,13 @@ type TenantSnapshot struct {
 	Sites      []SiteSnapshot `json:"sites"`
 }
 
+type ClassSnapshot struct {
+	Label uint64 `json:"label"`
+	Name  string `json:"name"`
+	Index int    `json:"index"`
+	DSCP  []int  `json:"dscp"`
+}
+
 type PathSnapshot struct {
 	Tenant TenantID `json:"tenant"`
 	Label  uint64   `json:"label"`
@@ -134,6 +141,7 @@ type ControlSnapshot struct {
 	Inventory   []InventoryNodeSnapshot `json:"inventory"`
 	Registry    RegistrySnapshot        `json:"registry"`
 	Tenants     []TenantSnapshot        `json:"tenants"`
+	Classes     []ClassSnapshot         `json:"classes"`
 	Paths       []PathSnapshot          `json:"paths"`
 	PathChanges []PCETickReportReroute  `json:"path_changes"`
 }
@@ -380,6 +388,29 @@ func SnapshotTenants(tenants TenantRepository) []TenantSnapshot {
 	return out
 }
 
+func SnapshotClasses(tenants TenantRepository) []ClassSnapshot {
+	out := []ClassSnapshot{}
+	if tenants == nil {
+		return out
+	}
+
+	for _, class := range tenants.Classes() {
+		dscp := slices.Clone(class.Match.DSCP)
+		if dscp == nil {
+			dscp = []int{}
+		}
+
+		out = append(out, ClassSnapshot{
+			Label: class.Label,
+			Name:  class.Name,
+			Index: class.Index,
+			DSCP:  dscp,
+		})
+	}
+
+	return out
+}
+
 func SnapshotPaths(paths PathSet) []PathSnapshot {
 	out := []PathSnapshot{}
 
@@ -465,6 +496,7 @@ func (s *SnapshotPublisher) Snapshot() ControlSnapshot {
 		Topology:    SnapshotTopology(s.graph, s.domain, s.costs, s.bookings),
 		Inventory:   SnapshotInventory(s.inventory),
 		Tenants:     SnapshotTenants(s.tenants),
+		Classes:     SnapshotClasses(s.tenants),
 		Paths:       SnapshotPaths(s.paths.Load()),
 		PathChanges: s.changes.Recent(),
 	}

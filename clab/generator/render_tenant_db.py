@@ -9,7 +9,13 @@ def render_tenant_db(topo):
     data = {
         "generator_version": GENERATOR_VERSION,
         "classes": [
-            {"name": tc.name, "label": tc.label, "index": tc.index, "objective": tc.objective}
+            {
+                "name": tc.name,
+                "label": tc.label,
+                "index": tc.index,
+                "match": {"dscp": list(tc.dscp)},
+                "objective": tc.objective,
+            }
             for tc in sorted(topo.classes, key=lambda x: x.label)
         ],
         "tiers": [

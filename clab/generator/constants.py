@@ -1,6 +1,6 @@
 # static values shared across the generator
 
-GENERATOR_VERSION = "2.1.0"
+GENERATOR_VERSION = "2.2.0"
 
 POP_IMAGE = "maeto-pop:latest"
 FRR_VERSION = "10.6.0"
@@ -61,9 +61,14 @@ CPE_KEYS = {"id", "attach", "tenant", "prefix", "portal_id", "reservation_bandwi
 TENANT_KEYS = {"id", "allocation", "tier", "data"}
 LINK_KEYS = {"a", "b", "parallel"}
 LINK_PARALLEL_KEYS = {"bandwidth", "delay", "start_jitter"}
-CLASS_KEYS = {"label", "index", "objective"}
+CLASS_KEYS = {"label", "index", "match", "objective"}
+MATCH_KEYS = {"dscp"}
 TIER_KEYS = {"index", "classes"}
 OBJECTIVE_DIMENSIONS = {"latency", "jitter", "loss"}
+
+# dscp is 6 bits; cs0 is unmarked traffic, which already rides the default class
+DSCP_MAX = 63
+DSCP_UNMARKED = 0
 
 # whatever a site does not carve out for a named class rides the default class;
 # it is implicit, so neither its name nor its label can be declared

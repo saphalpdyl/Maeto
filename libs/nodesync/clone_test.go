@@ -39,6 +39,10 @@ func TestNodeIntentCloneIsDeep(t *testing.T) {
 					TelemetryKey:  "A:eth1-B:eth3",
 				},
 			},
+			TrafficClassIntent: []nodesync.PETrafficClassIntent{
+				{Color: 2, DSCP: []int{46}},
+				{Color: 3, DSCP: []int{26, 28, 30}},
+			},
 		},
 	}
 
@@ -56,6 +60,8 @@ func TestNodeIntentCloneIsDeep(t *testing.T) {
 	pe.Tenants["999"] = &nodesync.TenantIntent{}
 	pe.Peers["B"] = nodesync.PeerIntent{TelemetryKey: "mutated"}
 	pe.Peers["C"] = nodesync.PeerIntent{}
+	pe.TrafficClassIntent[0].Color = 99
+	pe.TrafficClassIntent[1].DSCP[0] = 0
 
 	got := clone.Intent.(*nodesync.PEIntent) // nolint:errcheck
 
@@ -95,6 +101,16 @@ func TestNodeIntentCloneIsDeep(t *testing.T) {
 	}
 	if key := got.Peers["B"].TelemetryKey; key != "A:eth1-B:eth3" {
 		t.Errorf("TelemetryKey = %q, want %q -- peer map is shared", key, "A:eth1-B:eth3")
+	}
+	classes := got.TrafficClassIntent
+	if len(classes) != 2 {
+		t.Fatalf("TrafficClassIntent has %d entries, want 2", len(classes))
+	}
+	if classes[0].Color != 2 {
+		t.Errorf("TrafficClassIntent[0].Color = %d, want 2 -- class slice is shared", classes[0].Color)
+	}
+	if classes[1].DSCP[0] != 26 {
+		t.Errorf("TrafficClassIntent[1].DSCP[0] = %d, want 26 -- dscp slice is shared", classes[1].DSCP[0])
 	}
 	if orig.Intent == clone.Intent {
 		t.Error("clone shares the Intent pointer with the original")

@@ -28,14 +28,17 @@ classes:
   voice:
     label: 2
     index: 1 # Greater the value, the more priority it has during path computation
+    match: { dscp: [46] } # EF, RFC 4594 telephony
     objective: { latency: 0.5, jitter: 0.5} # Represents the weight of cost dimension
   streaming:
     label: 3
     index: 2
+    match: { dscp: [34, 36, 38] } # AF4 High-assurance class for interactive video and streaming
     objective: {latency: 0.2, jitter: 0.8}
 #  <class-name>:
 #    label: <color>
 #    index: <priority>  Higher value means higher priority
+#    match: { dscp: [<1..63>, ...] }  Codepoints classified into this class; unmatched traffic is default
 #    objective: { <latency,jitter,loss>:  <0 < float64 <= 1.0>}
 
 tiers:
@@ -47,6 +50,7 @@ tiers:
     classes: { voice: 0.2 }
 #  <tier-name>:
 #    index: <priority>  Higher value means higher priority
+#    match: { dscp: [<1..63>, ...] }  Codepoints classified into this class; unmatched traffic is default
 #    classes: {<class-name>: <fraction-of-bandwidth-to-allocate>}  Remaining goes to default/bulk class
 
 tenants:

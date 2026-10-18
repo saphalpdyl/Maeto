@@ -6,6 +6,9 @@ from . import addressing
 from .constants import (
     CLASS_KEYS,
     CPE_KEYS,
+    DSCP_MAX,
+    DSCP_UNMARKED,
+    MATCH_KEYS,
     DEFAULT_CLASS_LABEL,
     DEFAULT_CLASS_NAME,
     OBJECTIVE_DIMENSIONS,
@@ -135,6 +138,7 @@ def _parse_classes(root):
     classes = []
     seen_labels = {}
     seen_indexes = {}
+    seen_dscp = {}
     for name, raw in items.items():
         where = f"classes.{name}"
         if not isinstance(name, str) or not name.strip():
@@ -153,10 +157,12 @@ def _parse_classes(root):
             raise TopologyError(f"{where}.label {label} is already used by class {seen_labels[label]}")
         seen_labels[label] = name
         index = _priority_index(raw, seen_indexes, name, where, 1)
+        dscp = _match_dscp(raw.get("match"), seen_dscp, name, f"{where}.match")
         classes.append(TrafficClass(
             name=name,
             label=label,
             index=index,
+            dscp=dscp,
             objective=_objective(raw.get("objective"), f"{where}.objective"),
         ))
     return classes
@@ -170,6 +176,28 @@ def _priority_index(raw, seen, name, where, minimum):
         raise TopologyError(f"{where}.index {index} is already used by {seen[index]}")
     seen[index] = name
     return index
+
+
+def _match_dscp(raw, seen, name, where):
+    if not isinstance(raw, dict):
+        raise TopologyError(f"{where} must be a mapping")
+    _reject_unknown(raw, MATCH_KEYS, where)
+    codepoints = raw.get("dscp")
+    if not isinstance(codepoints, list) or not codepoints:
+        raise TopologyError(f"{where}.dscp must be a non-empty list of codepoints")
+    out = []
+    for value in codepoints:
+        if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= DSCP_MAX:
+            raise TopologyError(f"{where}.dscp values must be integers in 0..{DSCP_MAX}: {value}")
+        if value == DSCP_UNMARKED:
+            raise TopologyError(f"{where}.dscp {DSCP_UNMARKED} is unmarked traffic and always rides the default class")
+        if value in out:
+            raise TopologyError(f"{where}.dscp {value} is listed twice")
+        if value in seen:
+            raise TopologyError(f"{where}.dscp {value} is already matched by class {seen[value]}")
+        seen[value] = name
+        out.append(value)
+    return tuple(sorted(out))
 
 
 def _objective(raw, where):

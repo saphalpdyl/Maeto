@@ -99,11 +99,15 @@ defmodule MaetoPaneWeb.FabricLivePathsTest do
         ]
       }
     ],
+    "classes" => [
+      %{"label" => 0, "name" => "default", "index" => 0, "dscp" => []},
+      %{"label" => 2, "name" => "voice", "index" => 2, "dscp" => [46]}
+    ],
     "paths" => [
       %{
         "source" => "A",
         "dest" => "C",
-        "dimension" => "latency",
+        "label" => 0,
         "nodes" => ["A", "B", "C"],
         "edges" => ["A:eth2-B:eth2", "B:eth4-C:eth4"],
         "cost" => 5.0
@@ -284,7 +288,7 @@ defmodule MaetoPaneWeb.FabricLivePathsTest do
     html = view |> element("#nav-computed") |> render_click()
 
     assert html =~ "Computed paths"
-    assert html =~ "latency"
+    assert html =~ "default"
     assert html =~ "5.0"
     # the pair carries a programmed segment list, so the reasoning ties to the result
     assert html =~ "segment list"

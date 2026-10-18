@@ -28,6 +28,7 @@ defmodule MaetoPane.Fabric.Paths do
   @doc "Every CSPF path the controller last computed, one per tenant and PoP pair."
   def computed(snapshot) do
     control = Map.get(snapshot, :control) || %{}
+    names = class_names(control)
 
     (control["paths"] || [])
     |> Enum.map(fn path ->
@@ -36,6 +37,7 @@ defmodule MaetoPane.Fabric.Paths do
         source: path["source"],
         dest: path["dest"],
         label: path["label"],
+        class: class_name(names, path["label"]),
         nodes: path["nodes"] || [],
         edges: path["edges"] || [],
         cost: path["cost"],
@@ -52,6 +54,7 @@ defmodule MaetoPane.Fabric.Paths do
   """
   def changes(snapshot) do
     control = Map.get(snapshot, :control) || %{}
+    names = class_names(control)
 
     (control["path_changes"] || [])
     |> Enum.map(fn change ->
@@ -64,6 +67,7 @@ defmodule MaetoPane.Fabric.Paths do
         src: change["src"],
         dst: change["dst"],
         label: change["label"],
+        class: class_name(names, change["label"]),
         kind: change["kind"],
         from_nodes: from["nodes"] || [],
         to_nodes: to["nodes"] || [],
@@ -87,6 +91,22 @@ defmodule MaetoPane.Fabric.Paths do
 
   def computed_index(computed) do
     Map.new(computed, fn path -> {{path.tenant, path.source, path.dest, path.label}, path} end)
+  end
+
+  defp class_names(control) do
+    Map.new(control["classes"] || [], &{&1["label"], &1["name"]})
+  end
+
+  @doc """
+  The class a path's label stands for. Label 0 is the implicit default class, so it
+  reads as such even from a controller that does not publish its class table.
+  """
+  def class_name(names, label) do
+    case Map.fetch(names, label) do
+      {:ok, name} -> name
+      :error when label in [0, nil] -> "default"
+      :error -> "label #{label}"
+    end
   end
 
   defp tenant_key(nil), do: nil
@@ -235,7 +255,11 @@ defmodule MaetoPane.Fabric.Paths do
       hops: hops,
       observed: first_of([got], :segments, nil),
       cost:
-        first_of([Map.get(costs, {tenant_key(tenant), id, egress.node, @default_label})], :cost, nil),
+        first_of(
+          [Map.get(costs, {tenant_key(tenant), id, egress.node, @default_label})],
+          :cost,
+          nil
+        ),
       status: status(want, sides.planned, got)
     }
   end

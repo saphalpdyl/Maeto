@@ -155,7 +155,14 @@ func (c *Controller) Start(ctx context.Context) {
 		)
 	}
 
-	go c.dispatchPeerIntents(ctx)
+	tx := c.serviceRegistry.BeginTx()
+	c.stagePeerIntents(tx, ctx)
+	c.stageTrafficClassMapping(tx)
+	err := tx.Commit(ctx)
+
+	if err != nil {
+		c.logger.ErrorContext(ctx, "failed to commit transaction", log.Err(err))
+	}
 
 	if err := c.setupHealthEndpoint(ctx); err != nil {
 		return

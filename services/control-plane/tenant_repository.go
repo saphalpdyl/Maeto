@@ -7,6 +7,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -21,11 +22,21 @@ const (
 	UnrankedTierIndex        = 0
 )
 
+const (
+	DSCPUnmarked int = 0
+	DSCPMax      int = 63
+)
+
 type TrafficClass struct {
 	Name      string
 	Label     uint64
 	Index     int
+	Match     ClassMatch
 	Objective map[CostDimension]float64
+}
+
+type ClassMatch struct {
+	DSCP []int
 }
 
 type Tenant struct {
@@ -93,7 +104,12 @@ type rawTrafficClass struct {
 	Name      string             `json:"name"`
 	Label     uint64             `json:"label"`
 	Index     int                `json:"index"`
+	Match     rawClassMatch      `json:"match"`
 	Objective map[string]float64 `json:"objective"`
+}
+
+type rawClassMatch struct {
+	DSCP []int `json:"dscp"`
 }
 
 type rawTier struct {
@@ -331,6 +347,7 @@ func parseTrafficClasses(raw []rawTrafficClass) (map[uint64]*TrafficClass, map[s
 		DefaultClassName: byLabel[DefaultClassLabel],
 	}
 	byIndex := map[int]string{}
+	byDSCP := map[int]string{}
 
 	for _, rc := range raw {
 		if rc.Name == "" {
@@ -364,13 +381,46 @@ func parseTrafficClasses(raw []rawTrafficClass) (map[uint64]*TrafficClass, map[s
 			objective[costDim] = weight
 		}
 
-		class := &TrafficClass{Name: rc.Name, Label: rc.Label, Index: rc.Index, Objective: objective}
+		match, err := parseClassMatch(rc.Name, rc.Match, byDSCP)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		class := &TrafficClass{Name: rc.Name, Label: rc.Label, Index: rc.Index, Match: match, Objective: objective}
 		byLabel[rc.Label] = class
 		byName[rc.Name] = class
 		byIndex[rc.Index] = rc.Name
 	}
 
 	return byLabel, byName, nil
+}
+
+func parseClassMatch(name string, raw rawClassMatch, byDSCP map[int]string) (ClassMatch, error) {
+	if len(raw.DSCP) == 0 {
+		return ClassMatch{}, fmt.Errorf("class %s matches no dscp codepoints", name)
+	}
+
+	dscp := make([]int, 0, len(raw.DSCP))
+	for _, value := range raw.DSCP {
+		if value < 0 || value > int(DSCPMax) {
+			return ClassMatch{}, fmt.Errorf("class %s dscp %d is outside 0..%d", name, value, DSCPMax)
+		}
+
+		codepoint := value
+		if codepoint == DSCPUnmarked {
+			return ClassMatch{}, fmt.Errorf("class %s dscp %d is unmarked traffic and always rides the %s class", name, value, DefaultClassName)
+		}
+		if owner, taken := byDSCP[codepoint]; taken {
+			return ClassMatch{}, fmt.Errorf("class %s dscp %d already matched by class %s", name, value, owner)
+		}
+
+		byDSCP[codepoint] = name
+		dscp = append(dscp, codepoint)
+	}
+
+	slices.Sort(dscp)
+
+	return ClassMatch{DSCP: dscp}, nil
 }
 
 func parseTiers(raw []rawTier) (map[string]int, error) {

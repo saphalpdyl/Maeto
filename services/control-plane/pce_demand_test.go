@@ -54,8 +54,8 @@ func demandRepo(t *testing.T, tenants ...demandTenant) TenantRepository {
 
 	db := `{
 		"classes": [
-			{"name": "voice", "label": 2, "index": 2, "objective": {"latency": 0.5, "jitter": 0.5}},
-			{"name": "streaming", "label": 3, "index": 1, "objective": {"latency": 0.2, "jitter": 0.8}}
+			{"name": "voice", "label": 2, "index": 2, "match": {"dscp": [46]}, "objective": {"latency": 0.5, "jitter": 0.5}},
+			{"name": "streaming", "label": 3, "index": 1, "match": {"dscp": [26, 28, 30]}, "objective": {"latency": 0.2, "jitter": 0.8}}
 		],
 		"tiers": [{"name": "gold", "index": 2}, {"name": "silver", "index": 1}],
 		"tenants": [` + strings.Join(tenantJSON, ",") + `]

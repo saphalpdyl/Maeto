@@ -233,9 +233,12 @@ func (c *Controller) handlePETunnelUpdate(ctx context.Context, data []byte) erro
 		TenantPrefix:        tenant.Allocation,
 	}
 
-	err := c.serviceRegistry.UpsertPEIntentForNode(
-		ctx, string(node.ID), fmt.Sprintf("%d", tenant.ID), req.PortalID, portalIntent, topologyNode.Locator,
+	tx := c.serviceRegistry.BeginTx()
+	c.serviceRegistry.StagePortalIntentForNode(
+		tx, node.ID, fmt.Sprintf("%d", tenant.ID), req.PortalID, portalIntent, topologyNode.Locator,
 	)
+
+	err := tx.Commit(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to set intent for tenant: %w", err)
 	}

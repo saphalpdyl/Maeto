@@ -68,6 +68,7 @@ func (c *Controller) startPCEUpdatesDispatcher(ctx context.Context) {
 				}
 			}
 
+			tx := c.serviceRegistry.BeginTx()
 			pceGraph := NewPCEGraph(c.topology.Graph().Clone())
 			for nodeID, tenantsMap := range remoteRoutesByNode {
 				localNode, exists := c.topology.GetNodeByID(nodeID)
@@ -116,62 +117,16 @@ func (c *Controller) startPCEUpdatesDispatcher(ctx context.Context) {
 						})
 					}
 
-					err := c.serviceRegistry.UpsertSIDSegsForTenantOnNode(
-						ctx, fmt.Sprint(tenantID), string(nodeID), localNode.Locator, tenantSIDIntents,
+					c.serviceRegistry.StageSIDSegsForTenantOnNode(
+						tx, fmt.Sprint(tenantID), nodeID, localNode.Locator, tenantSIDIntents,
 					)
-
-					if err != nil {
-						c.logger.ErrorContext(ctx, "failed to upsert tenant intents to service registry", log.Err(err))
-						continue
-					}
 				}
 			}
-		}
-	}
-}
 
-func (c *Controller) dispatchPeerIntents(ctx context.Context) {
-	// Set peers
-	// TODO: Later peer updates must caught from TED update
-	g := c.topology.Graph()
-	for _, n := range g.nodes {
-		peers := make(map[string]nodesync.PeerIntent)
-
-		// Find edges related to this node
-		for _, e := range g.edges {
-			if e.Local != n.ID {
-				continue
-			}
-
-			remoteNode, exists := g.nodes[e.Remote]
-			if !exists {
-				c.logger.WarnContext(ctx, "failed to find remote node", log.NodeID(string(e.Remote)))
-				continue
-			}
-
-			peerPrefix, err := netip.ParsePrefix(e.RemoteAddr)
+			err := tx.Commit(ctx)
 			if err != nil {
-				c.logger.ErrorContext(ctx, "failed to parse remote node address", log.NodeID(string(e.Remote)))
-				continue
+				c.logger.ErrorContext(ctx, "failed to commit transaction", log.Err(err))
 			}
-
-			peerIntent := nodesync.PeerIntent{
-				PeerID:         string(e.Remote),
-				PeerLoopback:   remoteNode.Loopback,
-				LocalLoopback:  n.Loopback,
-				PeerInterface:  e.RemoteIface,
-				LocalInterface: e.LocalIface,
-				TelemetryKey:   fmt.Sprintf("%s:%s-%s:%s", string(n.ID), e.LocalIface, string(remoteNode.ID), e.RemoteIface),
-				PeerAddress:    peerPrefix.Addr(),
-			}
-
-			peers[e.LocalIface] = peerIntent
-		}
-
-		err := c.serviceRegistry.UpsertPeersForPE(ctx, string(n.ID), peers)
-		if err != nil {
-			c.logger.ErrorContext(ctx, "failed to update peer intent", log.NodeID(string(n.ID)), log.Err(err))
-			continue
 		}
 	}
 }

@@ -47,12 +47,16 @@ defmodule MaetoPane.Fabric.PathsTest do
           ]
         }
       ],
+      "classes" => [
+        %{"label" => 0, "name" => "default", "index" => 0, "dscp" => []},
+        %{"label" => 2, "name" => "voice", "index" => 2, "dscp" => [46]}
+      ],
       "paths" => [
         %{
           "tenant" => 273,
           "source" => "A",
           "dest" => "C",
-          "dimension" => "latency",
+          "label" => 0,
           "nodes" => ["A", "B", "C"],
           "edges" => ["A:eth2-B:eth2", "B:eth4-C:eth4"],
           "cost" => 12.5
@@ -301,6 +305,27 @@ defmodule MaetoPane.Fabric.PathsTest do
       assert path.nodes == ["A", "B", "C"]
       assert path.hops == 2
       assert path.cost == 12.5
+    end
+
+    test "the label resolves to the class name the controller published" do
+      control = control()
+      voice = %{hd(control["paths"]) | "label" => 2}
+      snapshot = %{snapshot([]) | control: %{control | "paths" => [voice]}}
+
+      assert [path] = Paths.computed(snapshot)
+      assert path.label == 2
+      assert path.class == "voice"
+
+      assert [default] = Paths.computed(snapshot([]))
+      assert default.class == "default"
+    end
+
+    test "an unpublished label still reads as a class" do
+      names = %{2 => "voice"}
+
+      assert Paths.class_name(names, 2) == "voice"
+      assert Paths.class_name(%{}, 0) == "default"
+      assert Paths.class_name(%{}, 7) == "label 7"
     end
 
     test "an empty snapshot yields nothing rather than raising" do

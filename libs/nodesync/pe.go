@@ -26,6 +26,14 @@ type PEIntent struct {
 
 	// Peers mainly used for establishing STAMP sessions between adjs
 	Peers map[string]PeerIntent `json:"peers"`
+
+	// DSCP -> Color marking
+	TrafficClassIntent []PETrafficClassIntent `json:"traffic_class_intent"`
+}
+
+type PETrafficClassIntent struct {
+	Color uint64 `json:"color"`
+	DSCP  []int  `json:"dscp"`
 }
 
 type PeerIntent struct {
@@ -100,9 +108,8 @@ func (i *PEIntent) Clone() Intent {
 			PortalIntents: make(map[string]PE_PortalIntent, len(tenant.PortalIntents)),
 		}
 
-		for portalID, portal := range tenant.PortalIntents {
-			copied.PortalIntents[portalID] = portal // PE_PortalIntent is all value types
-		}
+		// PE_PortalIntent is all value types
+		maps.Copy(copied.PortalIntents, tenant.PortalIntents)
 
 		if tenant.InstallPaths != nil {
 			copied.InstallPaths = make([]PESIDInstallIntent, len(tenant.InstallPaths))
@@ -119,6 +126,14 @@ func (i *PEIntent) Clone() Intent {
 	if i.Peers != nil {
 		out.Peers = make(map[string]PeerIntent, len(i.Peers))
 		maps.Copy(out.Peers, i.Peers)
+	}
+
+	if i.TrafficClassIntent != nil {
+		out.TrafficClassIntent = make([]PETrafficClassIntent, len(i.TrafficClassIntent))
+		for idx, class := range i.TrafficClassIntent {
+			class.DSCP = slices.Clone(class.DSCP)
+			out.TrafficClassIntent[idx] = class
+		}
 	}
 
 	return &out
