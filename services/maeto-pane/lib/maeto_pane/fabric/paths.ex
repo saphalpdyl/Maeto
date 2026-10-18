@@ -249,6 +249,7 @@ defmodule MaetoPane.Fabric.Paths do
   defp intent_paths(intent) do
     for {tenant, held} <- get_in(intent, ["intent", "tenants"]) || %{},
         install <- held["install_paths"] || [],
+        (install["color"] || 0) == 0,
         prefix <- install["prefix_route"] || [],
         into: %{} do
       {{tenant, prefix}, %{segments: install["segments"] || [], table: nil}}

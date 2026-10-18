@@ -128,6 +128,11 @@ func (r *Reconciler) RenderPEIntent(
 			reverseSegments := slices.Clone(path.Segments)
 			slices.Reverse(reverseSegments)
 
+			// TODO: Guard against multi-class switching for now
+			if path.Color != 0 {
+				continue
+			}
+
 			for _, prefix := range path.PrefixRoutes {
 				srRoute := &SRRoute{
 					Prefix:   prefix,

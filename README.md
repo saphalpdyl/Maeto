@@ -97,7 +97,6 @@ libs/dataplane          netlink -- vrfs, seg6/seg6local, xfrm, declarative recon
 libs/probe              probe supervisor, STAMP runners, NATS dispatch
 libs/nodesync           intent and snapshot contracts over NATS KV
 services/control-plane  topology, intent, cost graph, PCE
-services/argus          EWMA and beta-binomial detectors
 services/maeto-agent    runs on each PoP, reconciles intent onto the kernel
 services/maeto-portal   runs on each CPE
 services/maeto-pane     phoenix liveview ui

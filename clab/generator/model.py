@@ -21,7 +21,7 @@ class Pop:
 class Tenant:
     id: int
     allocation: str     # every site prefix must sit inside this
-    tier: str           # service class, uninterpreted here
+    tier: str           # key into Topology.tiers; absent means all default class
     data: dict = field(default_factory=dict)
 
 
@@ -35,7 +35,23 @@ class Cpe:
     prefix: str         # this site's lan
     portal_id: str # LDevID equivalent
     reservation_mbps: float   # bandwidth this site has reserved
+    class_mbps: dict = field(default_factory=dict)   # class name -> mbps carved out of the reservation
     data: dict = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class TrafficClass:
+    name: str
+    label: int          # opaque, carried as the sr-te color
+    index: int          # placement priority, higher goes first
+    objective: dict     # dimension -> weight
+
+
+@dataclass(frozen=True)
+class Tier:
+    name: str
+    index: int          # placement priority among tenants, higher goes first
+    shares: dict        # class name -> fraction of a site's reservation
 
 
 @dataclass
@@ -57,6 +73,8 @@ class Topology:
     tenants: list     # [Tenant]
     cpes: list          # [Cpe]
     links: list         # [CoreLink]
+    classes: list = field(default_factory=list)   # [TrafficClass]
+    tiers: dict = field(default_factory=dict)     # name -> Tier
 
     def pop_by_id(self, pid):
         return self._pops_by_id[pid]

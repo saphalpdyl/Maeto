@@ -4,7 +4,12 @@ import yaml
 
 from . import addressing
 from .constants import (
+    CLASS_KEYS,
     CPE_KEYS,
+    DEFAULT_CLASS_LABEL,
+    DEFAULT_CLASS_NAME,
+    OBJECTIVE_DIMENSIONS,
+    TIER_KEYS,
     TENANT_KEYS,
     DEFAULT_KEYS,
     DEFAULT_START_JITTER,
@@ -20,7 +25,7 @@ from .constants import (
     TOP_LEVEL_KEYS,
 )
 from .errors import TopologyError
-from .model import CoreLink, Cpe, Tenant, Defaults, Pop, Topology
+from .model import CoreLink, Cpe, Tenant, Defaults, Pop, Tier, Topology, TrafficClass
 
 
 def parse_topology(source):
@@ -33,10 +38,12 @@ def parse_topology(source):
     defaults = _parse_defaults(root)
     pops = _parse_pops(root)
     pop_index = {p.id: p.index for p in pops}
+    classes = _parse_classes(root)
+    tiers = _parse_tiers(root, {c.name for c in classes})
     tenants = _parse_tenants(root)
-    cpes = _parse_cpes(root, set(pop_index), tenants)
+    cpes = _parse_cpes(root, set(pop_index), tenants, tiers, {c.name for c in classes})
     links = _parse_links(root, pop_index)
-    return Topology(name, defaults, pops, tenants, cpes, links)
+    return Topology(name, defaults, pops, tenants, cpes, links, classes, tiers)
 
 
 def _reject_unknown(d, allowed, where):
@@ -121,6 +128,115 @@ def _pop_index(raw, i, where):
     return n
 
 
+def _parse_classes(root):
+    items = root.get("classes") or {}
+    if not isinstance(items, dict):
+        raise TopologyError("classes must be a mapping of class name to definition")
+    classes = []
+    seen_labels = {}
+    seen_indexes = {}
+    for name, raw in items.items():
+        where = f"classes.{name}"
+        if not isinstance(name, str) or not name.strip():
+            raise TopologyError("class names must be non-empty strings")
+        if name == DEFAULT_CLASS_NAME:
+            raise TopologyError(f"{where}: '{DEFAULT_CLASS_NAME}' is implicit and cannot be declared")
+        if not isinstance(raw, dict):
+            raise TopologyError(f"{where} must be a mapping")
+        _reject_unknown(raw, CLASS_KEYS, where)
+        label = raw.get("label")
+        if isinstance(label, bool) or not isinstance(label, int) or label < 0:
+            raise TopologyError(f"{where}.label must be a non-negative integer")
+        if label == DEFAULT_CLASS_LABEL:
+            raise TopologyError(f"{where}.label {DEFAULT_CLASS_LABEL} is reserved for the default class")
+        if label in seen_labels:
+            raise TopologyError(f"{where}.label {label} is already used by class {seen_labels[label]}")
+        seen_labels[label] = name
+        index = _priority_index(raw, seen_indexes, name, where, 1)
+        classes.append(TrafficClass(
+            name=name,
+            label=label,
+            index=index,
+            objective=_objective(raw.get("objective"), f"{where}.objective"),
+        ))
+    return classes
+
+
+def _priority_index(raw, seen, name, where, minimum):
+    index = raw.get("index")
+    if isinstance(index, bool) or not isinstance(index, int) or index < minimum:
+        raise TopologyError(f"{where}.index must be an integer >= {minimum}")
+    if index in seen:
+        raise TopologyError(f"{where}.index {index} is already used by {seen[index]}")
+    seen[index] = name
+    return index
+
+
+def _objective(raw, where):
+    if not isinstance(raw, dict) or not raw:
+        raise TopologyError(f"{where} must be a non-empty mapping of dimension to weight")
+    _reject_unknown(raw, OBJECTIVE_DIMENSIONS, where)
+    out = {}
+    for dim, weight in raw.items():
+        if isinstance(weight, bool) or not isinstance(weight, (int, float)) or weight <= 0:
+            raise TopologyError(f"{where}.{dim} must be a number greater than zero")
+        out[dim] = float(weight)
+    return out
+
+
+def _parse_tiers(root, class_names):
+    items = root.get("tiers") or {}
+    if not isinstance(items, dict):
+        raise TopologyError("tiers must be a mapping of tier name to definition")
+    tiers = {}
+    seen_indexes = {}
+    for name, raw in items.items():
+        where = f"tiers.{name}"
+        if not isinstance(name, str) or not name.strip():
+            raise TopologyError("tier names must be non-empty strings")
+        if not isinstance(raw, dict):
+            raise TopologyError(f"{where} must be a mapping")
+        _reject_unknown(raw, TIER_KEYS, where)
+        shares = _class_split(raw.get("classes"), class_names, f"{where}.classes", _fraction)
+        if sum(shares.values()) > 1:
+            raise TopologyError(f"{where}.classes add up to more than 1")
+        index = _priority_index(raw, seen_indexes, name, where, 1)
+        tiers[name] = Tier(name=name, index=index, shares=shares)
+    return tiers
+
+
+def _class_split(raw, class_names, where, value_of):
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        raise TopologyError(f"{where} must be a mapping of class name to amount")
+    out = {}
+    for name, value in raw.items():
+        if name not in class_names:
+            raise TopologyError(f"{where}.{name} does not reference a declared class")
+        out[name] = value_of(value, f"{where}.{name}")
+    return out
+
+
+def _fraction(value, where):
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0 < value <= 1:
+        raise TopologyError(f"{where} must be a fraction in (0, 1]")
+    return float(value)
+
+
+def _site_class_mbps(raw, reservation, tier, tiers, class_names, where):
+    # an explicit split replaces the tier's template outright rather than merging
+    if "classes" in raw:
+        split = _class_split(raw["classes"], class_names, f"{where}.classes", _mbps)
+        if sum(split.values()) > reservation:
+            raise TopologyError(f"{where}.classes add up to more than reservation_bandwidth {reservation}")
+        return split
+    template = tiers.get(tier)
+    if template is None:
+        return {}
+    return {name: round(share * reservation, 6) for name, share in template.shares.items()}
+
+
 def _parse_tenants(root):
     items = root.get("tenants") or []
     if not isinstance(items, list):
@@ -167,7 +283,7 @@ def _require_network(value, where):
     return net
 
 
-def _parse_cpes(root, pop_ids, tenants):
+def _parse_cpes(root, pop_ids, tenants, tiers, class_names):
     items = root.get("cpes") or []
     if not isinstance(items, list):
         raise TopologyError("cpes must be a list")
@@ -222,6 +338,7 @@ def _parse_cpes(root, pop_ids, tenants):
         seen_portal_ids.append(portal_id)
 
         reservation = _mbps(raw.get("reservation_bandwidth"), f"cpes[{i}].reservation_bandwidth")
+        class_mbps = _site_class_mbps(raw, reservation, by_id[cust].tier, tiers, class_names, f"cpes[{i}]")
 
         cpes.append(Cpe(
             id=cid,
@@ -233,6 +350,7 @@ def _parse_cpes(root, pop_ids, tenants):
             data=_data(raw, f"cpes[{i}]"),
             portal_id=portal_id,
             reservation_mbps=reservation,
+            class_mbps=class_mbps,
         ))
     return cpes
 

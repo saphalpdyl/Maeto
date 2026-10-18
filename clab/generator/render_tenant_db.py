@@ -8,6 +8,14 @@ def render_tenant_db(topo):
     # seed data standing in for the control plane's tenant store
     data = {
         "generator_version": GENERATOR_VERSION,
+        "classes": [
+            {"name": tc.name, "label": tc.label, "index": tc.index, "objective": tc.objective}
+            for tc in sorted(topo.classes, key=lambda x: x.label)
+        ],
+        "tiers": [
+            {"name": t.name, "index": t.index}
+            for t in sorted(topo.tiers.values(), key=lambda x: x.index)
+        ],
         "tenants": [],
     }
 
@@ -33,6 +41,7 @@ def render_tenant_db(topo):
                 "attach_node": topo.pop_by_id(cp.attach).node_name,
                 "if_id": next_if_id,
                 "reservation_mbps": cp.reservation_mbps,
+                "classes": cp.class_mbps,
                 "identity": cpe_identity(cp.portal_id),
             })
             next_if_id += 1

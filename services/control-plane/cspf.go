@@ -23,9 +23,14 @@ type Path struct {
 	Edges []PCEEdgeID `json:"pce_edges"`
 	Links []EdgeID    `json:"edges"`
 	Cost  float64     `json:"cost"`
+	Label uint64      `json:"label"`
 }
 
 func (p *Path) Equal(other *Path) bool {
+	if p.Label != other.Label {
+		return false
+	}
+
 	if (len(p.Edges) != len(other.Edges)) || (len(p.Nodes) != len(other.Nodes)) {
 		return false
 	}
@@ -57,6 +62,7 @@ func (p *Path) LogValue() slog.Value {
 
 	return slog.GroupValue(
 		slog.String("path", strings.Join(hops, ">")),
+		slog.Uint64("label", p.Label),
 		slog.Float64("cost", p.Cost),
 		slog.Int("hops", len(p.Edges)),
 	)

@@ -1,6 +1,6 @@
 # static values shared across the generator
 
-GENERATOR_VERSION = "2.0.0"
+GENERATOR_VERSION = "2.1.0"
 
 POP_IMAGE = "maeto-pop:latest"
 FRR_VERSION = "10.5.1"
@@ -54,16 +54,24 @@ NODE_CONTAINER_PATH = "/etc/maeto/node.json"
 # only key allowed inside a pop/cpe override block
 OVERRIDE_KEYS = {"clab_label"}
 
-TOP_LEVEL_KEYS = {"name", "defaults", "pops", "tenants", "cpes", "links"}
+TOP_LEVEL_KEYS = {"name", "defaults", "classes", "tiers", "pops", "tenants", "cpes", "links"}
 DEFAULT_KEYS = {"locator_prefix", "link_prefix", "edge_prefix"}
 POP_KEYS = {"id", "index", "data", "override"}
-CPE_KEYS = {"id", "attach", "tenant", "prefix", "portal_id", "reservation_bandwidth", "data", "override"}
+CPE_KEYS = {"id", "attach", "tenant", "prefix", "portal_id", "reservation_bandwidth", "classes", "data", "override"}
 TENANT_KEYS = {"id", "allocation", "tier", "data"}
 LINK_KEYS = {"a", "b", "parallel"}
 LINK_PARALLEL_KEYS = {"bandwidth", "delay", "start_jitter"}
+CLASS_KEYS = {"label", "index", "objective"}
+TIER_KEYS = {"index", "classes"}
+OBJECTIVE_DIMENSIONS = {"latency", "jitter", "loss"}
 
-# tenants carry a tier so the control plane can price or prioritise them; the
-# generator does not interpret it beyond requiring a non-empty label
+# whatever a site does not carve out for a named class rides the default class;
+# it is implicit, so neither its name nor its label can be declared
+DEFAULT_CLASS_NAME = "default"
+DEFAULT_CLASS_LABEL = 0
+
+# a tier names a class split template; a tier with no entry under tiers leaves
+# every site of the tenant entirely in the default class
 DEFAULT_TENANT_TIER = "standard"
 
 # a link with no start_jitter runs at exactly its nominal bandwidth

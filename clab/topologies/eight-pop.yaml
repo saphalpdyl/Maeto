@@ -23,6 +23,32 @@ pops:
   - id: H
     index: 8
 
+# label: 0 is the default/bulk low-priority class
+classes:
+  voice:
+    label: 2
+    index: 1 # Greater the value, the more priority it has during path computation
+    objective: { latency: 0.5, jitter: 0.5} # Represents the weight of cost dimension
+  streaming:
+    label: 3
+    index: 2
+    objective: {latency: 0.2, jitter: 0.8}
+#  <class-name>:
+#    label: <color>
+#    index: <priority>  Higher value means higher priority
+#    objective: { <latency,jitter,loss>:  <0 < float64 <= 1.0>}
+
+tiers:
+  gold:
+    index: 2 # Greater the value, the more priority it has during path computation
+    classes: { voice: 0.3, streaming: 0.2 } # Represents the fraction of allocated bandwidth
+  silver:
+    index: 1
+    classes: { voice: 0.2 }
+#  <tier-name>:
+#    index: <priority>  Higher value means higher priority
+#    classes: {<class-name>: <fraction-of-bandwidth-to-allocate>}  Remaining goes to default/bulk class
+
 tenants:
   - id: 273
     allocation: fd7a:3921:111::/48
@@ -37,7 +63,7 @@ cpes:
     tenant: 273
     prefix: fd7a:3921:111:1::/64
     portal_id: 83505cf19a08
-    reservation_bandwidth: 700
+    reservation_bandwidth: 900
   - id: cA2
     attach: A
     tenant: 231
@@ -61,7 +87,7 @@ cpes:
     tenant: 273
     prefix: fd7a:3921:111:2::/64
     portal_id: aa400723fee3
-    reservation_bandwidth: 600
+    reservation_bandwidth: 900
 
 links:
   - a: A
