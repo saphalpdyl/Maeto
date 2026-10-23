@@ -15,7 +15,10 @@ func TestLiveDataplaneRead(t *testing.T) {
 
 	// testIntentFeed := make(chan *intent.NodeIntent, 32)
 
-	dp := dataplane.NewLinuxNetlink()
+	dp, err := dataplane.NewLinuxNetlink()
+	if err != nil {
+		t.Fatalf("failed to create linux dataplane: %v", err)
+	}
 	// r := dataplane.NewReconciler(dp, slog.Default(), testIntentFeed)
 
 	// Testing all dataplane functions
@@ -48,6 +51,26 @@ func TestLiveDataplaneRead(t *testing.T) {
 type TestDefaultRouteOnlyDataplane struct {
 }
 
+func (t *TestDefaultRouteOnlyDataplane) EnsureClassificationBase() error {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (t *TestDefaultRouteOnlyDataplane) InsertClassification(classifier uint32, mark uint32) error {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (t *TestDefaultRouteOnlyDataplane) GetClassifications() ([]dataplane.DataplaneClassification, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (t *TestDefaultRouteOnlyDataplane) RemoveClassification(classifier uint32) error {
+	//TODO implement me
+	panic("implement me")
+}
+
 // GetSRRoutes implements [dataplane.Dataplane].
 func (t *TestDefaultRouteOnlyDataplane) GetSRRoutes() ([]dataplane.DataplaneSRRoute, error) {
 	panic("unimplemented")
@@ -59,7 +82,7 @@ func (t *TestDefaultRouteOnlyDataplane) GetSRRouteForPrefix() ([]dataplane.Datap
 }
 
 // InsertSRRouteForPrefix implements [dataplane.Dataplane].
-func (t *TestDefaultRouteOnlyDataplane) InsertSRRouteForPrefix(prefix netip.Prefix, tabelID int, segments []netip.Addr, color int) error {
+func (t *TestDefaultRouteOnlyDataplane) InsertSRRouteForPrefix(prefix netip.Prefix, tabelID int, segments []netip.Addr) error {
 	panic("unimplemented")
 }
 

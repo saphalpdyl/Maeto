@@ -7,6 +7,7 @@ FROM golang:${GO_VERSION}-alpine AS build
 ARG DEBUG
 WORKDIR /src
 COPY go.mod go.sum* ./
+COPY third_party/ ./third_party/
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
     go mod download
 
@@ -28,6 +29,7 @@ FROM quay.io/frrouting/frr:10.6.0
 RUN apk add --no-cache strongswan nftables supervisor tcpdump
 
 RUN mkdir -p /var/log/supervisor
+RUN mkdir -p /var/log/maeto
 COPY docker/conf/pop/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
 RUN printf 'include conf.d/*.conf\n' > /etc/swanctl/swanctl.conf
@@ -37,6 +39,7 @@ COPY docker/conf/shared/charon-maeto.conf /etc/strongswan.d/maeto.conf
 COPY --from=build /bin/maeto-agent /usr/local/bin/maeto-agent
 COPY --from=build /out/ /usr/local/bin/
 COPY docker/scripts/maeto-launch.sh /usr/local/bin/maeto-launch
+COPY docker/scripts/maeto-monitor.sh /usr/local/bin/maeto-monitor
 
 # WARN: frr daemon start '/usr/lib/frr/docker-start' happens in topology.yaml > exec:
 

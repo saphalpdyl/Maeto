@@ -88,7 +88,10 @@ func main() {
 	}()
 
 	// TODO: Change to VPP later
-	linuxDataplane := dataplane.NewLinuxNetlink()
+	linuxDataplane, err := dataplane.NewLinuxNetlink()
+	if err != nil {
+		logger.ErrorContext(ctx, "failed to create linux dataplane", log.Err(err))
+	}
 	agent := maetoagent.NewAgent(node, js, logger.With(log.Domain(log.DomainAgentLifecycle)), linuxDataplane)
 	agent.Run(ctx)
 }

@@ -8,10 +8,15 @@ import (
 )
 
 func (r *Reconciler) Apply(ctx context.Context, diff DiffResult) error {
+	err := r.dp.EnsureClassificationBase()
+	if err != nil {
+		return err
+	}
+
 	// First of all, we remove shit
 	// We remove from bottom up i.e route -> xfrm -> vrf
 	// TODO: Later group by kind in a map so that we don't traverse everything everytime
-	for _, kind := range []Kind{KindRule, KindSRRoute, KindSID, KindRoute, KindXFRM, KindVRF} {
+	for _, kind := range []Kind{KindClassification, KindRule, KindSRRoute, KindSID, KindRoute, KindXFRM, KindVRF} {
 		for _, resource := range diff.Remove {
 			if resource.ID().Kind != kind {
 				continue
@@ -51,13 +56,18 @@ func (r *Reconciler) Apply(ctx context.Context, diff DiffResult) error {
 					r.logger.ErrorContext(ctx, "failed to remove SR Route", log.Err(err))
 					break
 				}
+			case *Classification:
+				if err := r.dp.RemoveClassification(res.Classifier); err != nil {
+					r.logger.ErrorContext(ctx, "failed to remove classifier", log.Err(err))
+					break
+				}
 			}
 
 		}
 	}
 
 	// Addition
-	for _, kind := range []Kind{KindVRF, KindXFRM, KindRoute, KindSID, KindSRRoute, KindRule} {
+	for _, kind := range []Kind{KindVRF, KindXFRM, KindRoute, KindSID, KindSRRoute, KindRule, KindClassification} {
 		for _, resource := range diff.Add {
 			if resource.ID().Kind != kind {
 				continue
@@ -90,7 +100,7 @@ func (r *Reconciler) Apply(ctx context.Context, diff DiffResult) error {
 				}
 
 			case *SRRoute:
-				if err := r.dp.InsertSRRouteForPrefix(res.Prefix, res.Table, res.Segments, res.Color); err != nil {
+				if err := r.dp.InsertSRRouteForPrefix(res.Prefix, res.Table, res.Segments); err != nil {
 					r.logger.ErrorContext(ctx, "failed to insert SR Route", log.Err(err))
 				}
 
@@ -106,6 +116,10 @@ func (r *Reconciler) Apply(ctx context.Context, diff DiffResult) error {
 
 				if err := r.dp.UpsertDT46SID(res.SID, res.TableID); err != nil {
 					r.logger.ErrorContext(ctx, "failed to upsert DT46 SID", log.Err(err))
+				}
+			case *Classification:
+				if err := r.dp.InsertClassification(res.Classifier, res.Mark); err != nil {
+					r.logger.ErrorContext(ctx, "failed to insert Classification", log.Err(err))
 				}
 			}
 

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"hash/fnv"
-	"math"
 	"net/netip"
 	"slices"
 
@@ -57,9 +56,22 @@ func (r *Reconciler) RenderCPEIntent(ctx context.Context, cpe *nodesync.CPEInten
 	return resources, nil
 }
 
+// Bitwise structure of a Per-Color Routing table ID
+// 0                  1                  2                  3
+// 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+// |     Color     |                   VRFTableID                  |
+// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+const (
+	vrfTableBits = 24
+	colorBits    = 8
+)
+
+// We need to make sure that StringToID produces a tableID
+// that occupies the lower vrfTableBits bits.
 func StringToID(s string) uint32 {
 	const minVal uint64 = 300
-	const span uint64 = math.MaxUint32 - minVal + 1
+	const span uint64 = (1 << vrfTableBits) - minVal
 
 	h := fnv.New64a()
 	h.Write([]byte(s))
@@ -68,11 +80,35 @@ func StringToID(s string) uint32 {
 	return uint32(minVal + (val64 % span))
 }
 
+// Unlike other resources, routing tables in the linux kernel are not
+// distinct kernel objects. They are just an ID that routes and rules
+// point towards. So determinstic geneartion of the said routing table
+// "creates" the table
+func ColorTableID(vrfTable int, color uint64) int {
+	return int(color)<<vrfTableBits | vrfTable
+}
+
 func (r *Reconciler) RenderPEIntent(
 	ctx context.Context,
 	pe *nodesync.PEIntent,
 ) (map[string]Resource, error) {
+	routeTableCollisionMap := make(map[int]struct{})
 	resources := make(map[string]Resource)
+
+	for _, tIntent := range pe.TrafficClassIntent {
+		for _, dscp := range tIntent.DSCP {
+			if dscp >= 255 {
+				return nil, fmt.Errorf("dscp (%d) is too big", dscp)
+			}
+
+			classification := &Classification{
+				Classifier: uint32(dscp),
+				Mark:       uint32(tIntent.Color),
+			}
+
+			resources[classification.ID().Key] = classification
+		}
+	}
 
 	for tenantID, t := range pe.Tenants {
 		vrfTableName := fmt.Sprintf("maeto-vrf-%s", tenantID)
@@ -128,20 +164,25 @@ func (r *Reconciler) RenderPEIntent(
 			reverseSegments := slices.Clone(path.Segments)
 			slices.Reverse(reverseSegments)
 
-			// TODO: Guard against multi-class switching for now
-			if path.Color != 0 {
-				continue
-			}
-
 			for _, prefix := range path.PrefixRoutes {
+				routingTableID := ColorTableID(int(tableID), path.Color)
+
+				if _, ok := routeTableCollisionMap[routingTableID]; ok {
+					r.logger.ErrorContext(ctx, "found route table ID collision", "tenant", tenantID, "id", routingTableID)
+
+					// Deny installing path if there's a collision
+					continue
+				}
+
 				srRoute := &SRRoute{
 					Prefix:   prefix,
 					Segments: reverseSegments,
-					Color:    0,
-					Table:    int(tableID),
+					Color:    path.Color,
+					Table:    routingTableID,
 				}
 
 				resources[srRoute.ID().Key] = srRoute
+				routeTableCollisionMap[routingTableID] = struct{}{}
 			}
 		}
 	}
@@ -157,8 +198,18 @@ func (r *Reconciler) RenderFIB(
 	sids []DataplaneSID,
 	rules []DataplaneRule,
 	srRoutes []DataplaneSRRoute,
+	classifications []DataplaneClassification,
 ) (map[string]Resource, error) {
 	resources := make(map[string]Resource)
+
+	for _, c := range classifications {
+		classification := &Classification{
+			Classifier: c.Classifier,
+			Mark:       c.Mark,
+		}
+
+		resources[classification.ID().Key] = classification
+	}
 
 	for _, l := range vrfLinks {
 		vrf := &VRF{
@@ -223,7 +274,7 @@ func (r *Reconciler) RenderFIB(
 		srRoute := &SRRoute{
 			Prefix:   netip.PrefixFrom(ip, ones),
 			Segments: r.Segments,
-			Color:    0,
+			Color:    uint64(r.Color),
 			Table:    r.Table,
 		}
 

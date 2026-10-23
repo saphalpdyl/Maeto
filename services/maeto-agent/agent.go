@@ -104,7 +104,12 @@ func (a *Agent) Run(ctx context.Context) {
 		go topology.Run(ctx)
 	}
 
-	go a.reconciler.Start(ctx)      // nolint:errcheck
+	go func() {
+		err := a.reconciler.Start(ctx)
+		if err != nil {
+			a.logger.ErrorContext(ctx, "failed to start reconciler", log.Err(err))
+		}
+	}() // nolint:errcheck
 	go a.probeSupervisor.Start(ctx) // nolint:errcheck
 
 	go a.setupIntentWatch(ctx)

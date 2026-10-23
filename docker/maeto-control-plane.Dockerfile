@@ -8,6 +8,7 @@ RUN apk add --no-cache gcc musl-dev
 ARG DEBUG
 WORKDIR /src
 COPY go.mod go.sum* ./
+COPY third_party/ ./third_party/
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
     go mod download
 

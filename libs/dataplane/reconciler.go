@@ -40,6 +40,13 @@ func NewReconciler(dp Dataplane, nodeType nodesync.NodeType, logger *slog.Logger
 }
 
 func (r *Reconciler) Start(ctx context.Context) error {
+	// For Linux dataplane, since plan tries to get classifications
+	// before the render apply resulting in an ENOENT error
+	err := r.dp.EnsureClassificationBase()
+	if err != nil {
+		return err
+	}
+
 	for {
 		select {
 		case <-ctx.Done():

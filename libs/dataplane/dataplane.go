@@ -73,6 +73,11 @@ type DataplaneRule struct {
 	Table    int
 }
 
+type DataplaneClassification struct {
+	Classifier uint32
+	Mark       uint32
+}
+
 // Links represents VRF tables and XFRM interfaces for current implementation
 type DataplaneLink interface {
 	Type() string
@@ -144,7 +149,7 @@ type Dataplane interface {
 	RemovePrefixRoute(prefix netip.Prefix, tableID int) error
 	GetPrefixRoutes() ([]DataplaneRoute, error)
 
-	InsertSRRouteForPrefix(prefix netip.Prefix, tableID int, segments []netip.Addr, color int) error
+	InsertSRRouteForPrefix(prefix netip.Prefix, tableID int, segments []netip.Addr) error
 	GetSRRoutes() ([]DataplaneSRRoute, error)
 	RemoveSRRouteForPrefix(prefix netip.Prefix, tableID int) error
 
@@ -156,4 +161,14 @@ type Dataplane interface {
 	GetSIDs(FilterBy *EncapType, GroupingKey *int) ([]DataplaneSID, error)
 
 	GetDefaultRouteAndDev() (string, string, error)
+
+	EnsureClassificationBase() error
+	InsertClassification(
+		classifier uint32,
+		mark uint32,
+	) error
+	GetClassifications() ([]DataplaneClassification, error)
+	RemoveClassification(
+		classifier uint32,
+	) error
 }

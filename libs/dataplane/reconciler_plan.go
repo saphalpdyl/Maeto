@@ -69,6 +69,11 @@ func (r *Reconciler) Plan(ctx context.Context, desired *nodesync.NodeIntent) (ma
 		return nil, nil, fmt.Errorf("dataplane failure: couldn't retrieve sr routes: %w", err)
 	}
 
+	classifications, err := r.dp.GetClassifications()
+	if err != nil {
+		return nil, nil, fmt.Errorf("dataplane failure: couldn't retrieve classifications: %w", err)
+	}
+
 	currentResources, err := r.RenderFIB(
 		ctx,
 		vrfLinks,
@@ -77,6 +82,7 @@ func (r *Reconciler) Plan(ctx context.Context, desired *nodesync.NodeIntent) (ma
 		sids,
 		rules,
 		srRoutes,
+		classifications,
 	)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to render FIB state: %w", err)

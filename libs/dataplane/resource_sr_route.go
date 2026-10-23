@@ -10,7 +10,7 @@ type SRRoute struct {
 	Prefix   netip.Prefix
 	Segments []netip.Addr
 	Table    int
-	Color    int
+	Color    uint64
 }
 
 func (s *SRRoute) CompareTo(actual Resource) Action {
@@ -19,15 +19,11 @@ func (s *SRRoute) CompareTo(actual Resource) Action {
 	}
 
 	if a, ok := actual.(*SRRoute); ok {
-		if s.Color != a.Color {
-			return ActionReplace
-		}
-
 		if a.Table != s.Table {
 			return ActionReplace
 		}
 
-		if (len(s.Segments) != len(a.Segments)) || (a.Color != s.Color) {
+		if len(s.Segments) != len(a.Segments) {
 			return ActionReplace
 		}
 
@@ -52,11 +48,10 @@ func (s *SRRoute) ID() ID {
 	return ID{
 		Kind: KindSRRoute,
 		Key: fmt.Sprintf(
-			"%s.%s.%s.%s",
-			fmt.Sprint(s.Table),
+			"%d.%s.%s",
+			s.Table,
 			s.Prefix.String(),
 			segmentStr.String(),
-			fmt.Sprint(s.Color),
 		),
 	}
 }

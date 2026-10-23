@@ -73,12 +73,15 @@ func main() {
 		os.Exit(1)
 	}
 
-	dataplane := dataplane.NewLinuxNetlink()
+	linuxDataplane, err := dataplane.NewLinuxNetlink()
+	if err != nil {
+		logger.ErrorContext(ctx, "failed to create linux dataplane", log.Err(err))
+	}
 	portal := maetoportal.NewPortal(
 		serviceInstanceId,
 		js,
 		config,
-		dataplane,
+		linuxDataplane,
 		logger.With(log.Domain(log.DomainPortalLifecycle)),
 	)
 

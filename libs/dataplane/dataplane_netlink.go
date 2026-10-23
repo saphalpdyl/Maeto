@@ -1,6 +1,7 @@
 package dataplane
 
 import (
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"net"
@@ -8,6 +9,8 @@ import (
 	"os"
 	"strings"
 
+	"github.com/google/nftables"
+	"github.com/google/nftables/expr"
 	"github.com/vishvananda/netlink"
 	nl "github.com/vishvananda/netlink/nl"
 	"golang.org/x/sys/unix"
@@ -34,7 +37,16 @@ const (
 // v1.3.1 stops its action enum at END_BPF, so this one is spelled out.
 const seg6LocalActionEndDT46 = 16
 
-type LinuxNetlink struct{}
+// nftables-related constants
+const (
+	NftablesClassificationTable = "maeto_class"
+	NftablesClassificationChain = "classification"
+	NftablesDSCPMarkMap         = "dscpmark"
+)
+
+type LinuxNetlink struct {
+	nft *nftables.Conn
+}
 
 // RemoveVRF deletes the vrf device at linkIndex. IFLA_GROUP is not a match key
 // for RTM_DELLINK, so ownership has to be checked before deleting, unlike
@@ -179,8 +191,15 @@ func (l *LinuxNetlink) GetPrefixRoutes() ([]DataplaneRoute, error) {
 	return routes, nil
 }
 
-func NewLinuxNetlink() *LinuxNetlink {
-	return &LinuxNetlink{}
+func NewLinuxNetlink() (*LinuxNetlink, error) {
+	nft, err := nftables.New()
+	if err != nil {
+		return nil, err
+	}
+
+	return &LinuxNetlink{
+		nft: nft,
+	}, nil
 }
 
 func (l *LinuxNetlink) UpsertVRF(tableName string, tableId int) error {
@@ -745,7 +764,7 @@ func (l *LinuxNetlink) GetSRRoutes() ([]DataplaneSRRoute, error) {
 	return srRoutes, nil
 }
 
-func (l *LinuxNetlink) InsertSRRouteForPrefix(prefix netip.Prefix, tableID int, segs []netip.Addr, color int) error {
+func (l *LinuxNetlink) InsertSRRouteForPrefix(prefix netip.Prefix, tableID int, segs []netip.Addr) error {
 	if len(segs) == 0 {
 		return fmt.Errorf("insert srv6 encap route %s: no segments given", prefix)
 	}
@@ -798,4 +817,219 @@ func (l *LinuxNetlink) RemoveSRRouteForPrefix(prefix netip.Prefix, tableID int) 
 	}
 
 	return nil
+}
+
+// EnsureClassificationBase - In linux implementation, this sets up the `table inet maeto_class` and
+// the related chains
+//
+// NFTABLES equivalent commands that this sets up:
+//
+//	nft add table inet maeto_class
+//	nft add chain inet maeto_class classification '{ type filter hook prerouting priority mangle ; }'
+//	nft 'add map inet maeto_class dscpmark { type dscp: mark; }'
+//	nft 'add rule inet maeto_class classification meta nfproto ipv6 meta mark set ip6 dscp map @dscpmark'
+//
+//	inet maeto_class classification
+//	[ meta load nfproto => reg 1 ]
+//	[ cmp eq reg 1 0x0000000a ]
+//	[ payload load 2b @ network header + 0 => reg 1 ]
+//	[ bitwise reg 1 = ( reg 1 & 0x0000c00f ) ^ 0x00000000 ]
+//	[ byteorder reg 1 = ntoh(reg 1, 2, 2) ]
+//	[ bitwise reg 1 = ( reg 1 >> 0x00000006 ) ]
+//	[ lookup reg 1 set dscpmark dreg 1 ]
+//	[ meta set mark with reg 1 ]
+func (l *LinuxNetlink) EnsureClassificationBase() error {
+	table := l.nft.AddTable(&nftables.Table{
+		Name:   NftablesClassificationTable,
+		Use:    1,
+		Family: nftables.TableFamilyINet,
+	})
+
+	chain := l.nft.AddChain(&nftables.Chain{
+		Name:     NftablesClassificationChain,
+		Table:    table,
+		Hooknum:  nftables.ChainHookPrerouting,
+		Priority: nftables.ChainPriorityMangle,
+		Type:     nftables.ChainTypeFilter,
+	})
+
+	mappingSet := &nftables.Set{
+		Table:    table,
+		Name:     NftablesDSCPMarkMap,
+		IsMap:    true,
+		Counter:  true,
+		KeyType:  nftables.TypeDSCP,
+		DataType: nftables.TypeMark,
+	}
+
+	err := l.nft.AddSet(mappingSet, nil)
+
+	if err != nil {
+		return err
+	}
+
+	l.nft.FlushChain(chain)
+
+	shiftAmount := make([]byte, 4)
+	binary.NativeEndian.PutUint32(shiftAmount, 0x06)
+
+	// Has to be 0x0fc0 in Big-Endian, little-endian machines interpret this wrong
+	// and nft decompiles as `@nh,12,6` instead of `dscp` in rule list
+	mask := make([]byte, 2)
+	binary.BigEndian.PutUint16(mask, 0x0fc0)
+
+	l.nft.AddRule(&nftables.Rule{
+		Table: table,
+		Chain: chain,
+		Exprs: []expr.Any{
+			//	[ meta load nfproto => reg 1 ]
+			&expr.Meta{Key: expr.MetaKeyNFPROTO, Register: 1},
+
+			//	[ cmp eq reg 1 0x0000000a ]
+			&expr.Cmp{
+				Op:       expr.CmpOpEq,
+				Register: 1,
+				Data:     []byte{unix.NFPROTO_IPV6},
+			},
+
+			//	[ payload load 2b @ network header + 0 => reg 1 ]
+			&expr.Payload{
+				OperationType: expr.PayloadLoad,
+				DestRegister:  1,
+				Offset:        0,
+				Len:           2,
+				Base:          expr.PayloadBaseNetworkHeader,
+			},
+
+			//	[ bitwise reg 1 = ( reg 1 & 0x0000c00f ) ^ 0x00000000 ]
+			&expr.Bitwise{
+				SourceRegister: 1,
+				DestRegister:   1,
+				Len:            2,
+				Mask:           mask,
+				Xor:            []byte{0x0, 0x0},
+			},
+
+			//	[ byteorder reg 1 = ntoh(reg 1, 2, 2) ]
+			&expr.Byteorder{
+				SourceRegister: 1,
+				DestRegister:   1,
+				Op:             expr.ByteorderNtoh,
+				Len:            2,
+				Size:           2,
+			},
+
+			//	[ bitwise reg 1 = ( reg 1 >> 0x00000006 ) ]
+			&expr.Bitwise{
+				SourceRegister: 1,
+				DestRegister:   1,
+				Len:            2,
+				Op:             expr.BitwiseOpRshift,
+				Data:           shiftAmount,
+			},
+
+			//	[ lookup reg 1 set dscpmark dreg 1 ]
+			&expr.Lookup{
+				SourceRegister: 1,
+				DestRegister:   1,
+				IsDestRegSet:   true,
+				SetID:          mappingSet.ID,
+				SetName:        mappingSet.Name,
+			},
+
+			//	[ meta set mark with reg 1 ]
+			&expr.Meta{
+				Key:            expr.MetaKeyMARK,
+				SourceRegister: true,
+				Register:       1,
+			},
+		},
+	})
+
+	if err := l.nft.Flush(); err != nil {
+		return fmt.Errorf("flush table %s: %w", NftablesClassificationTable, err)
+	}
+
+	return nil
+}
+
+func (l *LinuxNetlink) InsertClassification(classifier uint32, mark uint32) error {
+	table, err := l.nft.ListTableOfFamily(NftablesClassificationTable, nftables.TableFamilyINet)
+	if err != nil {
+		return err
+	}
+
+	set, err := l.nft.GetSetByName(table, NftablesDSCPMarkMap)
+	if err != nil {
+		return err
+	}
+
+	val := make([]byte, 4)
+
+	binary.LittleEndian.PutUint32(val, mark)
+
+	err = l.nft.SetAddElements(
+		set,
+		[]nftables.SetElement{
+			{
+				Key: []byte{uint8(classifier)},
+				Val: val,
+			},
+		},
+	)
+
+	return err
+}
+
+func (l *LinuxNetlink) RemoveClassification(classifier uint32) error {
+	table, err := l.nft.ListTableOfFamily(NftablesClassificationTable, nftables.TableFamilyINet)
+	if err != nil {
+		return err
+	}
+
+	set, err := l.nft.GetSetByName(table, NftablesDSCPMarkMap)
+	if err != nil {
+		return err
+	}
+
+	key := make([]byte, 4)
+	binary.LittleEndian.PutUint32(key, classifier)
+
+	err = l.nft.SetDeleteElements(set, []nftables.SetElement{
+		{
+			Key: key,
+		},
+	})
+
+	return err
+}
+
+func (l *LinuxNetlink) GetClassifications() ([]DataplaneClassification, error) {
+	table, err := l.nft.ListTableOfFamily(NftablesClassificationTable, nftables.TableFamilyINet)
+	if err != nil {
+		return nil, err
+	}
+
+	set, err := l.nft.GetSetByName(table, NftablesDSCPMarkMap)
+	if err != nil {
+		return nil, err
+	}
+
+	elements, err := l.nft.GetSetElements(set)
+	if err != nil {
+		return nil, err
+	}
+
+	classifications := make([]DataplaneClassification, 0, len(elements))
+	for _, e := range elements {
+		key := uint32(e.Key[0]) // DSCP is 1 byte. So []byte[0] gives the first and only byte
+		val := binary.LittleEndian.Uint32(e.Val)
+
+		classifications = append(classifications, DataplaneClassification{
+			Classifier: key,
+			Mark:       val,
+		})
+	}
+
+	return classifications, nil
 }
