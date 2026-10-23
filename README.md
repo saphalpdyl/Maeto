@@ -4,7 +4,7 @@
 Maeto is a SRv6-based SD-WAN control plane. Computes directional least-cost paths across a PoP mesh and programs the kernel dataplane. It's a hobby project.
 
 > [!NOTE]
-> The repository on GitHub is a mirror maintained for visibility. Issue tracking and active development are done on [GitLab.](https://gitlab.com/saphalpdyl/Maeto)
+> The repository on GitHub is a mirror maintained for visibility. Issue tracking and active development are done on [Forgejo](https://git.saphal.me/saphalpdyl/Maeto).
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Pipeline status](https://gitlab.com/saphalpdyl/maeto/badges/main/pipeline.svg)](https://gitlab.com/saphalpdyl/maeto/-/commits/main)
