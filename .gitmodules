@@ -1,4 +1,4 @@
 [submodule "third_party/nftables"]
-	path = third_party/nftables
-	url = https://github.com/saphalpdyl/nftables.git
-	branch = feat/add-bitshift-support-to-bitwise
+  path = third_party/nftables
+  url = https://github.com/saphalpdyl/nftables.git
+  branch = feat/add-bitshift-support-to-bitwise

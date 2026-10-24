@@ -24,7 +24,7 @@ type Route struct {
 func (r *Route) ID() ID {
 	return ID{
 		Kind: KindRoute,
-		Key:  fmt.Sprintf("%d.%s.%s", r.Table, r.Dst.String(), r.Dev),
+		Key:  fmt.Sprintf("%s:%d.%s.%s", KindRoute, r.Table, r.Dst.String(), r.Dev),
 	}
 }
 

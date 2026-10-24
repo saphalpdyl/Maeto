@@ -48,7 +48,7 @@ func (r *Reconciler) RenderCPEIntent(ctx context.Context, cpe *nodesync.CPEInten
 
 	siteRule := &Rule{
 		Priority: CPERulePriority,
-		Src:      cpe.SitePrefix,
+		Src:      &cpe.SitePrefix,
 		Table:    CPETunnelTable,
 	}
 	resources[siteRule.ID().Key] = siteRule
@@ -158,6 +158,7 @@ func (r *Reconciler) RenderPEIntent(
 		}
 
 		// SRv6 Routes
+		uniqueColors := make(map[uint64]struct{})
 		for _, path := range t.InstallPaths {
 			// Netlink installs the routes backwards for some reason
 			// So reversing the routes during rendering
@@ -165,7 +166,9 @@ func (r *Reconciler) RenderPEIntent(
 			slices.Reverse(reverseSegments)
 
 			for _, prefix := range path.PrefixRoutes {
-				routingTableID := ColorTableID(int(tableID), path.Color)
+				routingTableID := ColorTableID(int(tableID), path.Color) // unique per-color per-tenant
+
+				uniqueColors[path.Color] = struct{}{}
 
 				if _, ok := routeTableCollisionMap[routingTableID]; ok {
 					r.logger.ErrorContext(ctx, "found route table ID collision", "tenant", tenantID, "id", routingTableID)
@@ -184,7 +187,20 @@ func (r *Reconciler) RenderPEIntent(
 				resources[srRoute.ID().Key] = srRoute
 				routeTableCollisionMap[routingTableID] = struct{}{}
 			}
+
 		}
+
+		for color := range uniqueColors {
+			rule := &Rule{
+				Priority: 80,
+				Table:    ColorTableID(int(tableID), color),
+				Mark:     int(color),
+				Iif:      vrfTableName,
+			}
+
+			resources[rule.ID().Key] = rule
+		}
+
 	}
 
 	return resources, nil
@@ -250,7 +266,16 @@ func (r *Reconciler) RenderFIB(
 	}
 
 	for _, r := range rules {
-		rule := &Rule{Priority: r.Priority, Src: r.Src, Table: r.Table}
+		rule := &Rule{
+			Priority: r.Priority,
+			Table:    r.Table,
+			Mark:     r.Mark,
+			Iif:      r.Iif,
+		}
+		if r.Src != nil {
+			rule.Src = r.Src
+		}
+
 		resources[rule.ID().Key] = rule
 	}
 

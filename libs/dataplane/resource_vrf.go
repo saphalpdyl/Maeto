@@ -1,5 +1,7 @@
 package dataplane
 
+import "fmt"
+
 // need for delete + create
 type VRF struct {
 	Name    string `rc:"id"`
@@ -10,7 +12,7 @@ type VRF struct {
 func (v *VRF) ID() ID {
 	return ID{
 		Kind: KindVRF,
-		Key:  v.Name,
+		Key:  fmt.Sprintf("%s:%s", KindVRF, v.Name),
 	}
 }
 

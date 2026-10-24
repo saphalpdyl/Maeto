@@ -146,11 +146,11 @@ func (t *TestDefaultRouteOnlyDataplane) UpsertRouteToPolicy(dest string, vrfTabl
 	panic("unimplemented")
 }
 
-func (t *TestDefaultRouteOnlyDataplane) UpsertRule(priority int, src netip.Prefix, tableID int) error {
+func (t *TestDefaultRouteOnlyDataplane) UpsertRule(priority int, src *netip.Prefix, tableID int, mark int, iifName string) error {
 	panic("unimplemented")
 }
 
-func (t *TestDefaultRouteOnlyDataplane) RemoveRule(priority int, src netip.Prefix, tableID int) error {
+func (t *TestDefaultRouteOnlyDataplane) RemoveRule(priority int, src *netip.Prefix, tableID int, mark int, iifName string) error {
 	panic("unimplemented")
 }
 

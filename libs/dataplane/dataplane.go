@@ -69,8 +69,10 @@ type DataplaneSID struct {
 // the wan (dhcp, ra, pppd) is never fought over.
 type DataplaneRule struct {
 	Priority int
-	Src      netip.Prefix
+	Src      *netip.Prefix
 	Table    int
+	Mark     int
+	Iif      string
 }
 
 type DataplaneClassification struct {
@@ -140,8 +142,8 @@ type Dataplane interface {
 	RemoveXFRMInterface(linkIndex int) error
 
 	// tableID names the table directly; unix.RT_TABLE_MAIN on a cpe
-	UpsertRule(priority int, src netip.Prefix, tableID int) error
-	RemoveRule(priority int, src netip.Prefix, tableID int) error
+	UpsertRule(priority int, src *netip.Prefix, tableID int, mark int, iifName string) error
+	RemoveRule(priority int, src *netip.Prefix, tableID int, mark int, iifName string) error
 	GetRules() ([]DataplaneRule, error)
 
 	// TODO: Rename tunnelIface to just dev

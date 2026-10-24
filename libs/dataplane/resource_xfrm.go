@@ -14,7 +14,7 @@ type XFRM struct {
 func (x *XFRM) ID() ID {
 	return ID{
 		Kind: KindXFRM,
-		Key:  fmt.Sprintf("%s.%d", x.Name, x.IfID),
+		Key:  fmt.Sprintf("%s:%s.%d", KindXFRM, x.Name, x.IfID),
 	}
 }
 

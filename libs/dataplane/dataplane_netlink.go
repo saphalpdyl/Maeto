@@ -285,21 +285,26 @@ func linkNames() (map[int]string, error) {
 	return out, nil
 }
 
-func maetoRule(priority int, src netip.Prefix, tableID int) *netlink.Rule {
+func maetoRule(priority int, src *netip.Prefix, tableID int, mark int, iifName string) *netlink.Rule {
 	rule := netlink.NewRule()
 	rule.Family = netlink.FAMILY_V6
 	rule.Priority = priority
-	rule.Src = prefixToIPNet(src)
 	rule.Table = tableID
 	rule.Protocol = uint8(MaetoRouteProto)
+	rule.IifName = iifName
+	rule.Mark = uint32(mark)
+
+	if src != nil {
+		rule.Src = prefixToIPNet(*src)
+	}
 
 	return rule
 }
 
 // UpsertRule installs a policy rule. RuleAdd is not idempotent -- a second
 // identical add returns EEXIST rather than succeeding.
-func (l *LinuxNetlink) UpsertRule(priority int, src netip.Prefix, tableID int) error {
-	if err := netlink.RuleAdd(maetoRule(priority, src, tableID)); err != nil {
+func (l *LinuxNetlink) UpsertRule(priority int, src *netip.Prefix, tableID int, mark int, iifName string) error {
+	if err := netlink.RuleAdd(maetoRule(priority, src, tableID, mark, iifName)); err != nil {
 		if errors.Is(err, unix.EEXIST) {
 			return nil // already there, and every field is part of its identity
 		}
@@ -312,8 +317,8 @@ func (l *LinuxNetlink) UpsertRule(priority int, src netip.Prefix, tableID int) e
 
 // RemoveRule deletes a policy rule. Unlike routes, a missing rule reports
 // ENOENT rather than ESRCH.
-func (l *LinuxNetlink) RemoveRule(priority int, src netip.Prefix, tableID int) error {
-	if err := netlink.RuleDel(maetoRule(priority, src, tableID)); err != nil {
+func (l *LinuxNetlink) RemoveRule(priority int, src *netip.Prefix, tableID int, mark int, iifName string) error {
+	if err := netlink.RuleDel(maetoRule(priority, src, tableID, mark, iifName)); err != nil {
 		if errors.Is(err, unix.ENOENT) {
 			return nil // already gone
 		}
@@ -334,21 +339,28 @@ func (l *LinuxNetlink) GetRules() ([]DataplaneRule, error) {
 
 	out := make([]DataplaneRule, 0, len(rules))
 	for _, rule := range rules {
-		if rule.Protocol != uint8(MaetoRouteProto) || rule.Src == nil {
+		if rule.Protocol != uint8(MaetoRouteProto) {
 			continue
 		}
 
-		src, ok := netip.AddrFromSlice(rule.Src.IP)
-		if !ok {
-			continue
-		}
-		ones, _ := rule.Src.Mask.Size()
-
-		out = append(out, DataplaneRule{
+		dpRule := DataplaneRule{
 			Priority: rule.Priority,
-			Src:      netip.PrefixFrom(src, ones),
 			Table:    rule.Table,
-		})
+			Mark:     int(rule.Mark),
+			Iif:      rule.IifName,
+		}
+
+		if rule.Src != nil {
+			src, ok := netip.AddrFromSlice(rule.Src.IP)
+			if !ok {
+				continue
+			}
+			ones, _ := rule.Src.Mask.Size()
+			srcPrefix := netip.PrefixFrom(src, ones)
+			dpRule.Src = &srcPrefix
+		}
+
+		out = append(out, dpRule)
 	}
 
 	return out, nil

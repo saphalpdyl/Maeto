@@ -40,7 +40,7 @@ func (s *SID) CompareTo(actual Resource) Action {
 func (s *SID) ID() ID {
 	return ID{
 		Kind: KindSID,
-		Key:  fmt.Sprintf("%s.%s.%s", s.SIDType, s.SID.String(), fmt.Sprintf("%d", s.VrfTableID)),
+		Key:  fmt.Sprintf("%s:%s.%s.%d", KindSID, s.SIDType, s.SID.String(), s.VrfTableID),
 	}
 }
 

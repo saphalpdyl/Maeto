@@ -42,7 +42,7 @@ func (r *Reconciler) Apply(ctx context.Context, diff DiffResult) error {
 				}
 
 			case *Rule:
-				if err := r.dp.RemoveRule(res.Priority, res.Src, res.Table); err != nil {
+				if err := r.dp.RemoveRule(res.Priority, res.Src, res.Table, res.Mark, res.Iif); err != nil {
 					r.logger.ErrorContext(ctx, "failed to remove rule", log.Err(err))
 					break
 				}
@@ -105,7 +105,7 @@ func (r *Reconciler) Apply(ctx context.Context, diff DiffResult) error {
 				}
 
 			case *Rule:
-				if err := r.dp.UpsertRule(res.Priority, res.Src, res.Table); err != nil {
+				if err := r.dp.UpsertRule(res.Priority, res.Src, res.Table, res.Mark, res.Iif); err != nil {
 					r.logger.ErrorContext(ctx, "failed to upsert rule", log.Err(err))
 				}
 

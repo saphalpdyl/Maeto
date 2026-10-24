@@ -48,7 +48,8 @@ func (s *SRRoute) ID() ID {
 	return ID{
 		Kind: KindSRRoute,
 		Key: fmt.Sprintf(
-			"%d.%s.%s",
+			"%s:%d.%s.%s",
+			KindSRRoute,
 			s.Table,
 			s.Prefix.String(),
 			segmentStr.String(),

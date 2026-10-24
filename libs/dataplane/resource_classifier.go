@@ -18,7 +18,7 @@ type Classification struct {
 func (c Classification) ID() ID {
 	return ID{
 		Kind: KindClassification,
-		Key:  fmt.Sprintf("class-%d.%d", c.Classifier, c.Mark),
+		Key:  fmt.Sprintf("%s:%d.%d", KindClassification, c.Classifier, c.Mark),
 	}
 }
 
