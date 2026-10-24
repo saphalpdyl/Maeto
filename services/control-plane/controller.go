@@ -9,6 +9,7 @@ import (
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/saphalpdyl/maeto/libs/probe"
+	"github.com/saphalpdyl/maeto/libs/store"
 
 	"github.com/saphalpdyl/maeto/libs/nodesync"
 	log "github.com/saphalpdyl/maeto/services/control-plane/log"
@@ -27,6 +28,7 @@ type Controller struct {
 	costGraph           *CostGraph
 	telemetryCollectors map[NodeID]*TelemetryCollector
 	topologyReports     *TopologyReportCollector
+	db                  *store.DataStore
 
 	ready bool
 
@@ -36,6 +38,7 @@ type Controller struct {
 func NewController(
 	ctx context.Context,
 	js jetstream.JetStream,
+	db *store.DataStore,
 	config Config,
 	logger *slog.Logger,
 ) (*Controller, error) {
@@ -124,6 +127,7 @@ func NewController(
 			logger.With(log.Domain(log.DomainPCE)),
 		),
 		pceUpdates: pceUpdatesChan,
+		db:         db,
 
 		ready: false,
 	}, nil

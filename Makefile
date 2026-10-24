@@ -1,4 +1,4 @@
-.PHONY: lint lint.editorconfig generate deploy install-virtual-environments fe ap ddbg dev ips tfsim tfsim-plan
+.PHONY: lint lint.editorconfig generate deploy install-virtual-environments fe ap ddbg dev ips tfsim tfsim-plan db-reset
 
 TOPOLOGY_YAML := clab/topologies/eight-pop.yaml
 TOPOLOGY_NAME := eight-pop
@@ -125,3 +125,10 @@ test.integration: test.build
 	go test -v -tags integration ./libs/stamp/tests/integration
 	go test -v -tags integration ./libs/probe/tests/integration
 	docker compose -f docker-compose.test.yaml down
+
+## Database related
+db-reset:
+	docker volume rm -sf maeto-db nats-nui-db
+
+db-res:
+	docker compose restart db

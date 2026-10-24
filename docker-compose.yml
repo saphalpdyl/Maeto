@@ -6,6 +6,7 @@ services:
       - POSTGRES_PASSWORD=admin
     volumes:
       - ./db/init/:/docker-entrypoint-initdb.d/
+      - maeto-db:/var/lib/postgresql/data
     ports:
       - 5435:5432
 
@@ -79,3 +80,4 @@ volumes:
   maeto-pane-build:
   maeto-pane-deps:
   nats-nui-db:
+  maeto-db:

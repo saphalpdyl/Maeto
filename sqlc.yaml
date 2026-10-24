@@ -1,1 +1,10 @@
 version: "2"
+sql:
+  - engine: "postgresql"
+    schema: "db/init"
+    queries: "db/queries"
+    gen:
+      go:
+        package: "store"
+        out: "libs/store"
+        sql_package: "pgx/v5"
