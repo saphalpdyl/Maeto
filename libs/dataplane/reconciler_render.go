@@ -92,7 +92,7 @@ func (r *Reconciler) RenderPEIntent(
 	ctx context.Context,
 	pe *nodesync.PEIntent,
 ) (map[string]Resource, error) {
-	routeTableCollisionMap := make(map[int]struct{})
+	routeTableCollisionMap := make(map[int]string) // tableID -> tenantID
 	resources := make(map[string]Resource)
 
 	for _, tIntent := range pe.TrafficClassIntent {
@@ -170,11 +170,13 @@ func (r *Reconciler) RenderPEIntent(
 
 				uniqueColors[path.Color] = struct{}{}
 
-				if _, ok := routeTableCollisionMap[routingTableID]; ok {
-					r.logger.ErrorContext(ctx, "found route table ID collision", "tenant", tenantID, "id", routingTableID)
+				if tenantID, ok := routeTableCollisionMap[routingTableID]; ok {
+					if tenantID != path.TenantID { // Routing table collision between two different tenants
+						r.logger.ErrorContext(ctx, "found route table ID collision", "tenant", tenantID, "id", routingTableID)
 
-					// Deny installing path if there's a collision
-					continue
+						// Deny installing path if there's a collision
+						continue
+					}
 				}
 
 				srRoute := &SRRoute{
@@ -185,7 +187,7 @@ func (r *Reconciler) RenderPEIntent(
 				}
 
 				resources[srRoute.ID().Key] = srRoute
-				routeTableCollisionMap[routingTableID] = struct{}{}
+				routeTableCollisionMap[routingTableID] = path.TenantID
 			}
 
 		}
