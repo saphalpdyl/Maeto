@@ -7,8 +7,7 @@ Maeto is a SRv6-based SD-WAN control plane. Computes directional least-cost path
 > The repository on GitHub is a mirror maintained for visibility. Issue tracking and active development are done on [Forgejo](https://git.saphal.me/saphalpdyl/Maeto).
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![Pipeline status](https://gitlab.com/saphalpdyl/maeto/badges/main/pipeline.svg)](https://gitlab.com/saphalpdyl/maeto/-/commits/main)
-![GitLab Tag](https://img.shields.io/gitlab/v/tag/84541492?include_prereleases)
+[![Tag](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fgit.saphal.me%2Fapi%2Fv1%2Frepos%2Fsaphalpdyl%2Fmaeto%2Ftags%3Flimit%3D1&query=%24%5B0%5D.name&label=tag)](https://git.saphal.me/saphalpdyl/Maeto/tags)
 
 ## Contents
 - [Architecture](#architecture)
@@ -128,9 +127,9 @@ Not yet:
 - Flowlet switching for elephant flows w/ eBPF for flow detection and switching itself.
 
 ## Screenshots 
-![Link View](docs/images/screenshots/link_view.png)
-![Screenshot of the Segment lists menu](docs/images/screenshots/screenshot_1.png)
-![Path computation example](docs/images/screenshots/screenshot_2.png)
+![Screenshot of the Segment lists menu](docs/images/screenshots/maeto-dashboard-showing-segments.png)
+![Link View](docs/images/screenshots/maeto-dashboard-showing-links.png)
+![Path computation example](docs/images/screenshots/maeto-dashboard-showing-reroute.png)
 
 ---
 <img src="docs/images/maeto-logo-monochrome.svg" width="70" height="30" style="vertical-align: middle;"> by saphalpdyl
