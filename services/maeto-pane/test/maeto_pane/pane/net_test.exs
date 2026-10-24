@@ -1,7 +1,7 @@
-defmodule MaetoPane.Fabric.NetTest do
+defmodule MaetoPane.Pane.NetTest do
   use ExUnit.Case, async: true
 
-  alias MaetoPane.Fabric.Net
+  alias MaetoPane.Pane.Net
 
   describe "parse_prefix/1" do
     test "accepts a locator" do

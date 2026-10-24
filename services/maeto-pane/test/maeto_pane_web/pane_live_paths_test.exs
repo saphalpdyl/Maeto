@@ -1,4 +1,4 @@
-defmodule MaetoPaneWeb.FabricLivePathsTest do
+defmodule MaetoPaneWeb.PaneLivePathsTest do
   use MaetoPaneWeb.ConnCase, async: false
 
   import Phoenix.LiveViewTest
@@ -170,11 +170,11 @@ defmodule MaetoPaneWeb.FabricLivePathsTest do
   end
 
   defp seed(control, intents, states) do
-    :sys.replace_state(MaetoPane.Fabric, fn s ->
+    :sys.replace_state(MaetoPane.Pane, fn s ->
       Map.merge(s, %{intents: intents, states: states, control: control, connected: true})
     end)
 
-    :sys.get_state(MaetoPane.Fabric)
+    :sys.get_state(MaetoPane.Pane)
 
     :ok
   end
@@ -204,14 +204,16 @@ defmodule MaetoPaneWeb.FabricLivePathsTest do
     assert html =~ "Reconciled"
   end
 
-  test "the title line tallies adjacencies, segment lists, sites and issues", %{conn: conn} do
-    {:ok, _view, html} = live(conn, "/")
+  test "the summary strip tallies pops, adjacencies, segment lists and sites", %{conn: conn} do
+    {:ok, view, _html} = live(conn, "/")
 
-    assert html =~ "adjacencies up"
-    assert html =~ "segment lists in FIB"
-    assert html =~ "sites up"
-    assert html =~ "issues"
-    assert html =~ "PoP mesh"
+    summary = view |> element("#summary") |> render()
+
+    assert summary =~ "PoPs"
+    assert summary =~ "reconciled"
+    assert summary =~ "Adjacencies"
+    assert summary =~ "Segment lists in FIB"
+    assert summary =~ "Sites reporting"
   end
 
   test "selecting a segment list opens it in the inspector", %{conn: conn} do
@@ -219,11 +221,13 @@ defmodule MaetoPaneWeb.FabricLivePathsTest do
 
     rendered =
       view
-      |> element(~s{tr[phx-value-kind="path"][phx-value-id="A|273|#{@prefix}"]})
+      |> element(~s{tr[phx-value-kind="path"][phx-value-id="A|273|#{@prefix}|0"]})
       |> render_click()
 
     assert rendered =~ "end.dt46"
-    assert rendered =~ "Segment list"
+    assert rendered =~ "Desired path"
+    assert rendered =~ "ingress"
+    assert rendered =~ "egress"
     assert rendered =~ "PopB"
   end
 
@@ -232,14 +236,14 @@ defmodule MaetoPaneWeb.FabricLivePathsTest do
 
     refute html =~ "stroke-accent"
 
-    rendered = render_click(view, "select", %{"kind" => "path", "id" => "A|273|#{@prefix}"})
+    rendered = render_click(view, "select", %{"kind" => "path", "id" => "A|273|#{@prefix}|0"})
 
     # A > B > C: the renderer is handed the chain and the overlay flips to path
     graph = graph_payload(rendered)
 
     assert graph["trace"] == ["A", "B", "C"]
     assert graph["overlay"] == "path"
-    assert graph["selection"] == %{"kind" => "path", "id" => "A|273|#{@prefix}"}
+    assert graph["selection"] == %{"kind" => "path", "id" => "A|273|#{@prefix}|0"}
     assert rendered =~ "A › B › C"
   end
 
@@ -257,11 +261,11 @@ defmodule MaetoPaneWeb.FabricLivePathsTest do
     assert html =~ "Drift"
     assert html =~ "path_drift"
 
-    rendered = render_click(view, "select", %{"kind" => "path", "id" => "A|273|#{@prefix}"})
+    rendered = render_click(view, "select", %{"kind" => "path", "id" => "A|273|#{@prefix}|0"})
 
-    assert rendered =~ "Desired against actual"
+    assert rendered =~ "Desired path"
     assert rendered =~ "Observed FIB"
-    assert rendered =~ "the kernel holds a different segment list"
+    assert rendered =~ "Drift"
     assert rendered =~ "fc00:0:4::"
   end
 
@@ -291,7 +295,7 @@ defmodule MaetoPaneWeb.FabricLivePathsTest do
     assert html =~ "default"
     assert html =~ "5.0"
     # the pair carries a programmed segment list, so the reasoning ties to the result
-    assert html =~ "segment list"
+    assert html =~ "Segment list"
   end
 
   test "the links section reports each adjacency with its cost", %{conn: conn} do
@@ -300,7 +304,6 @@ defmodule MaetoPaneWeb.FabricLivePathsTest do
     html = view |> element("#nav-links") |> render_click()
 
     assert html =~ "Adjacency"
-    assert html =~ "One line per PCE edge and direction"
   end
 
   test "the links section shows each pce edge per direction", %{conn: conn} do
@@ -322,10 +325,11 @@ defmodule MaetoPaneWeb.FabricLivePathsTest do
 
     html = view |> element("#overlay-cost") |> render_click()
 
-    assert html =~ "thicker is costlier"
-    # the cost is carried per edge so the renderer can step one hue by magnitude
+    assert html =~ "worst 25.4 ms"
+    # probed latency, worst direction, not the configured delay; nil until probed
     assert graph_payload(html)["overlay"] == "cost"
-    assert Enum.map(graph_payload(html)["edges"], & &1["cost"]) == [2, 3]
+    assert Enum.map(graph_payload(html)["links"], & &1["latency"]) == [25.4, nil]
+    assert graph_payload(html)["ceiling"] == 25.4
   end
 
   test "sites attached to a pop ride along for the map badge", %{conn: conn} do
@@ -343,15 +347,15 @@ defmodule MaetoPaneWeb.FabricLivePathsTest do
 
     assert html =~ "no snapshot"
     assert graph_payload(html)["nodes"] == []
-    assert html =~ "No segment list programmed yet."
+    assert html =~ "No segment lists"
 
     assert view |> element("#nav-sites") |> render_click() =~
-             "No tenant database in the control snapshot."
+             "No sites"
 
     assert view |> element("#nav-computed") |> render_click() =~
-             "The PCE has not published a path set yet."
+             "No path set"
 
     assert view |> element("#nav-links") |> render_click() =~
-             "No adjacency in the control snapshot."
+             "No adjacencies"
   end
 end

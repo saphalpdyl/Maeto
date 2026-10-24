@@ -1,12 +1,19 @@
-defmodule MaetoPane.Fabric.Paths do
+defmodule MaetoPane.Pane.Paths do
   @moduledoc """
   The service layer of a snapshot: the segment lists each PE was told to install,
   what the kernel actually reports, and the customer sites they carry.
   """
 
-  alias MaetoPane.Fabric.Net
+  alias MaetoPane.Pane.Net
+
+  import Bitwise
 
   @default_label 0
+
+  # the agent puts a class's routes in table color<<24 | vrf table, and color 0
+  # in the vrf table itself, so a table id carries both the tenant and the class
+  @vrf_table_bits 24
+  @vrf_table_mask (1 <<< @vrf_table_bits) - 1
 
   def index(snapshot) do
     control = Map.get(snapshot, :control) || %{}
@@ -122,6 +129,7 @@ defmodule MaetoPane.Fabric.Paths do
     locators = index(snapshot)
     sites = sites(snapshot)
     costs = snapshot |> computed() |> computed_index()
+    names = class_names(Map.get(snapshot, :control) || %{})
 
     (Map.keys(intents) ++ Map.keys(states))
     |> Enum.uniq()
@@ -130,7 +138,7 @@ defmodule MaetoPane.Fabric.Paths do
     |> Enum.flat_map(fn key ->
       id = String.replace_prefix(key, "pop.", "")
 
-      node_rows(id, Map.get(intents, key), Map.get(states, key), locators, sites, costs)
+      node_rows(id, Map.get(intents, key), Map.get(states, key), locators, sites, costs, names)
     end)
   end
 
@@ -205,7 +213,7 @@ defmodule MaetoPane.Fabric.Paths do
     }
   end
 
-  defp node_rows(id, intent, state, locators, sites, costs) do
+  defp node_rows(id, intent, state, locators, sites, costs, names) do
     tables = vrf_tables(state)
     tenants_by_table = Map.new(tables, fn {tenant, table} -> {table, tenant} end)
 
@@ -221,14 +229,14 @@ defmodule MaetoPane.Fabric.Paths do
         want: Map.get(wanted, key),
         planned: Map.get(planned, key),
         got: Map.get(installed, key),
-        table: Map.get(tables, elem(key, 0))
+        table: class_table(Map.get(tables, elem(key, 0)), elem(key, 2))
       }
 
-      row(id, key, sides, locators, sites, costs)
+      row(id, key, sides, locators, sites, costs, names)
     end)
   end
 
-  defp row(id, {tenant, prefix}, sides, locators, sites, costs) do
+  defp row(id, {tenant, prefix, color}, sides, locators, sites, costs, names) do
     %{want: want, got: got} = sides
 
     segments = first_of([want, got], :segments, [])
@@ -243,10 +251,13 @@ defmodule MaetoPane.Fabric.Paths do
 
     %{
       kind: :path,
-      id: "#{id}|#{tenant}|#{prefix}",
+      id: "#{id}|#{tenant}|#{prefix}|#{color}",
       pe: id,
+      pe_name: Enum.find_value(locators, &(&1.id == id && &1.name)),
       tenant: tenant,
       prefix: prefix,
+      color: color,
+      class: class_name(names, color),
       table: first_of([want, got], :table, sides.table),
       dest: egress.node,
       dest_name: egress.node_name,
@@ -256,7 +267,7 @@ defmodule MaetoPane.Fabric.Paths do
       observed: first_of([got], :segments, nil),
       cost:
         first_of(
-          [Map.get(costs, {tenant_key(tenant), id, egress.node, @default_label})],
+          [Map.get(costs, {tenant_key(tenant), id, egress.node, color})],
           :cost,
           nil
         ),
@@ -273,10 +284,10 @@ defmodule MaetoPane.Fabric.Paths do
   defp intent_paths(intent) do
     for {tenant, held} <- get_in(intent, ["intent", "tenants"]) || %{},
         install <- held["install_paths"] || [],
-        (install["color"] || 0) == 0,
         prefix <- install["prefix_route"] || [],
         into: %{} do
-      {{tenant, prefix}, %{segments: install["segments"] || [], table: nil}}
+      color = install["color"] || @default_label
+      {{tenant, prefix, color}, %{segments: install["segments"] || [], table: nil}}
     end
   end
 
@@ -289,13 +300,19 @@ defmodule MaetoPane.Fabric.Paths do
     |> Enum.filter(&(&1["kind"] == "sr_route"))
     |> Map.new(fn %{"spec" => spec} ->
       table = spec["Table"]
-      tenant = Map.get(tenants, table, "table #{table}")
+      vrf_table = table &&& @vrf_table_mask
+      color = table >>> @vrf_table_bits
+      tenant = Map.get(tenants, vrf_table, "table #{vrf_table}")
 
       # the reconciler reverses a segment list on its way into netlink, so both
       # sides of the diff are stored tail-first
-      {{tenant, spec["Prefix"]}, %{segments: Enum.reverse(spec["Segments"] || []), table: table}}
+      {{tenant, spec["Prefix"], color},
+       %{segments: Enum.reverse(spec["Segments"] || []), table: table}}
     end)
   end
+
+  defp class_table(nil, _color), do: nil
+  defp class_table(vrf_table, color), do: color <<< @vrf_table_bits ||| vrf_table
 
   defp status(nil, _planned, nil), do: :unknown
   defp status(nil, _planned, _got), do: :orphan

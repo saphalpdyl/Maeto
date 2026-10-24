@@ -12,7 +12,7 @@ defmodule MaetoPane.Application do
       {DNSCluster, query: Application.get_env(:maeto_pane, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: MaetoPane.PubSub},
       MaetoPane.Nats,
-      MaetoPane.Fabric,
+      MaetoPane.Pane,
       # Start a worker by calling: MaetoPane.Worker.start_link(arg)
       # {MaetoPane.Worker, arg},
       # Start to serve requests, typically the last entry

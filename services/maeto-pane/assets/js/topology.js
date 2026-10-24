@@ -1,29 +1,18 @@
-import cytoscape from "../vendor/cytoscape.min.js"
-// fcose reaches for cose-base/layout-base by bare name; config/config.exs points
-// esbuild at the vendored copies
-import fcose from "../vendor/cytoscape-fcose.js"
+import {Graph} from "../vendor/x6.min.js"
 
-cytoscape.use(fcose)
-
-// The topology is the one surface LiveView does not own: cytoscape keeps its own
-// canvas, so the element carries phx-update="ignore" and every change arrives as
-// a JSON payload on data-graph. LiveView merges data-* attributes even on an
-// ignored element and calls updated() when the dataset changes.
+// The topology is the one surface LiveView does not own: X6 keeps its own svg,
+// so the element carries phx-update="ignore" and every change arrives as a JSON
+// payload on data-graph. LiveView merges data-* attributes even on an ignored
+// element and calls updated() when the dataset changes.
 //
-// A pop is a box, not a blob: the cytoscape node draws the frame so edges clip
-// to it and selection styling works, and an html overlay carries the typography.
-//
-// Layout is expensive, so it only re-runs when the node/edge set actually
-// changes. Selection and overlay changes are pure restyles.
+// Layout only re-runs when the node/link set changes. Overlay and selection
+// changes are restyles of the cells already on the canvas.
 
-const NODE_W = 172
-const NODE_H = 58
-
-// the card is a raster as far as cytoscape is concerned: the browser rasterises
-// the data uri at the svg's intrinsic size, then cytoscape paints it onto a
-// canvas scaled by devicePixelRatio and again by zoom. drawing it larger and
-// letting background-width scale it back down is what keeps the text sharp.
-const CARD_SCALE = Math.min(4, Math.ceil((window.devicePixelRatio || 1) * 2))
+const R = 22
+const GRID = 16
+const SPREAD = 7
+const MONO = "'Geist Mono', ui-monospace, SFMono-Regular, Menlo, monospace"
+const SANS = "Geist, ui-sans-serif, system-ui, -apple-system, sans-serif"
 
 const token = name => {
   const value = getComputedStyle(document.documentElement).getPropertyValue(name)
@@ -53,166 +42,228 @@ const statusColor = (colors, status) =>
     issue: colors.bad,
     blind: colors.idle,
     silent: colors.faint,
-  }[status] || colors.faint)
+  })[status] || colors.faint
 
-// cost is a magnitude, so it steps one hue rather than cycling status colours
-const costStep = ratio => {
-  if (ratio > 0.75) return {width: 4, opacity: 1}
-  if (ratio > 0.5) return {width: 3, opacity: 0.8}
-  if (ratio > 0.25) return {width: 2.5, opacity: 0.62}
-  return {width: 2, opacity: 0.45}
-}
+Graph.registerNode(
+  "maeto-pop",
+  {
+    width: R * 2,
+    height: R * 2,
+    markup: [
+      {tagName: "circle", selector: "halo"},
+      {tagName: "circle", selector: "ring"},
+      {tagName: "text", selector: "role"},
+      {tagName: "text", selector: "name"},
+      {tagName: "text", selector: "facts"},
+    ],
+    attrs: {
+      halo: {cx: R, cy: R, r: R + 10, strokeWidth: 0, fillOpacity: 0.2, fill: "none"},
+      ring: {cx: R, cy: R, r: R - 1.5, strokeWidth: 3, cursor: "pointer"},
+      role: {
+        x: R,
+        y: R,
+        textAnchor: "middle",
+        textVerticalAnchor: "middle",
+        fontFamily: MONO,
+        fontSize: 11,
+        fontWeight: 600,
+        pointerEvents: "none",
+      },
+      name: {
+        x: R,
+        y: R * 2 + 16,
+        textAnchor: "middle",
+        textVerticalAnchor: "middle",
+        fontFamily: SANS,
+        fontSize: 15,
+        fontWeight: 700,
+        strokeWidth: 5,
+        paintOrder: "stroke",
+        cursor: "pointer",
+      },
+      facts: {
+        x: R,
+        y: R * 2 + 34,
+        textAnchor: "middle",
+        textVerticalAnchor: "middle",
+        fontFamily: MONO,
+        fontSize: 11,
+        strokeWidth: 5,
+        paintOrder: "stroke",
+        pointerEvents: "none",
+      },
+    },
+  },
+  true,
+)
+
+Graph.registerNode(
+  "maeto-label",
+  {
+    markup: [
+      {tagName: "rect", selector: "body"},
+      {tagName: "text", selector: "label"},
+    ],
+    attrs: {
+      body: {strokeWidth: 1, cursor: "pointer"},
+      label: {
+        textAnchor: "middle",
+        textVerticalAnchor: "middle",
+        fontFamily: MONO,
+        fontSize: 11,
+        pointerEvents: "none",
+      },
+    },
+  },
+  true,
+)
 
 const signature = graph =>
-  JSON.stringify([graph.nodes.map(n => n.id).sort(), graph.edges.map(e => e.id).sort()])
+  JSON.stringify([
+    graph.nodes.map(n => n.id).sort(),
+    graph.links.map(l => [l.id, l.members.map(m => m.id)]).sort(),
+  ])
 
-const escape = value =>
-  String(value == null ? "" : value).replace(
-    /[&<>"']/g,
-    ch => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"})[ch],
-  )
+// Fruchterman-Reingold from a circle seeded by sorted id, so the same mesh always
+// lands in the same place across reloads and clients
+const layout = (nodes, links, aspect) => {
+  const ids = nodes.map(n => n.id).sort()
+  const count = ids.length
+  const k = 200
+  const pos = new Map()
 
-const clip = (value, max) => {
-  const text = String(value == null ? "" : value)
-  return text.length > max ? `${text.slice(0, max - 1)}…` : text
+  ids.forEach((id, i) => {
+    const angle = (2 * Math.PI * i) / count
+    pos.set(id, {x: Math.cos(angle) * k * 1.5, y: Math.sin(angle) * k * 1.5})
+  })
+
+  const pairs = links.filter(l => pos.has(l.a) && pos.has(l.b))
+  let temperature = k
+
+  for (let step = 0; step < 500; step++) {
+    const shift = new Map(ids.map(id => [id, {x: 0, y: 0}]))
+
+    for (let i = 0; i < count; i++) {
+      for (let j = i + 1; j < count; j++) {
+        const p = pos.get(ids[i])
+        const q = pos.get(ids[j])
+        const dx = p.x - q.x
+        const dy = p.y - q.y
+        const d = Math.max(Math.hypot(dx, dy), 0.01)
+        const f = (k * k) / d
+        shift.get(ids[i]).x += (dx / d) * f
+        shift.get(ids[i]).y += (dy / d) * f
+        shift.get(ids[j]).x -= (dx / d) * f
+        shift.get(ids[j]).y -= (dy / d) * f
+      }
+    }
+
+    for (const link of pairs) {
+      const p = pos.get(link.a)
+      const q = pos.get(link.b)
+      const dx = p.x - q.x
+      const dy = p.y - q.y
+      const d = Math.max(Math.hypot(dx, dy), 0.01)
+      const f = (d * d) / k
+      shift.get(link.a).x -= (dx / d) * f
+      shift.get(link.a).y -= (dy / d) * f
+      shift.get(link.b).x += (dx / d) * f
+      shift.get(link.b).y += (dy / d) * f
+    }
+
+    for (const id of ids) {
+      const p = pos.get(id)
+      const s = shift.get(id)
+      s.x -= p.x * 0.05
+      s.y -= p.y * 0.05
+      const d = Math.max(Math.hypot(s.x, s.y), 0.01)
+      const move = Math.min(d, temperature)
+      p.x += (s.x / d) * move
+      p.y += (s.y / d) * move
+    }
+
+    temperature = Math.max(temperature * 0.985, 1)
+  }
+
+  // turn the long axis horizontal, then stretch toward the canvas shape so a
+  // wide pane is not left with a tall column
+  const points = [...pos.values()]
+  const cx = points.reduce((sum, p) => sum + p.x, 0) / count
+  const cy = points.reduce((sum, p) => sum + p.y, 0) / count
+  let sxx = 0
+  let syy = 0
+  let sxy = 0
+  for (const p of points) {
+    sxx += (p.x - cx) ** 2
+    syy += (p.y - cy) ** 2
+    sxy += (p.x - cx) * (p.y - cy)
+  }
+  const theta = -0.5 * Math.atan2(2 * sxy, sxx - syy)
+  for (const p of points) {
+    const x = p.x - cx
+    const y = p.y - cy
+    p.x = x * Math.cos(theta) - y * Math.sin(theta)
+    p.y = x * Math.sin(theta) + y * Math.cos(theta)
+  }
+
+  const spanX = Math.max(...points.map(p => p.x)) - Math.min(...points.map(p => p.x)) || 1
+  const spanY = Math.max(...points.map(p => p.y)) - Math.min(...points.map(p => p.y)) || 1
+  const stretch = Math.min(Math.max(Math.sqrt(aspect / (spanX / spanY)), 0.6), 2.2)
+
+  for (const p of pos.values()) {
+    p.x *= stretch
+    p.y /= stretch
+    p.x = Math.round(p.x / 20) * 20
+    p.y = Math.round(p.y / 20) * 20
+  }
+
+  return pos
 }
 
-// The card is drawn as the node's own background, so it can carry real
-// typography while staying pixel-aligned with the box the edges clip to. An
-// html overlay drifts out of step with layout and pan; this cannot.
-const card = (colors, data) => {
-  const facts = [
-    data.sites === 1 ? "1 site" : `${data.sites} sites`,
-    data.tenants === 1 ? "1 tenant" : `${data.tenants} tenants`,
-  ].join(" · ")
-
-  const mono = "ui-monospace, SFMono-Regular, Menlo, monospace"
-  const sans = "ui-sans-serif, system-ui, -apple-system, sans-serif"
-
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${NODE_W * CARD_SCALE}" height="${NODE_H * CARD_SCALE}" viewBox="0 0 ${NODE_W} ${NODE_H}">
-    <circle cx="13" cy="15" r="3.5" fill="${statusColor(colors, data.status)}"/>
-    <text x="23" y="19" font-family="${mono}" font-size="12" font-weight="600" fill="${colors.ink}">${escape(clip(data.id, 4))}</text>
-    <text x="${23 + 9 * String(clip(data.id, 4)).length + 6}" y="19" font-family="${sans}" font-size="11" fill="${colors.muted}">${escape(clip(data.name, 12))}</text>
-    <text x="13" y="34" font-family="${mono}" font-size="10" fill="${colors.faint}">${escape(clip(data.locator || "no locator", 22))}</text>
-    <text x="13" y="47" font-family="${sans}" font-size="10" fill="${colors.muted}">${escape(facts)}</text>
-  </svg>`
-
-  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`
+const latencyText = value => {
+  if (value == null) return "–"
+  return value >= 10 ? String(Math.round(value)) : value.toFixed(1)
 }
 
-const stylesheet = colors => [
-  {
-    selector: "node[kind = 'pop']",
-    style: {
-      shape: "round-rectangle",
-      width: NODE_W,
-      height: NODE_H,
-      "background-color": colors.surface,
-      "background-image": node => card(colors, node.data()),
-      "background-fit": "none",
-      "background-width": NODE_W,
-      "background-height": NODE_H,
-      "background-position-x": 0,
-      "background-position-y": 0,
-      "background-clip": "node",
-      "border-color": colors.line,
-      "border-width": 1,
-      label: "",
-      "transition-property": "border-color, border-width, opacity",
-      "transition-duration": "120ms",
-    },
-  },
-  {
-    selector: "node.traced",
-    style: {"border-color": colors.accent, "border-width": 2},
-  },
-  {
-    selector: "node.picked",
-    style: {"border-color": colors.accent, "border-width": 2, "background-color": colors.sunken},
-  },
-  {
-    selector: "node.dimmed",
-    style: {opacity: 0.32},
-  },
-  {
-    selector: "edge",
-    style: {
-      "curve-style": "bezier",
-      "control-point-step-size": 34,
-      width: 2,
-      "line-color": colors.lineStrong,
-      "target-arrow-shape": "none",
-      opacity: 1,
-      "transition-property": "line-color, width, opacity",
-      "transition-duration": "120ms",
-    },
-  },
-  {
-    selector: "edge[!up]",
-    style: {"line-color": colors.bad, "line-style": "dashed", "line-dash-pattern": [6, 4]},
-  },
-  {
-    selector: "edge.traced",
-    style: {"line-color": colors.accent, width: 3.5, opacity: 1},
-  },
-  {
-    selector: "edge.picked",
-    style: {"line-color": colors.accent, width: 3.5},
-  },
-  {
-    selector: "edge.dimmed",
-    style: {opacity: 0.15},
-  },
-  {
-    selector: "edge.labelled",
-    style: {
-      label: "data(cost)",
-      "font-size": 10,
-      "font-family": "var(--font-mono, monospace)",
-      color: colors.accent,
-      "text-background-color": colors.canvas,
-      "text-background-opacity": 0.95,
-      "text-background-padding": 3,
-      "text-background-shape": "roundrectangle",
-      "text-rotation": "autorotate",
-    },
-  },
-]
+const labelText = link => {
+  const up = link.members.filter(m => m.up).length
+  const total = link.members.length
+  return up === 0 ? `∞ · 0/${total}` : `${latencyText(link.latency)} · ${up}/${total}`
+}
 
 export default {
   mounted() {
-    const colors = palette()
-
-    this.cy = cytoscape({
+    this.graph = new Graph({
       container: this.el,
-      minZoom: 0.25,
-      maxZoom: 2.5,
-      wheelSensitivity: 0.25,
-      boxSelectionEnabled: false,
-      autounselectify: true,
-      style: stylesheet(colors),
+      autoResize: false,
+      width: this.el.clientWidth,
+      height: this.el.clientHeight,
+      grid: {visible: true, size: GRID, type: "dot", args: {color: token("--mt-line-strong"), thickness: 1.5}},
+      background: {color: token("--mt-surface")},
+      panning: {enabled: true},
+      mousewheel: {enabled: true, factor: 1.1, minScale: 0.4, maxScale: 2, zoomAtMousePosition: true},
+      interacting: false,
     })
 
-    this.cy.on("tap", "node[kind = 'pop']", event => {
-      this.pushEvent("select", {kind: "node", id: event.target.id()})
+    this.graph.on("node:click", ({node}) => {
+      const data = node.getData() || {}
+      if (data.kind === "pop") this.pushEvent("select", {kind: "node", id: node.id})
+      if (data.kind === "label") this.pushEvent("select", {kind: "link", id: data.link})
     })
 
-    this.cy.on("tap", "edge", event => {
-      this.pushEvent("select", {kind: "link", id: event.target.data("link")})
+    this.graph.on("edge:click", ({edge}) => {
+      this.pushEvent("select", {kind: "link", id: edge.getData().link})
     })
 
-    this.cy.on("tap", event => {
-      if (event.target === this.cy) this.pushEvent("clear", {})
-    })
+    this.graph.on("blank:click", () => this.pushEvent("clear", {}))
 
-    // the palette lives in css variables, so a theme flip needs a restyle
-    this.onTheme = () => {
-      this.cy.style(stylesheet(palette()))
-      this.paint()
-    }
+    // the palette lives in css variables, so a theme flip needs a full redraw
+    this.onTheme = () => requestAnimationFrame(() => this.render(true))
     window.addEventListener("phx:set-theme", this.onTheme)
 
-    this.observer = new ResizeObserver(() => this.cy.resize())
+    this.observer = new ResizeObserver(() => {
+      this.graph.resize(this.el.clientWidth, this.el.clientHeight)
+    })
     this.observer.observe(this.el)
 
     this.render(true)
@@ -225,148 +276,201 @@ export default {
   destroyed() {
     window.removeEventListener("phx:set-theme", this.onTheme)
     if (this.observer) this.observer.disconnect()
-    if (this.cy) this.cy.destroy()
+    if (this.graph) this.graph.dispose()
   },
 
-  render(first) {
-    const graph = JSON.parse(this.el.dataset.graph)
-    this.graph = graph
+  render(full) {
+    const payload = JSON.parse(this.el.dataset.graph)
+    this.payload = payload
 
-    const next = signature(graph)
+    const next = signature(payload)
 
-    if (first || next !== this.signature) {
+    if (full || next !== this.signature) {
+      const relayout = next !== this.signature || !this.positions
       this.signature = next
-      this.cy.elements().remove()
-      this.cy.add(this.elements(graph))
-      this.relayout()
+      if (relayout) this.positions = layout(payload.nodes, payload.links, this.el.clientWidth / Math.max(this.el.clientHeight, 1))
+      this.draw(payload)
+      if (relayout) this.graph.zoomToFit({padding: 56, maxScale: 1})
     }
 
     this.paint()
   },
 
-  elements(graph) {
-    const nodes = graph.nodes.map(node => ({
-      group: "nodes",
-      data: {
-        id: node.id,
-        kind: "pop",
-        name: node.name,
-        status: node.status,
-        locator: node.locator,
-        sites: node.sites,
-        tenants: node.tenants,
-      },
-    }))
+  draw(payload) {
+    const colors = palette()
+    const pos = this.positions
 
-    const edges = graph.edges.map(edge => ({
-      group: "edges",
-      data: {
-        id: edge.id,
-        source: edge.local,
-        target: edge.remote,
-        link: edge.link,
-        up: edge.up,
-        cost: edge.cost,
-      },
-    }))
+    this.graph.drawGrid({type: "dot", args: {color: colors.lineStrong, thickness: 1.5}})
+    this.graph.drawBackground({color: colors.surface})
 
-    return [...nodes, ...edges]
-  },
+    const cells = []
 
-  relayout() {
-    if (this.cy.nodes().empty()) return
+    for (const link of payload.links) {
+      const p = pos.get(link.a)
+      const q = pos.get(link.b)
+      if (!p || !q) continue
 
-    this.cy
-      .layout({
-        name: "fcose",
-        // randomize is what enables fcose's spectral placement, and that is the
-        // whole reason to prefer it over cose. With it off, fcose only refines
-        // the positions the nodes already have -- and freshly added nodes all
-        // sit on the same coordinate, which collapses the graph into a line.
-        randomize: true,
-        quality: "proof",
-        animate: false,
-        fit: false,
-        nodeDimensionsIncludeLabels: true,
-        // the cards are wide, so they need real separation
-        nodeSeparation: 150,
-        idealEdgeLength: 250,
-        nodeRepulsion: 9000,
-        edgeElasticity: 0.4,
-        gravity: 0.15,
-        gravityRange: 3.8,
-        numIter: 3000,
+      const dx = q.x - p.x
+      const dy = q.y - p.y
+      const d = Math.max(Math.hypot(dx, dy), 1)
+      const ux = dx / d
+      const uy = dy / d
+      const trim = R + 2
+      const n = link.members.length
+
+      link.members.forEach((member, i) => {
+        const off = (i - (n - 1) / 2) * SPREAD
+        const ox = -uy * off
+        const oy = ux * off
+
+        cells.push(
+          this.graph.createEdge({
+            id: `m:${member.id}`,
+            source: {x: p.x + ux * trim + ox, y: p.y + uy * trim + oy},
+            target: {x: q.x - ux * trim + ox, y: q.y - uy * trim + oy},
+            zIndex: 1,
+            data: {link: link.id, up: member.up},
+            attrs: {
+              line: {targetMarker: null, strokeLinecap: "round"},
+              wrap: {cursor: "pointer"},
+            },
+          }),
+        )
       })
-      .run()
 
-    this.fit()
-  },
+      const text = labelText(link)
+      const width = text.length * 7 + 18
 
-  // never zoom past 1:1 -- a card scaled up looks broken, so pan instead
-  fit() {
-    this.cy.fit(this.cy.nodes(), 32)
-
-    if (this.cy.zoom() > 1) {
-      this.cy.zoom(1)
-      this.cy.center(this.cy.nodes())
+      cells.push(
+        this.graph.createNode({
+          id: `l:${link.id}`,
+          shape: "maeto-label",
+          x: (p.x + q.x) / 2 - width / 2,
+          y: (p.y + q.y) / 2 - 11,
+          width,
+          height: 22,
+          zIndex: 2,
+          data: {kind: "label", link: link.id},
+          attrs: {
+            body: {width, height: 22, rx: 2},
+            label: {x: width / 2, y: 11, text},
+          },
+        }),
+      )
     }
+
+    for (const node of payload.nodes) {
+      const p = pos.get(node.id)
+      if (!p) continue
+
+      cells.push(
+        this.graph.createNode({
+          id: node.id,
+          shape: "maeto-pop",
+          x: p.x - R,
+          y: p.y - R,
+          zIndex: 3,
+          data: {kind: "pop"},
+          attrs: {
+            role: {text: node.role},
+            name: {text: node.name || node.id},
+            facts: {text: `${node.vpns} vpn · ${node.ifs} if`},
+          },
+        }),
+      )
+    }
+
+    this.graph.resetCells(cells)
   },
 
   paint() {
-    const graph = this.graph
-    const traced = new Set(graph.trace || [])
-    const tracing = traced.size > 0 && graph.overlay === "path"
+    const payload = this.payload
     const colors = palette()
-    const ceiling = Math.max(graph.ceiling || 1, 1)
-    const picked = graph.selection || {}
+    const overlay = payload.overlay
+    const trace = payload.trace || []
+    const tracing = overlay === "path" && trace.length > 0
+    const traced = new Set(trace)
+    const hops = new Set()
+    for (let i = 0; i < trace.length - 1; i++) hops.add([trace[i], trace[i + 1]].sort().join("|"))
+    const ceiling = Math.max(payload.ceiling || 1, 1)
+    const picked = payload.selection || {}
 
-    this.cy.batch(() => {
-      this.cy.elements().removeClass("traced picked dimmed labelled")
+    this.graph.batchUpdate(() => {
+      for (const node of payload.nodes) {
+        const cell = this.graph.getCellById(node.id)
+        if (!cell) continue
 
-      this.cy.nodes("[kind = 'pop']").forEach(node => {
-        node.style(
-          "border-color",
-          graph.overlay === "health" ? statusColor(colors, node.data("status")) : colors.line,
-        )
+        const isPicked = picked.kind === "node" && picked.id === node.id
+        const status = statusColor(colors, node.status)
+        const ring = overlay === "health" ? status : tracing && traced.has(node.id) ? colors.accent : colors.lineStrong
+        const alarm = overlay === "health" && node.status === "issue"
+        const dim = tracing && !traced.has(node.id)
 
-        if (traced.has(node.id())) node.addClass("traced")
-        else if (tracing) node.addClass("dimmed")
+        const opacity = dim ? 0.3 : 1
 
-        if (picked.kind === "node" && picked.id === node.id()) node.addClass("picked")
-      })
+        cell.attr({
+          halo: {fill: isPicked ? colors.accent : alarm ? colors.bad : "none"},
+          ring: {stroke: isPicked ? colors.accent : ring, fill: colors.surface, opacity},
+          role: {fill: isPicked ? colors.accent : ring, opacity},
+          name: {fill: isPicked ? colors.accent : colors.ink, stroke: colors.surface, opacity},
+          facts: {fill: isPicked ? colors.accent : colors.muted, stroke: colors.surface, opacity},
+        })
+      }
 
-      this.cy.edges().forEach(edge => {
-        const onPath = tracing && this.adjacentOnPath(graph.trace, edge)
+      for (const link of payload.links) {
+        const isPicked = picked.kind === "link" && picked.id === link.id
+        const onPath = tracing && hops.has([link.a, link.b].sort().join("|"))
+        const dim = tracing && !onPath
+        const up = link.members.filter(m => m.up).length
+        const ratio = link.latency == null ? 0 : link.latency / ceiling
 
-        if (edge.data("up") === false) {
-          // a down adjacency keeps its own colour in every overlay
-        } else if (onPath) {
-          edge.addClass("traced")
-        } else if (tracing) {
-          edge.addClass("dimmed")
-        } else if (graph.overlay === "cost") {
-          const step = costStep((edge.data("cost") || 0) / ceiling)
-          edge.style({"line-color": colors.accent, width: step.width, opacity: step.opacity})
-          edge.addClass("labelled")
-        } else {
-          edge.style({"line-color": colors.lineStrong, width: 2, opacity: 1})
+        for (const member of link.members) {
+          const edge = this.graph.getCellById(`m:${member.id}`)
+          if (!edge) continue
+
+          let stroke = colors.lineStrong
+          let width = 2
+          let opacity = 1
+
+          if (!member.up) {
+            stroke = colors.bad
+          } else if (isPicked || onPath) {
+            stroke = colors.accent
+            width = 3
+          } else if (overlay === "cost") {
+            stroke = colors.accent
+            width = 1.5 + ratio * 3
+            opacity = 0.35 + ratio * 0.65
+          }
+
+          if (dim) opacity = 0.15
+
+          edge.attr("line", {
+            stroke,
+            strokeWidth: width,
+            strokeOpacity: opacity,
+            strokeDasharray: member.up ? null : "6 4",
+          })
         }
 
-        if (picked.kind === "link" && picked.id === edge.data("link")) edge.addClass("picked")
-      })
+        const label = this.graph.getCellById(`l:${link.id}`)
+        if (!label) continue
+
+        let tone = colors.muted
+        if (up === 0) tone = colors.bad
+        else if (up < link.members.length) tone = colors.warn
+        else if (isPicked || onPath || overlay === "cost") tone = colors.accent
+
+        label.attr({
+          body: {
+            fill: colors.surface,
+            stroke: isPicked ? colors.accent : up === 0 ? tone : colors.line,
+            strokeWidth: isPicked ? 1.5 : 1,
+            opacity: dim ? 0.3 : 1,
+          },
+          label: {fill: tone, opacity: dim ? 0.3 : 1},
+        })
+      }
     })
-  },
-
-  adjacentOnPath(chain, edge) {
-    const source = edge.data("source")
-    const target = edge.data("target")
-
-    for (let i = 0; i < chain.length - 1; i++) {
-      const a = chain[i]
-      const b = chain[i + 1]
-      if ((a === source && b === target) || (a === target && b === source)) return true
-    }
-
-    return false
   },
 }

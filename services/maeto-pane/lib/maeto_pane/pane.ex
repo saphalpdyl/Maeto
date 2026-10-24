@@ -1,4 +1,4 @@
-defmodule MaetoPane.Fabric do
+defmodule MaetoPane.Pane do
   @moduledoc "Latest desired intent and observed dataplane state for every node."
 
   use GenServer
@@ -10,7 +10,7 @@ defmodule MaetoPane.Fabric do
   @intents_bucket "maeto-intents"
   @state_bucket "maeto-node-state"
   @control_bucket "maeto-pane-control"
-  @topic "fabric"
+  @topic "pane"
   @retry_after 2_000
 
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
@@ -160,7 +160,7 @@ defmodule MaetoPane.Fabric do
   defp describe(reason), do: inspect(reason)
 
   defp broadcast(state) do
-    Phoenix.PubSub.broadcast(MaetoPane.PubSub, @topic, :fabric_updated)
+    Phoenix.PubSub.broadcast(MaetoPane.PubSub, @topic, :pane_updated)
 
     state
   end

@@ -1,7 +1,7 @@
-defmodule MaetoPane.Fabric.PathsTest do
+defmodule MaetoPane.Pane.PathsTest do
   use ExUnit.Case, async: true
 
-  alias MaetoPane.Fabric.Paths
+  alias MaetoPane.Pane.Paths
 
   @prefix "fd7a:3921:111:2::/64"
   @table 273
@@ -293,6 +293,49 @@ defmodule MaetoPane.Fabric.PathsTest do
 
       assert %{status: :no_report} = Enum.find(sites, &(&1.cpe == "cC"))
       assert Paths.site_counts(sites) == %{total: 2, up: 0}
+    end
+  end
+
+  describe "class tables" do
+    test "a class table route belongs to its tenant and color, not to a table of its own" do
+      voice = 2 * 16_777_216 + 7
+
+      state = %{
+        "current" => [
+          %{"kind" => "vrf", "spec" => %{"Name" => "maeto-vrf-273", "TableID" => 7}},
+          %{
+            "kind" => "sr_route",
+            "spec" => %{"Table" => voice, "Prefix" => @prefix, "Segments" => ["fc00:0:3::"]}
+          }
+        ],
+        "desired" => []
+      }
+
+      intent = %{
+        "intent" => %{
+          "tenants" => %{
+            "273" => %{
+              "install_paths" => [
+                %{"prefix_route" => [@prefix], "segments" => ["fc00:0:3::"], "color" => 2}
+              ]
+            }
+          }
+        }
+      }
+
+      snapshot = %{
+        connected: true,
+        control: control(),
+        intents: %{"pop.A" => intent},
+        states: %{"pop.A" => state}
+      }
+
+      assert [row] = Paths.rows(snapshot)
+      assert row.tenant == "273"
+      assert row.color == 2
+      assert row.class == "voice"
+      assert row.table == voice
+      assert row.status == :installed
     end
   end
 

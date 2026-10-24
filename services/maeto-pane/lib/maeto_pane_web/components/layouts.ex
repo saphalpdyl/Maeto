@@ -34,24 +34,26 @@ defmodule MaetoPaneWeb.Layouts do
   slot :rail, doc: "section links down the sidebar"
   slot :crumbs, doc: "context that sits inline with the brand in the top bar"
   slot :status, doc: "liveness indicators pinned to the right of the top bar"
+  slot :foot, doc: "context pinned to the bottom of the sidebar"
   slot :inner_block, required: true
 
   def app(assigns) do
     ~H"""
     <div class="flex min-h-dvh bg-canvas text-ink">
-      <aside class="sticky top-0 hidden h-dvh w-[212px] shrink-0 flex-col border-r border-line bg-rail lg:flex">
-        <a href="/" class="flex h-12 shrink-0 items-center gap-2 px-4">
+      <aside class="sticky top-0 hidden h-dvh w-[216px] shrink-0 flex-col border-r border-line bg-rail lg:flex">
+        <a href="/" class="flex h-12 shrink-0 items-center gap-2 px-3.5">
           <.mark />
-          <span class="text-[14px] font-semibold tracking-tight">
+          <span class="text-[15px] font-semibold tracking-tight">
             ma<span class="text-accent">e</span>to
           </span>
         </a>
 
-        <nav :if={@rail != []} class="mt-scroll flex-1 space-y-0.5 overflow-y-auto px-2 py-2">
+        <nav :if={@rail != []} class="mt-scroll flex-1 overflow-y-auto px-2.5 pb-3">
           {render_slot(@rail)}
         </nav>
 
-        <div class="shrink-0 border-t border-line p-2">
+        <div class="shrink-0 space-y-2 border-t border-line p-2.5">
+          {render_slot(@foot)}
           <.theme_toggle />
         </div>
       </aside>
@@ -72,8 +74,8 @@ defmodule MaetoPaneWeb.Layouts do
           </div>
         </header>
 
-        <main class="min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-8">
-          <div class="mx-auto max-w-[1360px]">
+        <main class="min-w-0 flex-1 p-4 sm:p-5">
+          <div class="mx-auto max-w-[1600px]">
             {render_slot(@inner_block)}
           </div>
         </main>

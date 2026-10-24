@@ -17,7 +17,7 @@ defmodule MaetoPaneWeb.Router do
   scope "/", MaetoPaneWeb do
     pipe_through :browser
 
-    live "/", FabricLive, :index
+    live "/", PaneLive, :index
   end
 
   # Other scopes may use custom stacks.

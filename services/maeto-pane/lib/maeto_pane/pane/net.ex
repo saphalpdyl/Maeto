@@ -1,4 +1,4 @@
-defmodule MaetoPane.Fabric.Net do
+defmodule MaetoPane.Pane.Net do
   @moduledoc "Prefix arithmetic, so a segment address can be traced back to the node that owns it."
 
   import Bitwise

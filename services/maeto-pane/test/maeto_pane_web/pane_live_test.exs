@@ -1,4 +1,4 @@
-defmodule MaetoPaneWeb.FabricLiveTest do
+defmodule MaetoPaneWeb.PaneLiveTest do
   use MaetoPaneWeb.ConnCase, async: false
 
   import Phoenix.LiveViewTest
@@ -126,21 +126,21 @@ defmodule MaetoPaneWeb.FabricLiveTest do
         "current" => [vrf("273", 3_846_821_851), sid("fc00:0:1:ff8c::", 4_112_525_701)]
     }
 
-    :sys.replace_state(MaetoPane.Fabric, fn s ->
+    :sys.replace_state(MaetoPane.Pane, fn s ->
       Map.merge(s, %{intents: %{}, states: %{}, control: nil})
     end)
 
-    send(MaetoPane.Fabric, {:kv, :control, :key_added, "snapshot", Jason.encode!(@control)})
-    send(MaetoPane.Fabric, {:kv, :intents, :key_added, "pop.A.intent", Jason.encode!(@intent)})
-    send(MaetoPane.Fabric, {:kv, :states, :key_added, "pop.A.dataplane", Jason.encode!(state)})
+    send(MaetoPane.Pane, {:kv, :control, :key_added, "snapshot", Jason.encode!(@control)})
+    send(MaetoPane.Pane, {:kv, :intents, :key_added, "pop.A.intent", Jason.encode!(@intent)})
+    send(MaetoPane.Pane, {:kv, :states, :key_added, "pop.A.dataplane", Jason.encode!(state)})
 
-    :sys.get_state(MaetoPane.Fabric)
+    :sys.get_state(MaetoPane.Pane)
 
     :ok
   end
 
   test "survives a hot reload that left stale state behind", %{conn: conn} do
-    :sys.replace_state(MaetoPane.Fabric, &Map.delete(&1, :control))
+    :sys.replace_state(MaetoPane.Pane, &Map.delete(&1, :control))
 
     {:ok, _view, html} = live(conn, "/")
 
@@ -159,8 +159,8 @@ defmodule MaetoPaneWeb.FabricLiveTest do
       "current" => []
     }
 
-    send(MaetoPane.Fabric, {:kv, :states, :key_added, "pop.A.dataplane", Jason.encode!(blind)})
-    :sys.get_state(MaetoPane.Fabric)
+    send(MaetoPane.Pane, {:kv, :states, :key_added, "pop.A.dataplane", Jason.encode!(blind)})
+    :sys.get_state(MaetoPane.Pane)
 
     {:ok, view, _html} = live(conn, "/")
 
@@ -202,8 +202,8 @@ defmodule MaetoPaneWeb.FabricLiveTest do
         }
       })
 
-    send(MaetoPane.Fabric, {:kv, :control, :key_added, "snapshot", Jason.encode!(control)})
-    :sys.get_state(MaetoPane.Fabric)
+    send(MaetoPane.Pane, {:kv, :control, :key_added, "snapshot", Jason.encode!(control)})
+    :sys.get_state(MaetoPane.Pane)
 
     {:ok, view, _html} = live(conn, "/")
 
@@ -236,8 +236,8 @@ defmodule MaetoPaneWeb.FabricLiveTest do
         }
       })
 
-    send(MaetoPane.Fabric, {:kv, :control, :key_added, "snapshot", Jason.encode!(control)})
-    :sys.get_state(MaetoPane.Fabric)
+    send(MaetoPane.Pane, {:kv, :control, :key_added, "snapshot", Jason.encode!(control)})
+    :sys.get_state(MaetoPane.Pane)
 
     {:ok, _view, html} = live(conn, "/")
 
@@ -252,10 +252,11 @@ defmodule MaetoPaneWeb.FabricLiveTest do
     graph = graph_payload(html)
 
     assert Enum.map(graph["nodes"], & &1["id"]) == ["A", "B"]
-    # two parallel links between A and B, each its own element, grouped under one link id
-    assert Enum.map(graph["edges"], & &1["id"]) == ["A:eth1-B:eth1", "A:eth2-B:eth2"]
-    assert Enum.uniq(Enum.map(graph["edges"], & &1["link"])) == ["A|B"]
-    assert Enum.all?(graph["edges"], & &1["up"])
+    # two parallel links between A and B, one adjacency carrying both members
+    assert [link] = graph["links"]
+    assert link["id"] == "A|B"
+    assert Enum.map(link["members"], & &1["id"]) == ["A:eth1-B:eth1", "A:eth2-B:eth2"]
+    assert Enum.all?(link["members"], & &1["up"])
   end
 
   test "selecting a node shows its detail panel", %{conn: conn} do

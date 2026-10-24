@@ -1,5 +1,5 @@
-defmodule MaetoPane.Fabric.Analysis do
-  @moduledoc "Derives per-node views and invariant violations from a fabric snapshot."
+defmodule MaetoPane.Pane.Analysis do
+  @moduledoc "Derives per-node views and invariant violations from a pane snapshot."
 
   def nodes(%{intents: intents, states: states}) do
     (Map.keys(intents) ++ Map.keys(states))
