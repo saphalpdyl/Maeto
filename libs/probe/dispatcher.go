@@ -29,6 +29,10 @@ type STAMPResult struct {
 	ReceiveTimestamp *time.Time `json:"receive_timestamp,omitempty"`
 }
 
+type NetStatResult struct {
+	Stats map[string]map[string]uint64 `json:"stats"`
+}
+
 type Dispatcher interface {
 	Dispatch(ctx context.Context, result Result) error
 }

@@ -16,7 +16,8 @@ import (
 type ProbeType string
 
 const (
-	ProbeTypeSTAMP ProbeType = "PROBE_STAMP"
+	ProbeTypeSTAMP   ProbeType = "PROBE_STAMP"
+	ProbeTypeNetStat ProbeType = "PROBE_NET_STAT"
 )
 
 const defaultStopTimeout = 10 * time.Second
@@ -171,6 +172,36 @@ func (s *Supervisor) Start(ctx context.Context) error {
 					cfgMap[stampConfig.GetID()] = &stampConfig
 				}
 
+				netstatConfig := &ProbeConfigNetStat{
+					Devs:          make([]string, 0),
+					StatItems:     TrackedStats,
+					ProbeInterval: 10 * time.Second,
+				}
+
+				hostFacingIfaces := make(map[string]struct{})
+
+				for tenantID, tenant := range intent.Tenants {
+					vrfTableName := fmt.Sprintf("maeto-vrf-%s", tenantID)
+					netstatConfig.Devs = append(netstatConfig.Devs, vrfTableName)
+
+					for _, portalIntent := range tenant.PortalIntents {
+						xfrmName := fmt.Sprintf("maeto-tun-%s-%d", tenantID, portalIntent.TunnelInterfaceID)
+
+						netstatConfig.Devs = append(netstatConfig.Devs, xfrmName)
+
+						hostFacingIfaces[portalIntent.HostFacingInterface] = struct{}{}
+					}
+				}
+
+				for _, p := range intent.Peers {
+					netstatConfig.Devs = append(netstatConfig.Devs, p.LocalInterface)
+				}
+
+				// We need the access edge too
+				for dev := range hostFacingIfaces {
+					netstatConfig.Devs = append(netstatConfig.Devs, dev)
+				}
+
 				reflectorStampConfig := ProbeConfigSTAMP{
 					ProbeType: ProbeTypeSTAMP,
 					IsSender:  false,
@@ -179,6 +210,7 @@ func (s *Supervisor) Start(ctx context.Context) error {
 				}
 
 				cfgMap[reflectorStampConfig.GetID()] = &reflectorStampConfig
+				cfgMap[netstatConfig.GetID()] = netstatConfig
 
 				err := s.reconcileWithTarget(ctx, cfgMap)
 				if err != nil {
@@ -365,6 +397,8 @@ func NewDefaultRunner(dispatcher Dispatcher, logger *slog.Logger) ProbeRunner {
 				return runSTAMPSender(ctx, cfg, dispatcher, logger)
 			}
 			return runSTAMPReflector(ctx, cfg, dispatcher, logger)
+		case *ProbeConfigNetStat:
+			return runNetStat(ctx, cfg, dispatcher, logger)
 		default:
 			return fmt.Errorf("unsupported probe config %T", cfg)
 		}

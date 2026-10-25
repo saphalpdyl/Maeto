@@ -82,7 +82,7 @@ dozzle:
 
 # NATS NUI
 nui:
-	docker compose -f docker-compose.dev.yml up nats-nui
+	docker compose -f docker-compose.dev.yml up --force-recreate nats-nui
 
 apply: clean build-vm generate deploy
 	$(MAKE) ips
