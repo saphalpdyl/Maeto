@@ -28,6 +28,7 @@ type Controller struct {
 	costGraph           *CostGraph
 	telemetryCollectors map[NodeID]*TelemetryCollector
 	topologyReports     *TopologyReportCollector
+	nodeReports         *NodeReportRecorder
 	db                  *store.DataStore
 
 	ready bool
@@ -42,12 +43,6 @@ func NewController(
 	config Config,
 	logger *slog.Logger,
 ) (*Controller, error) {
-	// Set up data store if not set
-	controlState, err := db.Queries.GetControlState(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get control state: %w", err)
-	}
-
 	topology := NewClabTopologyManager(ClabTopologyConfig{
 		StatePath:       config.StatePath,
 		TopologyDirPath: config.DataDir,
@@ -68,12 +63,20 @@ func NewController(
 		StatePath:       config.StatePath,
 		TopologyDirPath: config.DataDir,
 	})
-	if err := tenants.Load(ctx); err != nil {
-		return nil, fmt.Errorf("failed to load tenants: %w", err)
+
+	bootMode, err := bootStore(ctx, db, config, tenants, logger.With(log.Domain(log.DomainDataStore)))
+	if err != nil {
+		return nil, fmt.Errorf("failed to prepare data store: %w", err)
+	}
+
+	controlState, err := db.Queries.GetControlState(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get control state: %w", err)
 	}
 
 	logger.InfoContext(ctx, "controller initialized",
 		slog.Int("tenants", len(tenants.Tenants())),
+		slog.String("boot_mode", string(bootMode)),
 	)
 
 	costGraph, err := NewTestCostGraph(topology.Graph())
@@ -134,6 +137,11 @@ func NewController(
 			logger.With(log.Domain(log.DomainControlPlaneLifecycle)),
 			topology,
 		),
+		nodeReports: NewNodeReportRecorder(
+			js,
+			db,
+			logger.With(log.Domain(log.DomainDataStore)),
+		),
 		costGraph: costGraph,
 		pce: NewPCE(
 			costGraph,
@@ -166,6 +174,7 @@ func (c *Controller) Start(ctx context.Context) {
 
 	go c.pce.Run(ctx, c.topology.Graph())
 	go c.topologyReports.Run(ctx)
+	go c.nodeReports.Run(ctx)
 
 	if err := c.startSnapshotPublisher(ctx); err != nil {
 		c.logger.ErrorContext(ctx, "failed to start snapshot publisher",

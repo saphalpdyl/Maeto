@@ -40,19 +40,19 @@ WHERE identity = $1;
 -- name: ListSites :many
 SELECT portal_id, tenant_id, cpe, node, prefix, attach, attach_node, if_id, identity, reservation_mbps
 FROM sites
-ORDER BY tenant_id, portal_id;
+ORDER BY tenant_id, if_id;
 
 -- name: ListSitesByTenant :many
 SELECT portal_id, tenant_id, cpe, node, prefix, attach, attach_node, if_id, identity, reservation_mbps
 FROM sites
 WHERE tenant_id = $1
-ORDER BY portal_id;
+ORDER BY if_id;
 
 -- name: ListSitesByAttach :many
 SELECT portal_id, tenant_id, cpe, node, prefix, attach, attach_node, if_id, identity, reservation_mbps
 FROM sites
 WHERE attach = $1
-ORDER BY portal_id;
+ORDER BY if_id;
 
 -- name: CreateSite :exec
 INSERT INTO sites (portal_id, tenant_id, cpe, node, prefix, attach, attach_node, if_id, identity, reservation_mbps)

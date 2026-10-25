@@ -287,7 +287,7 @@ func (q *Queries) ListSiteClassReservations(ctx context.Context, portalID string
 const listSites = `-- name: ListSites :many
 SELECT portal_id, tenant_id, cpe, node, prefix, attach, attach_node, if_id, identity, reservation_mbps
 FROM sites
-ORDER BY tenant_id, portal_id
+ORDER BY tenant_id, if_id
 `
 
 func (q *Queries) ListSites(ctx context.Context) ([]Site, error) {
@@ -325,7 +325,7 @@ const listSitesByAttach = `-- name: ListSitesByAttach :many
 SELECT portal_id, tenant_id, cpe, node, prefix, attach, attach_node, if_id, identity, reservation_mbps
 FROM sites
 WHERE attach = $1
-ORDER BY portal_id
+ORDER BY if_id
 `
 
 func (q *Queries) ListSitesByAttach(ctx context.Context, attach string) ([]Site, error) {
@@ -363,7 +363,7 @@ const listSitesByTenant = `-- name: ListSitesByTenant :many
 SELECT portal_id, tenant_id, cpe, node, prefix, attach, attach_node, if_id, identity, reservation_mbps
 FROM sites
 WHERE tenant_id = $1
-ORDER BY portal_id
+ORDER BY if_id
 `
 
 func (q *Queries) ListSitesByTenant(ctx context.Context, tenantID int32) ([]Site, error) {
