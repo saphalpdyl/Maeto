@@ -12,15 +12,18 @@ import (
 	"time"
 
 	"github.com/avast/retry-go"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/saphalpdyl/maeto/libs/probe"
+	"github.com/saphalpdyl/maeto/libs/store"
 	"github.com/saphalpdyl/maeto/services/control-plane/log"
 )
 
 type TelemetryCollector struct {
 	mu sync.Mutex
 
+	db     *store.DataStore
 	js     jetstream.JetStream
 	cons   jetstream.Consumer
 	cc     jetstream.ConsumeContext
@@ -38,6 +41,7 @@ type TelemetryCollector struct {
 
 func NewTelemetryCollector(
 	js jetstream.JetStream,
+	db *store.DataStore,
 	logger *slog.Logger,
 	forNode NodeID, // Eg: A
 	subjectPrefix string, // Eg: maeto.probe.result.A.*
@@ -54,6 +58,7 @@ func NewTelemetryCollector(
 		topology:      topology,
 		costGraph:     costGraph,
 		ewmas:         map[EdgeID]*Ewma{},
+		db:            db,
 	}
 }
 
@@ -216,8 +221,32 @@ func (t *TelemetryCollector) handleTelemetryConsume(ctx context.Context, msg jet
 			t.mu.Unlock()
 			return errors.New("duration is negative")
 		}
-		ewma.Observe(time.Now(), float64(duration.Milliseconds()))
+
+		observationTime := time.Now()
+		ewma.Observe(observationTime, float64(duration.Milliseconds()))
 		t.mu.Unlock()
+
+		// write to db
+		err := t.db.InTx(ctx, func(q *store.Queries) error {
+			return q.InsertLinkSample(ctx, store.InsertLinkSampleParams{
+				Time: pgtype.Timestamptz{
+					Time:  observationTime,
+					Valid: true,
+				},
+				TelemetryKey: telemetryKey,
+				Sequence:     int64(stampPayload.Sequence),
+				LatencyMs: pgtype.Float8{
+					Float64: float64(duration.Milliseconds()),
+					Valid:   true,
+				},
+				Lost: false,
+			})
+		})
+
+		if err != nil {
+			t.logger.ErrorContext(ctx, "failed to insert link samples", log.Err(err))
+			return err
+		}
 
 		t.costGraph.UpdateCost(EdgeID(telemetryKey), COSTDIM_LATENCY, ewma.Mean())
 		t.costGraph.MarkSeen(EdgeID(telemetryKey), time.Now())

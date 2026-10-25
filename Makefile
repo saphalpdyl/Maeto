@@ -128,7 +128,9 @@ test.integration: test.build
 
 ## Database related
 db-reset:
-	docker volume rm -sf maeto-db nats-nui-db
+	docker compose rm -s -f db
+	docker volume rm maeto-db
+	docker compose up -d db
 
 db-res:
 	docker compose restart db

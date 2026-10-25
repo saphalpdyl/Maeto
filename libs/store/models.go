@@ -39,6 +39,7 @@ type LinkSample struct {
 }
 
 type NodeGeneration struct {
+	NodeType   string
 	NodeID     string
 	Version    int64
 	Generation int64

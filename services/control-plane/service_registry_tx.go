@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/saphalpdyl/maeto/libs/nodesync"
+	"github.com/saphalpdyl/maeto/libs/store"
 )
 
 // RegistryTx contains a stage-and-commit mechanism for PE/CPE updates. It was built
@@ -97,6 +98,17 @@ func (tx *RegistryTx) Commit(ctx context.Context) error {
 	tx.r.mu.Unlock()
 
 	for publishTargetKey, snapshot := range snapshots {
+		err := tx.r.db.Queries.UpsertNodeGeneration(ctx, store.UpsertNodeGenerationParams{
+			NodeType:   string(snapshot.NodeType),
+			NodeID:     snapshot.ID,
+			Version:    int64(snapshot.Version),
+			Generation: int64(snapshot.Generation),
+		})
+		if err != nil {
+			tx.r.logger.ErrorContext(ctx, fmt.Sprintf("failed to upsert node generation for snapshot %s: %v", publishTargetKey, err))
+			continue
+		}
+
 		if _, err := tx.r.publisher.Publish(ctx, publishTargetKey, snapshot); err != nil {
 			collectedErrors = append(collectedErrors, err)
 			tx.r.logger.ErrorContext(ctx, "failed to publish intent", "publish_target", publishTargetKey, "err", err)

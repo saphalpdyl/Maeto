@@ -75,6 +75,7 @@ func (c *Controller) setupPortalAuthEndpoint(ctx context.Context) error {
 			}
 
 			c.serviceRegistry.registry[req.PortalID] = &nodesync.NodeIntent{
+				ID:         req.PortalID,
 				NodeType:   nodesync.NodeTypeCPE,
 				Intent:     &cpeIntent,
 				Timestamp:  time.Now(),

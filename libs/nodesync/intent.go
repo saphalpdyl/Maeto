@@ -14,6 +14,7 @@ const (
 )
 
 type NodeIntent struct {
+	ID         string    `json:"id"`
 	NodeType   NodeType  `json:"node_type"`
 	Intent     Intent    `json:"intent"`
 	Timestamp  time.Time `json:"timestamp"`
@@ -24,6 +25,7 @@ type NodeIntent struct {
 // the wire form. json.RawMessage exists only here: NodeIntent.Intent is a typed
 // value everywhere else, so nothing outside this file decodes an intent.
 type nodeIntentWire struct {
+	ID         string          `json:"id"`
 	NodeType   NodeType        `json:"node_type"`
 	Intent     json.RawMessage `json:"intent"`
 	Timestamp  time.Time       `json:"timestamp"`
@@ -46,6 +48,7 @@ func (n *NodeIntent) UnmarshalJSON(b []byte) error {
 		return err
 	}
 
+	n.ID = w.ID
 	n.NodeType = w.NodeType
 	n.Timestamp = w.Timestamp
 	n.Generation = w.Generation

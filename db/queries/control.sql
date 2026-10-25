@@ -19,22 +19,24 @@ SET booted_at = $1
 WHERE id = 1;
 
 -- name: GetNodeGeneration :one
-SELECT node_id, version, generation
+SELECT node_type, node_id, version, generation
 FROM node_generations
-WHERE node_id = $1;
+WHERE node_type = $1
+  AND node_id = $2;
 
 -- name: ListNodeGenerations :many
-SELECT node_id, version, generation
+SELECT node_type, node_id, version, generation
 FROM node_generations
-ORDER BY node_id;
+ORDER BY node_type, node_id;
 
 -- name: UpsertNodeGeneration :exec
-INSERT INTO node_generations (node_id, version, generation)
-VALUES ($1, $2, $3)
-ON CONFLICT (node_id) DO UPDATE
+INSERT INTO node_generations (node_type, node_id, version, generation)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (node_type, node_id) DO UPDATE
 SET version = EXCLUDED.version,
     generation = EXCLUDED.generation;
 
 -- name: DeleteNodeGeneration :exec
 DELETE FROM node_generations
-WHERE node_id = $1;
+WHERE node_type = $1
+  AND node_id = $2;

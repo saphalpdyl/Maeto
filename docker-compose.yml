@@ -81,3 +81,4 @@ volumes:
   maeto-pane-deps:
   nats-nui-db:
   maeto-db:
+    name: maeto-db

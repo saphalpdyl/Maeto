@@ -9,7 +9,9 @@ CREATE TABLE control_state (
 INSERT INTO control_state (id, schema_version) VALUES (1, 1);
 
 CREATE TABLE node_generations (
-    node_id    TEXT   PRIMARY KEY,
+    node_type  TEXT   NOT NULL,
+    node_id    TEXT   NOT NULL,
     version    BIGINT NOT NULL,
-    generation BIGINT NOT NULL
+    generation BIGINT NOT NULL,
+    PRIMARY KEY (node_type, node_id)
 );

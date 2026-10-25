@@ -15,10 +15,22 @@ func (r *Reconciler) Plan(ctx context.Context, desired *nodesync.NodeIntent) (ma
 		return nil, nil, fmt.Errorf("intent for node type %q delivered to a %q", desired.NodeType, r.nodeType)
 	}
 
-	// TODO: Same generation should be looked up against FIB to allow for clean states
-	if (r.current != nil) && (desired.Generation < r.current.Generation) {
-		r.logger.DebugContext(ctx, "got stale desired config, skipping")
-		return nil, nil, fmt.Errorf("stale desired intent, current: %d, got: %d", r.current.Generation, desired.Generation)
+	if r.current != nil {
+		// If desired version is greater, disregard generation, reconcile
+		// If desired version is the same, and desired generation is greater equal to current generation, reconcile
+		// Otherwise, hold off
+		if desired.Version < r.current.Version ||
+			(desired.Version == r.current.Version && desired.Generation < r.current.Generation) {
+
+			r.logger.DebugContext(ctx, "got stale desired config, skipping")
+			return nil, nil, fmt.Errorf(
+				"stale desired intent, current: v%d %d, got: v%d %d",
+				r.current.Version,
+				r.current.Generation,
+				desired.Version,
+				desired.Generation,
+			)
+		}
 	}
 
 	// Fetch FIB state

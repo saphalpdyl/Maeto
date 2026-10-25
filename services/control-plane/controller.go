@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"net/netip"
 
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
@@ -88,6 +87,7 @@ func NewController(
 	for _, n := range inventory.Nodes() {
 		telemetryCollectors[n.ID] = NewTelemetryCollector(
 			js,
+			db,
 			logger.With(log.Domain(log.DomainTelemetryCollection)),
 			n.ID,
 			fmt.Sprintf("%s.%s", probe.ProbeResultSubjectPrefix, string(n.ID)),
@@ -97,26 +97,7 @@ func NewController(
 		)
 	}
 
-	sidAllocationMap := make(map[netip.Addr]bool)
-	sidTenantMap := make(map[string]netip.Addr)
 	sidCursor := uint16(controlState.SidCursor)
-
-	allocations, err := db.Queries.ListSIDAllocations(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get allocation: %w", err)
-	}
-
-	for _, al := range allocations {
-		tenantMapKey := fmt.Sprintf(
-			"%s.%s.%s",
-			al.Locator.Addr().String(),
-			al.TenantID,
-			al.SidType,
-		)
-
-		sidAllocationMap[al.Sid] = true
-		sidTenantMap[tenantMapKey] = al.Sid
-	}
 
 	// Intent KV
 	intentPublisher, err := nodesync.NewPublisher(ctx, js, nodesync.IntentBucket)
@@ -129,10 +110,12 @@ func NewController(
 		intentPublisher,
 		db,
 		sidCursor,
-		sidAllocationMap,
-		sidTenantMap,
 		logger.With(log.Domain(log.DomainServiceRegistry)),
 	)
+
+	if err := sr.LoadPreviousStateFromDB(ctx); err != nil {
+		return nil, fmt.Errorf("failed to load previous service registry state: %w", err)
+	}
 
 	pceUpdatesChan := make(chan PathSet, 32)
 

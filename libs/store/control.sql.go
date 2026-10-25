@@ -13,11 +13,17 @@ import (
 
 const deleteNodeGeneration = `-- name: DeleteNodeGeneration :exec
 DELETE FROM node_generations
-WHERE node_id = $1
+WHERE node_type = $1
+  AND node_id = $2
 `
 
-func (q *Queries) DeleteNodeGeneration(ctx context.Context, nodeID string) error {
-	_, err := q.db.Exec(ctx, deleteNodeGeneration, nodeID)
+type DeleteNodeGenerationParams struct {
+	NodeType string
+	NodeID   string
+}
+
+func (q *Queries) DeleteNodeGeneration(ctx context.Context, arg DeleteNodeGenerationParams) error {
+	_, err := q.db.Exec(ctx, deleteNodeGeneration, arg.NodeType, arg.NodeID)
 	return err
 }
 
@@ -41,22 +47,33 @@ func (q *Queries) GetControlState(ctx context.Context) (ControlState, error) {
 }
 
 const getNodeGeneration = `-- name: GetNodeGeneration :one
-SELECT node_id, version, generation
+SELECT node_type, node_id, version, generation
 FROM node_generations
-WHERE node_id = $1
+WHERE node_type = $1
+  AND node_id = $2
 `
 
-func (q *Queries) GetNodeGeneration(ctx context.Context, nodeID string) (NodeGeneration, error) {
-	row := q.db.QueryRow(ctx, getNodeGeneration, nodeID)
+type GetNodeGenerationParams struct {
+	NodeType string
+	NodeID   string
+}
+
+func (q *Queries) GetNodeGeneration(ctx context.Context, arg GetNodeGenerationParams) (NodeGeneration, error) {
+	row := q.db.QueryRow(ctx, getNodeGeneration, arg.NodeType, arg.NodeID)
 	var i NodeGeneration
-	err := row.Scan(&i.NodeID, &i.Version, &i.Generation)
+	err := row.Scan(
+		&i.NodeType,
+		&i.NodeID,
+		&i.Version,
+		&i.Generation,
+	)
 	return i, err
 }
 
 const listNodeGenerations = `-- name: ListNodeGenerations :many
-SELECT node_id, version, generation
+SELECT node_type, node_id, version, generation
 FROM node_generations
-ORDER BY node_id
+ORDER BY node_type, node_id
 `
 
 func (q *Queries) ListNodeGenerations(ctx context.Context) ([]NodeGeneration, error) {
@@ -68,7 +85,12 @@ func (q *Queries) ListNodeGenerations(ctx context.Context) ([]NodeGeneration, er
 	var items []NodeGeneration
 	for rows.Next() {
 		var i NodeGeneration
-		if err := rows.Scan(&i.NodeID, &i.Version, &i.Generation); err != nil {
+		if err := rows.Scan(
+			&i.NodeType,
+			&i.NodeID,
+			&i.Version,
+			&i.Generation,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -113,20 +135,26 @@ func (q *Queries) SetSIDCursor(ctx context.Context, sidCursor int32) error {
 }
 
 const upsertNodeGeneration = `-- name: UpsertNodeGeneration :exec
-INSERT INTO node_generations (node_id, version, generation)
-VALUES ($1, $2, $3)
-ON CONFLICT (node_id) DO UPDATE
+INSERT INTO node_generations (node_type, node_id, version, generation)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (node_type, node_id) DO UPDATE
 SET version = EXCLUDED.version,
     generation = EXCLUDED.generation
 `
 
 type UpsertNodeGenerationParams struct {
+	NodeType   string
 	NodeID     string
 	Version    int64
 	Generation int64
 }
 
 func (q *Queries) UpsertNodeGeneration(ctx context.Context, arg UpsertNodeGenerationParams) error {
-	_, err := q.db.Exec(ctx, upsertNodeGeneration, arg.NodeID, arg.Version, arg.Generation)
+	_, err := q.db.Exec(ctx, upsertNodeGeneration,
+		arg.NodeType,
+		arg.NodeID,
+		arg.Version,
+		arg.Generation,
+	)
 	return err
 }

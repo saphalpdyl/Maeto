@@ -15,6 +15,7 @@ func (r *ServiceRegistry) getOrCreateRegistryEntryForPE(nodeID string) *nodesync
 	current, exists := r.registry[nodeID]
 	if !exists {
 		r.registry[nodeID] = &nodesync.NodeIntent{
+			ID:       nodeID,
 			NodeType: nodesync.NodeTypePE,
 			Intent: &nodesync.PEIntent{
 				NodeID:             nodeID,
