@@ -89,6 +89,7 @@ func (c *Controller) startPCEUpdatesDispatcher(ctx context.Context) {
 						}
 
 						dt46, err := c.serviceRegistry.GetOrGenerateSID(
+							ctx,
 							remoteNode.Locator,
 							fmt.Sprintf("%d", tenantID),
 							dataplane.EncapTypeDT46,
@@ -117,9 +118,7 @@ func (c *Controller) startPCEUpdatesDispatcher(ctx context.Context) {
 						})
 					}
 
-					c.serviceRegistry.StageSIDSegsForTenantOnNode(
-						tx, fmt.Sprint(tenantID), nodeID, localNode.Locator, tenantSIDIntents,
-					)
+					c.serviceRegistry.StageSIDSegsForTenantOnNode(ctx, tx, fmt.Sprint(tenantID), nodeID, localNode.Locator, tenantSIDIntents)
 				}
 			}
 

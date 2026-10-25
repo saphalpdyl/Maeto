@@ -53,9 +53,11 @@ func main() {
 	ctx, cancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	logger := slog.Default().With(log.Domain(log.DomainControlPlaneLifecycle))
-
-	logger.InfoContext(ctx, "starting control plane", log.ListenAddress(config.ListenAddress))
+	logger := slog.Default().With(
+		log.Domain(log.DomainControlPlaneLifecycle),
+		log.InstanceID(serviceInstanceId),
+	)
+	logger.InfoContext(ctx, "booting control plane", log.ListenAddress(config.ListenAddress))
 
 	///// External service connections
 	var nc *nats.Conn
@@ -64,12 +66,12 @@ func main() {
 	g, gCtx := errgroup.WithContext(ctx)
 
 	g.Go(func() error {
-		nc, js, err = tryConnectToNATS(gCtx, js, nc, config, logger)
+		nc, js, err = tryConnectToNATS(gCtx, js, nc, config, logger.With(log.Domain(log.DomainNATSConnection)))
 		return err
 	})
 
 	g.Go(func() error {
-		dbStore, err = tryConnectToDB(gCtx, dbStore, config, logger)
+		dbStore, err = tryConnectToDB(gCtx, dbStore, config, logger.With(log.Domain(log.DomainDataStore)))
 		return err
 	})
 
@@ -99,7 +101,11 @@ func main() {
 func tryConnectToDB(ctx context.Context, dbStore *store.DataStore, config controlplane.Config, logger *slog.Logger) (*store.DataStore, error) {
 	err := retry.Do(func() error {
 		var err error
-		dbStore, err = store.OpenDataStore(ctx, config.DatabaseURL)
+		dbStore, err = store.OpenDataStore(
+			ctx,
+			logger,
+			config.DatabaseURL,
+		)
 		if err != nil {
 			logger.ErrorContext(ctx, "failed to connect to database", log.Err(err))
 			return err

@@ -1,6 +1,7 @@
 package controlplane
 
 import (
+	"context"
 	"fmt"
 	"net/netip"
 	"time"
@@ -33,6 +34,7 @@ func (r *ServiceRegistry) getOrCreateRegistryEntryForPE(nodeID string) *nodesync
 }
 
 func (r *ServiceRegistry) getOrCreateTenantIntentForPE(
+	ctx context.Context,
 	tenantID string,
 	locatorPrefix netip.Prefix,
 	pe *nodesync.PEIntent,
@@ -42,7 +44,7 @@ func (r *ServiceRegistry) getOrCreateTenantIntentForPE(
 		return tenantIntent, nil
 	}
 
-	dt46SID, err := r.getOrGenerateSID(locatorPrefix, tenantID, dataplane.EncapTypeDT46)
+	dt46SID, err := r.getOrGenerateSID(ctx, locatorPrefix, tenantID, dataplane.EncapTypeDT46)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate random SID: %w", err)
 	}
@@ -57,6 +59,7 @@ func (r *ServiceRegistry) getOrCreateTenantIntentForPE(
 }
 
 func (r *ServiceRegistry) StageSIDSegsForTenantOnNode(
+	ctx context.Context,
 	tx *RegistryTx,
 	tenantID string,
 	localNodeID NodeID,
@@ -64,7 +67,7 @@ func (r *ServiceRegistry) StageSIDSegsForTenantOnNode(
 	pathsInstallIntents []nodesync.PESIDInstallIntent,
 ) {
 	tx.MutatePE(localNodeID, func(intent *nodesync.PEIntent) error {
-		tenantIntent, err := r.getOrCreateTenantIntentForPE(tenantID, locatorPrefix, intent)
+		tenantIntent, err := r.getOrCreateTenantIntentForPE(ctx, tenantID, locatorPrefix, intent)
 		if err != nil {
 			return fmt.Errorf("failed to get or create tenant intent for pe %s: %w", localNodeID, err)
 		}
@@ -74,16 +77,9 @@ func (r *ServiceRegistry) StageSIDSegsForTenantOnNode(
 	})
 }
 
-func (r *ServiceRegistry) StagePortalIntentForNode(
-	tx *RegistryTx,
-	nodeID NodeID,
-	tenantID string,
-	portalID string,
-	portal *nodesync.PE_PortalIntent,
-	locatorPrefix netip.Prefix,
-) {
+func (r *ServiceRegistry) StagePortalIntentForNode(ctx context.Context, tx *RegistryTx, nodeID NodeID, tenantID string, portalID string, portal *nodesync.PE_PortalIntent, locatorPrefix netip.Prefix) {
 	tx.MutatePE(nodeID, func(intent *nodesync.PEIntent) error {
-		tenantIntent, err := r.getOrCreateTenantIntentForPE(tenantID, locatorPrefix, intent)
+		tenantIntent, err := r.getOrCreateTenantIntentForPE(ctx, tenantID, locatorPrefix, intent)
 		if err != nil {
 			return fmt.Errorf("failed to get or create tenant intent for pe %s: %w", nodeID, err)
 		}

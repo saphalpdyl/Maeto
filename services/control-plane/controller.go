@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net/netip"
 
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
@@ -42,6 +43,12 @@ func NewController(
 	config Config,
 	logger *slog.Logger,
 ) (*Controller, error) {
+	// Set up data store if not set
+	controlState, err := db.Queries.GetControlState(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get control state: %w", err)
+	}
+
 	topology := NewClabTopologyManager(ClabTopologyConfig{
 		StatePath:       config.StatePath,
 		TopologyDirPath: config.DataDir,
@@ -90,6 +97,27 @@ func NewController(
 		)
 	}
 
+	sidAllocationMap := make(map[netip.Addr]bool)
+	sidTenantMap := make(map[string]netip.Addr)
+	sidCursor := uint16(controlState.SidCursor)
+
+	allocations, err := db.Queries.ListSIDAllocations(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get allocation: %w", err)
+	}
+
+	for _, al := range allocations {
+		tenantMapKey := fmt.Sprintf(
+			"%s.%s.%s",
+			al.Locator.Addr().String(),
+			al.TenantID,
+			al.SidType,
+		)
+
+		sidAllocationMap[al.Sid] = true
+		sidTenantMap[tenantMapKey] = al.Sid
+	}
+
 	// Intent KV
 	intentPublisher, err := nodesync.NewPublisher(ctx, js, nodesync.IntentBucket)
 	if err != nil {
@@ -99,6 +127,10 @@ func NewController(
 	sr := NewServiceRegistry(
 		&ServiceRegistryConfig{},
 		intentPublisher,
+		db,
+		sidCursor,
+		sidAllocationMap,
+		sidTenantMap,
 		logger.With(log.Domain(log.DomainServiceRegistry)),
 	)
 

@@ -234,9 +234,7 @@ func (c *Controller) handlePETunnelUpdate(ctx context.Context, data []byte) erro
 	}
 
 	tx := c.serviceRegistry.BeginTx()
-	c.serviceRegistry.StagePortalIntentForNode(
-		tx, node.ID, fmt.Sprintf("%d", tenant.ID), req.PortalID, portalIntent, topologyNode.Locator,
-	)
+	c.serviceRegistry.StagePortalIntentForNode(ctx, tx, node.ID, fmt.Sprintf("%d", tenant.ID), req.PortalID, portalIntent, topologyNode.Locator)
 
 	err := tx.Commit(ctx)
 	if err != nil {

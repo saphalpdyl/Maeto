@@ -12,6 +12,7 @@ import (
 	"sync"
 
 	"github.com/saphalpdyl/maeto/libs/nodesync"
+	"github.com/saphalpdyl/maeto/libs/store"
 )
 
 type ServiceRegistryConfig struct {
@@ -31,20 +32,31 @@ type ServiceRegistry struct {
 	mu sync.RWMutex // guards desired state
 
 	logger *slog.Logger
+	db     *store.DataStore
 }
 
-func NewServiceRegistry(config *ServiceRegistryConfig, intentPublisher *nodesync.Publisher, logger *slog.Logger) *ServiceRegistry {
+func NewServiceRegistry(
+	config *ServiceRegistryConfig,
+	intentPublisher *nodesync.Publisher,
+	db *store.DataStore,
+	sidCursor uint16,
+	sidAllocationMap map[netip.Addr]bool,
+	sidTenantMap map[string]netip.Addr,
+	logger *slog.Logger,
+) *ServiceRegistry {
 	return &ServiceRegistry{
 		config:           config,
 		registry:         make(map[string]*nodesync.NodeIntent),
-		sidAllocationMap: make(map[netip.Addr]bool),
-		sidTenantMap:     make(map[string]netip.Addr),
+		sidAllocationMap: sidAllocationMap,
+		sidTenantMap:     sidTenantMap,
 		publisher:        intentPublisher,
 		logger:           logger,
-		sidCursor:        0,
+		sidCursor:        sidCursor,
+		db:               db,
 	}
 }
 
+// TODO: Might have to reconsider this, given the chance of stale intents
 // Restore recreates the intent bucket and republishes every node's nodesync.
 func (r *ServiceRegistry) Restore(ctx context.Context) error {
 	if err := r.publisher.Ensure(ctx); err != nil {
