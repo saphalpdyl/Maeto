@@ -18,6 +18,7 @@ defmodule MaetoPaneWeb.Router do
     pipe_through :browser
 
     live "/", PaneLive, :index
+    live "/pops/:id", PopLive, :show
   end
 
   # Other scopes may use custom stacks.

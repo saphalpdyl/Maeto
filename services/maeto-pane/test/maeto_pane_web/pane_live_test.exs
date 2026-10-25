@@ -259,6 +259,13 @@ defmodule MaetoPaneWeb.PaneLiveTest do
     assert Enum.all?(link["members"], & &1["up"])
   end
 
+  test "the drilldown group links every pop to its own page", %{conn: conn} do
+    {:ok, view, _html} = live(conn, "/")
+
+    assert has_element?(view, ~s{#nav-pop-A[href="/pops/A"]})
+    assert has_element?(view, ~s{#nav-pop-B[href="/pops/B"]})
+  end
+
   test "selecting a node shows its detail panel", %{conn: conn} do
     {:ok, view, _html} = live(conn, "/")
 

@@ -119,7 +119,7 @@ defmodule MaetoPaneWeb.Pane.LineChart do
     """
   end
 
-  defp paths(values, top) do
+  def paths(values, top) do
     count = length(values)
 
     values
@@ -139,6 +139,9 @@ defmodule MaetoPaneWeb.Pane.LineChart do
     |> Enum.join(" ")
   end
 
+  def width, do: @width
+  def height, do: @height
+
   defp x_for(index, count), do: (index + 0.5) / count * @width
 
   defp bucket_times(_from, 0), do: []
@@ -149,12 +152,12 @@ defmodule MaetoPaneWeb.Pane.LineChart do
     end)
   end
 
-  defp dot_bottom(value, top) do
+  def dot_bottom(value, top) do
     from_bottom = 2 + value / top * (@height - 4)
     Float.round(from_bottom / @height * 100, 2)
   end
 
-  defp nice_max(values, floor) do
+  def nice_max(values, floor) do
     peak =
       values
       |> Enum.reject(&is_nil/1)
@@ -175,15 +178,15 @@ defmodule MaetoPaneWeb.Pane.LineChart do
     step * magnitude
   end
 
-  defp latest(values) do
+  def latest(values) do
     values
     |> Enum.reverse()
     |> Enum.find(&(&1 != nil))
   end
 
-  defp format(nil, _unit), do: "–"
+  def format(nil, _unit), do: "–"
 
-  defp format(value, unit) do
+  def format(value, unit) do
     if value >= 10 or value == round(value) do
       "#{round(value)}#{unit}"
     else

@@ -41,7 +41,7 @@ defmodule MaetoPaneWeb.Layouts do
   def app(assigns) do
     ~H"""
     <div class="flex min-h-dvh bg-surface text-ink">
-      <aside class="sticky top-0 hidden h-dvh w-[216px] shrink-0 flex-col border-r border-line bg-rail lg:flex">
+      <aside class="sticky top-0 hidden h-dvh w-[216px] shrink-0 flex-col border-r border-line bg-blue lg:flex">
         <a href="/" class="flex h-12 items-center px-3.5">
           <.logo class="h-10" />
         </a>

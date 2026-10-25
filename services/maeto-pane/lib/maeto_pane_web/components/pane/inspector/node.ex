@@ -14,6 +14,7 @@ defmodule MaetoPaneWeb.Pane.Inspector.NodePanel do
   attr :paths, :list, default: []
   attr :links, :list, default: []
   attr :nodes, :list, default: []
+  attr :drilldown, :boolean, default: false, doc: "rendered on the PoP's own drilldown page"
 
   def node_panel(assigns) do
     assigns =
@@ -24,7 +25,17 @@ defmodule MaetoPaneWeb.Pane.Inspector.NodePanel do
     ~H"""
     <header class="flex items-center justify-between gap-2 px-4 pt-4 pb-2">
       <h2 class="text-[15px] font-medium">Metadata</h2>
-      <.esc />
+      <div class="flex items-center gap-1.5">
+        <.link
+          :if={!@drilldown}
+          id="open-pop"
+          navigate={~p"/pops/#{@selected.id}"}
+          class="flex items-center gap-1 rounded-md border border-line bg-surface px-2 py-0.5 text-xs text-muted transition-colors hover:text-ink"
+        >
+          <.icon name="hero-chart-bar-square" class="size-3.5" /> Counters
+        </.link>
+        <.esc />
+      </div>
     </header>
 
     <dl class="space-y-3 border-b border-line px-4 pb-4">
@@ -63,19 +74,24 @@ defmodule MaetoPaneWeb.Pane.Inspector.NodePanel do
 
     <section :if={@adjacencies != []} class="border-b border-line px-4 py-3">
       <h3 class="mb-1.5 text-[15px] font-medium">Adjacencies</h3>
-      <button
-        :for={adj <- @adjacencies}
-        phx-click="select"
-        phx-value-kind="link"
-        phx-value-id={adj.link}
-        class="-mx-2 flex w-[calc(100%+1rem)] items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-sunken/70"
-      >
-        <span class="text-[13px] text-link">{adj.name}</span>
-        <span class="truncate font-mono text-[11px] text-faint">{adj.sid}</span>
-        <span class="ml-auto rounded bg-sunken px-1.5 font-mono text-xs tabular-nums">
-          {num(adj.cost)}
-        </span>
-      </button>
+      <%= for adj <- @adjacencies do %>
+        <.link
+          :if={@drilldown}
+          navigate={~p"/pops/#{adj.peer}"}
+          class="-mx-2 flex w-[calc(100%+1rem)] items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-sunken/70"
+        >
+          <.adjacency adj={adj} />
+        </.link>
+        <button
+          :if={!@drilldown}
+          phx-click="select"
+          phx-value-kind="link"
+          phx-value-id={adj.link}
+          class="-mx-2 flex w-[calc(100%+1rem)] items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-sunken/70"
+        >
+          <.adjacency adj={adj} />
+        </button>
+      <% end %>
     </section>
 
     <.group title="SRv6">
@@ -203,11 +219,24 @@ defmodule MaetoPaneWeb.Pane.Inspector.NodePanel do
 
       %{
         link: link.id,
+        peer: peer,
         name: Map.get(names, peer, peer),
         sid: sid,
         up: link.up,
         cost: outbound |> Enum.map(& &1.cost) |> Enum.reject(&is_nil/1) |> Enum.max(fn -> nil end)
       }
     end
+  end
+
+  attr :adj, :map, required: true
+
+  defp adjacency(assigns) do
+    ~H"""
+    <span class="text-[13px] text-link">{@adj.name}</span>
+    <span class="truncate font-mono text-[11px] text-faint">{@adj.sid}</span>
+    <span class="ml-auto rounded bg-sunken px-1.5 font-mono text-xs tabular-nums">
+      {num(@adj.cost)}
+    </span>
+    """
   end
 end

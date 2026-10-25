@@ -10,6 +10,8 @@ Maeto is a SRv6-based SD-WAN control plane. Computes directional least-cost path
 [![Tag](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fgit.saphal.me%2Fapi%2Fv1%2Frepos%2Fsaphalpdyl%2Fmaeto%2Ftags%3Flimit%3D1&query=%24%5B0%5D.name&label=tag)](https://git.saphal.me/saphalpdyl/Maeto/tags)
 
 ## Contents
+- [](#)
+- [Contents](#contents)
 - [Architecture](#architecture)
   - [Reconciliation](#reconciliation)
   - [Measurement](#measurement)
@@ -116,6 +118,7 @@ Done/In-progress:
 - Latency cost graph fed from the probes. PCE recomputes every tick, 10% gate before it will actually move a path
 - maeto-pane: topology, per-link cost, and path changes with the edge whose cost caused them
 - Bandwidth-aware hose-modeled path computation
+- Passive telemetry collection
 
 Not yet:
 - BGP-LS defined topology instead of statically generated topology
@@ -127,9 +130,9 @@ Not yet:
 - Flowlet switching for elephant flows w/ eBPF for flow detection and switching itself.
 
 ## Screenshots 
-![Screenshot of the Segment lists menu](docs/images/screenshots/maeto-dashboard-showing-segments.png)
 ![Link View](docs/images/screenshots/maeto-dashboard-showing-links.png)
-![Path computation example](docs/images/screenshots/maeto-dashboard-showing-reroute.png)
+![Screenshot of the Segment lists menu](docs/images/screenshots/maeto-dashboard-showing-segments.png)
+![Drilldown View](docs/images/screenshots/maeto-dashboard-showing-drilldown.png)
 
 ---
 <img src="docs/images/maeto-logo-monochrome.svg" width="70" height="30" style="vertical-align: middle;"> by saphalpdyl

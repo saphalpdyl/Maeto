@@ -14,17 +14,22 @@ defmodule MaetoPaneWeb.PaneLive do
   alias MaetoPane.Pane.Analysis
   alias MaetoPane.Pane.Paths
   alias MaetoPane.Pane.Links
+  alias MaetoPane.Pane.IfaceStats
   alias MaetoPane.Pane.LinkStats
+  alias MaetoPaneWeb.Pane.RateScale
 
   import MaetoPaneWeb.Pane.ChangesTable
   import MaetoPaneWeb.Pane.ComputedTable
   import MaetoPaneWeb.Pane.Inspector
   import MaetoPaneWeb.Pane.LinksTable
   import MaetoPaneWeb.Pane.Nav
+
+  alias MaetoPaneWeb.Pane.Nav
   import MaetoPaneWeb.Pane.PathsTable
   import MaetoPaneWeb.Pane.RegistryPanel
   import MaetoPaneWeb.Pane.SitesTable
-  import MaetoPaneWeb.Pane.Summary
+  import MaetoPaneWeb.Pane.Reconciliation
+  import MaetoPaneWeb.Pane.SyncChart
   import MaetoPaneWeb.Pane.Topology
   import MaetoPaneWeb.Pane.UI
 
@@ -47,13 +52,24 @@ defmodule MaetoPaneWeb.PaneLive do
      |> assign(:overlay, :health)
      |> assign(:overlays, @overlays)
      |> assign(:page_title, "Pane")
-     |> load()}
+     |> assign(:fabric, nil)
+     |> load()
+     |> load_fabric()}
   end
+
+  @impl true
+  def handle_params(%{"section" => section}, _uri, socket)
+      when section in ~w(changes paths links computed sites registry) do
+    {:noreply, assign(socket, :section, String.to_existing_atom(section))}
+  end
+
+  def handle_params(_params, _uri, socket), do: {:noreply, socket}
 
   @impl true
   def handle_info(:pane_updated, socket), do: {:noreply, load(socket)}
 
-  def handle_info(:refresh_stats, socket), do: {:noreply, load_link_stats(socket)}
+  def handle_info(:refresh_stats, socket),
+    do: {:noreply, socket |> load_link_stats() |> load_fabric()}
 
   @impl true
   def handle_event("select", %{"kind" => kind, "id" => id}, socket)
@@ -74,11 +90,6 @@ defmodule MaetoPaneWeb.PaneLive do
 
   def handle_event("clear", _params, socket) do
     {:noreply, socket |> assign(:selection, nil) |> assign(:link_stats, nil) |> resolve()}
-  end
-
-  def handle_event("section", %{"section" => section}, socket)
-      when section in ~w(changes paths links computed sites registry) do
-    {:noreply, assign(socket, :section, String.to_existing_atom(section))}
   end
 
   def handle_event("overlay", %{"overlay" => overlay}, socket)
@@ -102,6 +113,7 @@ defmodule MaetoPaneWeb.PaneLive do
     |> assign(:connected_to_nats, snapshot.connected)
     |> assign(:has_control, not is_nil(snapshot.control))
     |> assign(:graph, graph)
+    |> assign(:access, access_interfaces(graph))
     |> assign(:registry, registry)
     |> assign(:paths, rows)
     |> assign(:sites, sites)
@@ -111,10 +123,36 @@ defmodule MaetoPaneWeb.PaneLive do
     |> assign(:sites_by_node, Enum.frequencies_by(sites, & &1.attach))
     |> assign(:issues, Analysis.issues(nodes) ++ Analysis.drift(registry) ++ Paths.issues(rows))
     |> assign(:facts, facts(graph, links, sites, rows, computed, changes))
-    |> then(&assign(&1, :nav, nav_groups(&1.assigns.facts)))
+    |> then(&assign(&1, :nav, Nav.groups(&1.assigns.facts, graph.nodes)))
     |> assign(:programmed_pairs, MapSet.new(rows, &{&1.pe, &1.dest}))
     |> assign(:ceiling, Enum.max([1.0 | Enum.map(links, & &1.cost)]))
     |> resolve()
+  end
+
+  # every PE names the interface its CPEs attach to; transit PoPs have none
+  defp access_interfaces(graph) do
+    Enum.flat_map(graph.nodes, fn node ->
+      case access_interface(node) do
+        nil -> []
+        iface -> [{node.id, iface}]
+      end
+    end)
+  end
+
+  defp access_interface(%{inventory: %{"access" => %{"interface" => iface}}}), do: iface
+  defp access_interface(_node), do: nil
+
+  defp load_fabric(socket) do
+    if connected?(socket) do
+      assign(socket, :fabric, IfaceStats.fabric(socket.assigns.access))
+    else
+      socket
+    end
+  end
+
+  defp fabric_chart(fabric) do
+    {[rx, tx], unit} = RateScale.bits([fabric.rx_bits, fabric.tx_bits])
+    %{rx: rx, tx: tx, unit: unit}
   end
 
   defp load_link_stats(%{assigns: %{selected: %{kind: :link} = link}} = socket),
@@ -170,47 +208,6 @@ defmodule MaetoPaneWeb.PaneLive do
     }
   end
 
-  defp nav_groups(facts) do
-    [
-      %{
-        label: "Fabric",
-        icon: "hero-share",
-        items: [item(:links, "Links", "hero-link", facts.links)]
-      },
-      %{
-        label: "Routing",
-        icon: "hero-arrows-right-left",
-        items: [
-          item(:paths, "Segment lists", "hero-queue-list", facts.paths, facts.paths_degraded),
-          item(:computed, "Computed paths", "hero-cpu-chip", facts.computed),
-          item(:registry, "SID allocations", "hero-hashtag", nil)
-        ]
-      },
-      %{
-        label: "Tenants",
-        icon: "hero-building-office-2",
-        items: [item(:sites, "Sites", "hero-map-pin", facts.sites, facts.sites - facts.sites_up)]
-      },
-      %{
-        label: "Operations",
-        icon: "hero-bolt",
-        items: [item(:changes, "Changes", "hero-arrow-path", facts.changes)]
-      }
-    ]
-  end
-
-  # a section's badge is its size, unless something in it is wrong: then it is
-  # how many things are wrong, in the bad tone
-  defp item(key, label, icon, count, wrong \\ 0) do
-    %{
-      key: key,
-      label: label,
-      icon: icon,
-      badge: if(wrong > 0, do: wrong, else: count),
-      alert: wrong > 0
-    }
-  end
-
   defp section_title(:changes), do: "Path changes"
   defp section_title(:paths), do: "Segment lists"
   defp section_title(:computed), do: "Computed paths"
@@ -238,7 +235,7 @@ defmodule MaetoPaneWeb.PaneLive do
     ~H"""
     <Layouts.app flash={@flash}>
       <:rail>
-        <.nav groups={@nav} section={@section} />
+        <.nav groups={@nav} active={@section} />
       </:rail>
 
       <:foot>
@@ -282,7 +279,26 @@ defmodule MaetoPaneWeb.PaneLive do
 
       <div phx-window-keyup="clear" phx-key="Escape">
         <h1 class="sr-only">Pane</h1>
-        <.summary facts={@facts} issues={@issues} />
+        <section class="grid grid-cols-1 border-b border-line xl:grid-cols-[minmax(0,1fr)_360px]">
+          <div id="fabric-chart" phx-hook="ChartSync" class="min-w-0 px-6 py-5">
+            <.wide
+              :if={@fabric}
+              id="chart-fabric"
+              title="Fabric throughput"
+              solid={fabric_chart(@fabric).rx}
+              dotted={fabric_chart(@fabric).tx}
+              unit={fabric_chart(@fabric).unit}
+              from={@fabric.from}
+              solid_label="in from sites"
+              dotted_label="out to sites"
+              height="h-[140px]"
+            />
+            <p :if={!@fabric} class="text-[13px] text-muted">No counter history</p>
+          </div>
+          <div class="border-t border-line xl:border-t-0 xl:border-l">
+            <.reconciliation facts={@facts} />
+          </div>
+        </section>
 
         <.topology
           graph={@graph}

@@ -207,10 +207,9 @@ defmodule MaetoPaneWeb.PaneLivePathsTest do
   test "the summary strip tallies pops, adjacencies, segment lists and sites", %{conn: conn} do
     {:ok, view, _html} = live(conn, "/")
 
-    summary = view |> element("#summary") |> render()
+    summary = view |> element("#reconciliation") |> render()
 
     assert summary =~ "PoPs"
-    assert summary =~ "reconciled"
     assert summary =~ "Adjacencies"
     assert summary =~ "Segment lists in FIB"
     assert summary =~ "Sites reporting"
