@@ -222,9 +222,16 @@ func (t *TelemetryCollector) handleTelemetryConsume(ctx context.Context, msg jet
 			return errors.New("duration is negative")
 		}
 
+		durationMs := float64(duration.Microseconds()) / 1000
+
 		observationTime := time.Now()
-		ewma.Observe(observationTime, float64(duration.Milliseconds()))
+		ewma.Observe(observationTime, durationMs)
 		t.mu.Unlock()
+
+		seq := int64(0)
+		if stampPayload.SenderSequence != nil {
+			seq = int64(*stampPayload.SenderSequence)
+		}
 
 		// write to db
 		err := t.db.InTx(ctx, func(q *store.Queries) error {
@@ -234,12 +241,11 @@ func (t *TelemetryCollector) handleTelemetryConsume(ctx context.Context, msg jet
 					Valid: true,
 				},
 				TelemetryKey: telemetryKey,
-				Sequence:     int64(stampPayload.Sequence),
+				Sequence:     seq,
 				LatencyMs: pgtype.Float8{
-					Float64: float64(duration.Milliseconds()),
+					Float64: durationMs,
 					Valid:   true,
 				},
-				Lost: false,
 			})
 		})
 

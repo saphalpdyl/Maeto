@@ -57,7 +57,7 @@ services:
       - PGHOST=db
       - PGUSER=postgres
       - PGPASSWORD=admin
-      - PGDATABASE=maeto_pane_dev
+      - PGDATABASE=postgres
     ports:
       - "5000:4000"
     volumes:

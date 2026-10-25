@@ -14,6 +14,7 @@ defmodule MaetoPaneWeb.PaneLive do
   alias MaetoPane.Pane.Analysis
   alias MaetoPane.Pane.Paths
   alias MaetoPane.Pane.Links
+  alias MaetoPane.Pane.LinkStats
 
   import MaetoPaneWeb.Pane.ChangesTable
   import MaetoPaneWeb.Pane.ComputedTable
@@ -28,14 +29,20 @@ defmodule MaetoPaneWeb.PaneLive do
   import MaetoPaneWeb.Pane.UI
 
   @overlays [health: "Health", cost: "Cost", path: "Path"]
+  @stats_refresh_ms 10_000
 
   @impl true
   def mount(_params, _session, socket) do
-    if connected?(socket), do: Pane.subscribe()
+    if connected?(socket) do
+      put_tz_offset(get_connect_params(socket)["tz_offset"])
+      Pane.subscribe()
+      :timer.send_interval(@stats_refresh_ms, :refresh_stats)
+    end
 
     {:ok,
      socket
      |> assign(:selection, nil)
+     |> assign(:link_stats, nil)
      |> assign(:section, :paths)
      |> assign(:overlay, :health)
      |> assign(:overlays, @overlays)
@@ -45,6 +52,8 @@ defmodule MaetoPaneWeb.PaneLive do
 
   @impl true
   def handle_info(:pane_updated, socket), do: {:noreply, load(socket)}
+
+  def handle_info(:refresh_stats, socket), do: {:noreply, load_link_stats(socket)}
 
   @impl true
   def handle_event("select", %{"kind" => kind, "id" => id}, socket)
@@ -59,11 +68,12 @@ defmodule MaetoPaneWeb.PaneLive do
      socket
      |> assign(:selection, {String.to_existing_atom(kind), id})
      |> assign(:overlay, overlay)
-     |> resolve()}
+     |> resolve()
+     |> load_link_stats()}
   end
 
   def handle_event("clear", _params, socket) do
-    {:noreply, socket |> assign(:selection, nil) |> resolve()}
+    {:noreply, socket |> assign(:selection, nil) |> assign(:link_stats, nil) |> resolve()}
   end
 
   def handle_event("section", %{"section" => section}, socket)
@@ -106,6 +116,11 @@ defmodule MaetoPaneWeb.PaneLive do
     |> assign(:ceiling, Enum.max([1.0 | Enum.map(links, & &1.cost)]))
     |> resolve()
   end
+
+  defp load_link_stats(%{assigns: %{selected: %{kind: :link} = link}} = socket),
+    do: assign(socket, :link_stats, LinkStats.for_link(link))
+
+  defp load_link_stats(socket), do: assign(socket, :link_stats, nil)
 
   defp resolve(socket) do
     %{graph: graph, paths: paths, sites: sites} = socket.assigns
@@ -253,63 +268,67 @@ defmodule MaetoPaneWeb.PaneLive do
         </span>
       </:status>
 
-      <div class="space-y-4" phx-window-keyup="clear" phx-key="Escape">
+      <:inspector>
+        <.panel
+          selected={@selected}
+          issues={@issues}
+          computed={@computed}
+          paths={@paths}
+          links={@links}
+          nodes={@graph.nodes}
+          link_stats={@link_stats}
+        />
+      </:inspector>
+
+      <div phx-window-keyup="clear" phx-key="Escape">
         <h1 class="sr-only">Pane</h1>
         <.summary facts={@facts} issues={@issues} />
 
-        <div class="grid grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
-          <div class="min-w-0 space-y-4">
-            <.topology
-              graph={@graph}
-              links={@links}
-              sites_by_node={@sites_by_node}
-              overlay={@overlay}
-              overlays={@overlays}
-              trace={@trace}
-              selection={@selection}
-              ceiling={@ceiling}
-            />
+        <.topology
+          graph={@graph}
+          links={@links}
+          sites_by_node={@sites_by_node}
+          overlay={@overlay}
+          overlays={@overlays}
+          trace={@trace}
+          selection={@selection}
+          ceiling={@ceiling}
+        />
 
-            <section class="mt-card overflow-hidden">
-              <.card_head
-                title={section_title(@section)}
-                caption={section_caption(@section, @facts, @registry)}
-              >
-                <:aside :if={section_meta(@section, @facts)}>
-                  <span class="font-mono text-xs text-muted">{section_meta(@section, @facts)}</span>
-                </:aside>
-              </.card_head>
-
-              <div class="mt-scroll overflow-x-auto">
-                <%= case @section do %>
-                  <% :changes -> %>
-                    <.changes_table changes={@changes} selection={@selection} />
-                  <% :paths -> %>
-                    <.paths_table paths={@paths} selection={@selection} />
-                  <% :links -> %>
-                    <.links_table links={@links} selection={@selection} />
-                  <% :computed -> %>
-                    <.computed_table computed={@computed} programmed={@programmed_pairs} />
-                  <% :sites -> %>
-                    <.sites_table sites={@sites} selection={@selection} />
-                  <% :registry -> %>
-                    <.registry_panel registry={@registry} />
-                <% end %>
-              </div>
-            </section>
+        <section>
+          <div class="flex flex-wrap items-center gap-x-2.5 gap-y-1 px-6 pt-5 pb-3">
+            <h2 class="text-[15px] font-medium">{section_title(@section)}</h2>
+            <p
+              :if={section_caption(@section, @facts, @registry)}
+              class="text-[13px] text-faint"
+            >
+              {section_caption(@section, @facts, @registry)}
+            </p>
+            <span
+              :if={section_meta(@section, @facts)}
+              class="ml-auto font-mono text-xs text-muted"
+            >
+              {section_meta(@section, @facts)}
+            </span>
           </div>
 
-          <aside id="inspector" class="mt-card overflow-hidden xl:sticky xl:top-16">
-            <.panel
-              selected={@selected}
-              issues={@issues}
-              computed={@computed}
-              paths={@paths}
-              links={@links}
-              nodes={@graph.nodes}
-            />
-          </aside>
-        </div>
+          <div class="mt-scroll overflow-x-auto border-t border-line px-2">
+            <%= case @section do %>
+              <% :changes -> %>
+                <.changes_table changes={@changes} selection={@selection} />
+              <% :paths -> %>
+                <.paths_table paths={@paths} selection={@selection} />
+              <% :links -> %>
+                <.links_table links={@links} selection={@selection} />
+              <% :computed -> %>
+                <.computed_table computed={@computed} programmed={@programmed_pairs} />
+              <% :sites -> %>
+                <.sites_table sites={@sites} selection={@selection} />
+              <% :registry -> %>
+                <.registry_panel registry={@registry} />
+            <% end %>
+          </div>
+        </section>
       </div>
     </Layouts.app>
     """

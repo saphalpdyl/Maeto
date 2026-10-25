@@ -29,11 +29,19 @@ defmodule MaetoPaneWeb.Pane.UI do
   def num(value) when is_float(value), do: :erlang.float_to_binary(value, decimals: 1)
   def num(value), do: to_string(value)
 
+  # the browser's UTC offset in minutes, set once per LiveView process on mount
+  def put_tz_offset(minutes) when is_integer(minutes), do: Process.put(:tz_offset, minutes)
+  def put_tz_offset(_minutes), do: Process.put(:tz_offset, 0)
+
+  def local(%DateTime{} = at), do: DateTime.add(at, Process.get(:tz_offset, 0) * 60, :second)
+
   def clock(nil), do: "-"
+
+  def clock(%DateTime{} = at), do: Calendar.strftime(local(at), "%H:%M:%S")
 
   def clock(stamp) when is_binary(stamp) do
     case DateTime.from_iso8601(stamp) do
-      {:ok, at, _offset} -> Calendar.strftime(at, "%H:%M:%S")
+      {:ok, at, _offset} -> clock(at)
       _ -> stamp
     end
   end

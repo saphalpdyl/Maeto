@@ -20,7 +20,6 @@ CREATE TABLE link_samples (
     telemetry_key TEXT             NOT NULL,
     sequence      BIGINT           NOT NULL,
     latency_ms    DOUBLE PRECISION,
-    lost          BOOLEAN          NOT NULL,
     PRIMARY KEY (telemetry_key, time)
 );
 

@@ -64,6 +64,7 @@ defmodule MaetoPane.MixProject do
       {:dns_cluster, "~> 0.2.0"},
       {:bandit, "~> 1.5"},
       {:gnat, "~> 1.16"},
+      {:postgrex, "~> 0.22"},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false}
     ]
   end

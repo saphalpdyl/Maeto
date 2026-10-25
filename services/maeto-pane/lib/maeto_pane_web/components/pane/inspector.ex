@@ -18,6 +18,7 @@ defmodule MaetoPaneWeb.Pane.Inspector do
   attr :paths, :list, default: []
   attr :links, :list, default: []
   attr :nodes, :list, default: []
+  attr :link_stats, :map, default: nil
 
   def panel(%{selected: nil} = assigns), do: ~H"<.issues_panel issues={@issues} />"
   def panel(%{selected: %{kind: :path}} = assigns), do: ~H"<.path_panel selected={@selected} />"
@@ -27,5 +28,6 @@ defmodule MaetoPaneWeb.Pane.Inspector do
     do: ~H"<.node_panel selected={@selected} paths={@paths} links={@links} nodes={@nodes} />"
 
   def panel(%{selected: %{kind: :link}} = assigns),
-    do: ~H"<.link_panel selected={@selected} computed={@computed} />"
+    do:
+      ~H"<.link_panel selected={@selected} computed={@computed} links={@links} stats={@link_stats} />"
 end

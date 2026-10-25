@@ -7,7 +7,6 @@ defmodule MaetoPaneWeb.Pane.Topology do
 
   use MaetoPaneWeb, :html
 
-  import MaetoPaneWeb.Pane.LinkCard
   import MaetoPaneWeb.Pane.Tones
   import MaetoPaneWeb.Pane.UI
 
@@ -22,76 +21,70 @@ defmodule MaetoPaneWeb.Pane.Topology do
 
   def topology(assigns) do
     ~H"""
-    <section class="mt-card overflow-hidden">
-      <.card_head title="Topology" caption={overlay_caption(assigns)}>
-        <:aside>
-          <div class="flex gap-0.5 rounded-[7px] bg-sunken p-0.5">
-            <button
-              :for={{key, label} <- @overlays}
-              id={"overlay-#{key}"}
-              phx-click="overlay"
-              phx-value-overlay={key}
-              class={[
-                "rounded-[5px] px-2.5 py-[3px] text-xs transition-colors",
-                if(@overlay == key,
-                  do: "bg-surface text-ink shadow-sm",
-                  else: "text-muted hover:text-ink"
-                )
-              ]}
-            >
-              {label}
-            </button>
-          </div>
-        </:aside>
-      </.card_head>
+    <section class="border-b border-line px-6 py-5">
+      <div class="mb-3 flex flex-wrap items-center gap-x-2.5 gap-y-1">
+        <h2 class="text-[15px] font-medium">Topology</h2>
+        <p :if={overlay_caption(assigns)} class="text-[13px] text-faint">
+          {overlay_caption(assigns)}
+        </p>
 
-      <div>
-        <div class="relative">
-          <div
-            id="topology"
-            phx-hook="Topology"
-            phx-update="ignore"
-            data-graph={graph_payload(assigns)}
-            class="h-[480px] w-full overflow-hidden"
+        <div class="ml-auto flex gap-0.5 rounded-[7px] border border-line bg-sunken p-0.5">
+          <button
+            :for={{key, label} <- @overlays}
+            id={"overlay-#{key}"}
+            phx-click="overlay"
+            phx-value-overlay={key}
+            class={[
+              "rounded-[5px] px-2.5 py-[3px] text-xs transition-colors",
+              if(@overlay == key,
+                do: "bg-surface text-ink shadow-sm",
+                else: "text-muted hover:text-ink"
+              )
+            ]}
           >
-          </div>
-
-          <.link_card :if={selected_link(assigns)} link={selected_link(assigns)} />
+            {label}
+          </button>
         </div>
-
-        <footer class="flex flex-wrap items-center gap-x-3.5 gap-y-1.5 border-t border-line px-4 py-2.5 text-xs text-muted">
-          <%= if @overlay == :health do %>
-            <span
-              :for={
-                {status, label} <- [
-                  ok: "Reconciled",
-                  converging: "Converging",
-                  issue: "Issue",
-                  blind: "Blind",
-                  silent: "Silent"
-                ]
-              }
-              class="flex items-center gap-1.5"
-            >
-              <span class={["size-1.5 rounded-full", dot(node_tone(status))]} />{label}
-            </span>
-            <span class="flex items-center gap-1.5">
-              <span class="h-0.5 w-3.5 rounded-full bg-bad" />Down
-            </span>
-          <% end %>
-          <span :if={@overlay == :path and @trace.nodes != []} class="font-mono text-accent">
-            {Enum.join(@trace.nodes, " › ")}
-          </span>
-        </footer>
       </div>
+
+      <div class="h-[440px] w-full overflow-hidden rounded-lg border border-line">
+        <div
+          id="topology"
+          phx-hook="Topology"
+          phx-update="ignore"
+          data-graph={graph_payload(assigns)}
+          class="size-full"
+        >
+        </div>
+      </div>
+
+      <footer class="flex flex-wrap items-center gap-x-3.5 gap-y-1.5 pt-3 text-xs text-muted">
+        <%= if @overlay == :health do %>
+          <span
+            :for={
+              {status, label} <- [
+                ok: "Reconciled",
+                converging: "Converging",
+                issue: "Issue",
+                blind: "Blind",
+                silent: "Silent"
+              ]
+            }
+            class="flex items-center gap-1.5"
+          >
+            <span class={["size-1.5 rounded-full", dot(node_tone(status))]} />{label}
+          </span>
+          <span class="flex items-center gap-1.5">
+            <span class="h-0.5 w-3.5 rounded-full bg-bad" />Down
+          </span>
+        <% end %>
+        <span :if={@overlay == :path and @trace.nodes != []} class="font-mono text-accent">
+          {Enum.join(@trace.nodes, " › ")}
+        </span>
+      </footer>
     </section>
     """
   end
-
-  defp selected_link(%{selection: {:link, id}, links: links}),
-    do: Enum.find(links, &(&1.id == id))
-
-  defp selected_link(_assigns), do: nil
 
   defp graph_payload(assigns) do
     Jason.encode!(%{

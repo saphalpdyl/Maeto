@@ -27,6 +27,13 @@ config :maeto_pane,
   nats_url: System.get_env("NATS_CONNECT_URL", "nats://127.0.0.1:4222"),
   nats_inet6: System.get_env("NATS_INET6") in ~w(true 1)
 
+config :maeto_pane, MaetoPane.DB,
+  hostname: System.get_env("PGHOST", "127.0.0.1"),
+  port: String.to_integer(System.get_env("PGPORT", "5432")),
+  username: System.get_env("PGUSER", "postgres"),
+  password: System.get_env("PGPASSWORD", "admin"),
+  database: System.get_env("PGDATABASE", "postgres")
+
 if config_env() == :prod do
   # The secret key base is used to sign/encrypt cookies and other secrets.
   # A default value is used in config/dev.exs and config/test.exs but you

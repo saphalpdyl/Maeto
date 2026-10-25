@@ -12,6 +12,8 @@ defmodule MaetoPane.Application do
       {DNSCluster, query: Application.get_env(:maeto_pane, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: MaetoPane.PubSub},
       MaetoPane.Nats,
+      {Postgrex,
+       Keyword.put(Application.get_env(:maeto_pane, MaetoPane.DB, []), :name, MaetoPane.DB)},
       MaetoPane.Pane,
       # Start a worker by calling: MaetoPane.Worker.start_link(arg)
       # {MaetoPane.Worker, arg},

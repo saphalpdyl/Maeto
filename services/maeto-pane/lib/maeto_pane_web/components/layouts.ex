@@ -35,17 +35,15 @@ defmodule MaetoPaneWeb.Layouts do
   slot :crumbs, doc: "context that sits inline with the brand in the top bar"
   slot :status, doc: "liveness indicators pinned to the right of the top bar"
   slot :foot, doc: "context pinned to the bottom of the sidebar"
+  slot :inspector, doc: "a full-height column between the sidebar and the page"
   slot :inner_block, required: true
 
   def app(assigns) do
     ~H"""
-    <div class="flex min-h-dvh bg-canvas text-ink">
+    <div class="flex min-h-dvh bg-surface text-ink">
       <aside class="sticky top-0 hidden h-dvh w-[216px] shrink-0 flex-col border-r border-line bg-rail lg:flex">
-        <a href="/" class="flex h-12 shrink-0 items-center gap-2 px-3.5">
-          <.mark />
-          <span class="text-[15px] font-semibold tracking-tight">
-            ma<span class="text-accent">e</span>to
-          </span>
+        <a href="/" class="flex h-12 items-center px-3.5">
+          <.logo class="h-10" />
         </a>
 
         <nav :if={@rail != []} class="mt-scroll flex-1 overflow-y-auto px-2.5 pb-3">
@@ -59,10 +57,9 @@ defmodule MaetoPaneWeb.Layouts do
       </aside>
 
       <div class="flex min-w-0 flex-1 flex-col">
-        <header class="sticky top-0 z-20 flex h-12 shrink-0 items-center gap-3 border-b border-line bg-canvas/95 px-4 backdrop-blur sm:px-6">
-          <a href="/" class="flex shrink-0 items-center gap-2 lg:hidden">
-            <.mark />
-            <span class="text-[14px] font-semibold">ma<span class="text-accent">e</span>to</span>
+        <header class="sticky top-0 z-20 flex h-12 shrink-0 items-center gap-3 border-b border-line bg-surface/95 px-4 backdrop-blur sm:px-5">
+          <a href="/" class="flex shrink-0 items-center lg:hidden">
+            <.logo class="h-10" />
           </a>
 
           <div class="mt-scroll flex min-w-0 items-center gap-2 overflow-x-auto">
@@ -74,11 +71,19 @@ defmodule MaetoPaneWeb.Layouts do
           </div>
         </header>
 
-        <main class="min-w-0 flex-1 p-4 sm:p-5">
-          <div class="mx-auto max-w-[1600px]">
+        <div class="flex min-w-0 flex-1">
+          <aside
+            :if={@inspector != []}
+            id="inspector"
+            class="mt-scroll sticky top-12 hidden h-[calc(100dvh-3rem)] w-[30rem] shrink-0 overflow-y-auto border-r border-line bg-surface xl:block"
+          >
+            {render_slot(@inspector)}
+          </aside>
+
+          <main class="min-w-0 flex-1 bg-surface">
             {render_slot(@inner_block)}
-          </div>
-        </main>
+          </main>
+        </div>
       </div>
     </div>
 
@@ -86,13 +91,21 @@ defmodule MaetoPaneWeb.Layouts do
     """
   end
 
-  @doc "The maeto leaf mark, tinted from the active theme."
-  def mark(assigns) do
+  @doc "The maeto logo, swapped with the active theme."
+  attr :class, :string, default: nil
+
+  def logo(assigns) do
     ~H"""
-    <svg viewBox="0 0 54 64" class="h-[18px] w-[15px] shrink-0" aria-hidden="true">
-      <path d="M6,60 C6,30 20,4 40,4 C34,20 34,42 6,60 Z" class="fill-muted" />
-      <path d="M18,60 C18,34 30,10 48,10 C44,26 42,46 18,60 Z" class="fill-accent" />
-    </svg>
+    <img
+      src={~p"/images/maeto-logo-dark.svg"}
+      alt="maeto"
+      class={["w-auto [[data-theme=light]_&]:hidden", @class]}
+    />
+    <img
+      src={~p"/images/maeto-logo.svg"}
+      alt="maeto"
+      class={["hidden w-auto [[data-theme=light]_&]:block", @class]}
+    />
     """
   end
 

@@ -236,8 +236,8 @@ export default {
     this.graph = new Graph({
       container: this.el,
       autoResize: false,
-      width: this.el.clientWidth,
-      height: this.el.clientHeight,
+      width: this.el.parentElement.clientWidth,
+      height: this.el.parentElement.clientHeight,
       grid: {visible: true, size: GRID, type: "dot", args: {color: token("--mt-line-strong"), thickness: 1.5}},
       background: {color: token("--mt-surface")},
       panning: {enabled: true},
@@ -261,10 +261,11 @@ export default {
     this.onTheme = () => requestAnimationFrame(() => this.render(true))
     window.addEventListener("phx:set-theme", this.onTheme)
 
+    // X6 pins its own size onto the container, so the wrapper is what tracks layout
     this.observer = new ResizeObserver(() => {
-      this.graph.resize(this.el.clientWidth, this.el.clientHeight)
+      this.graph.resize(this.el.parentElement.clientWidth, this.el.parentElement.clientHeight)
     })
-    this.observer.observe(this.el)
+    this.observer.observe(this.el.parentElement)
 
     this.render(true)
   },
@@ -288,7 +289,7 @@ export default {
     if (full || next !== this.signature) {
       const relayout = next !== this.signature || !this.positions
       this.signature = next
-      if (relayout) this.positions = layout(payload.nodes, payload.links, this.el.clientWidth / Math.max(this.el.clientHeight, 1))
+      if (relayout) this.positions = layout(payload.nodes, payload.links, this.el.parentElement.clientWidth / Math.max(this.el.parentElement.clientHeight, 1))
       this.draw(payload)
       if (relayout) this.graph.zoomToFit({padding: 56, maxScale: 1})
     }

@@ -22,40 +22,47 @@ defmodule MaetoPaneWeb.Pane.Inspector.NodePanel do
       |> assign(:adjacencies, adjacencies(assigns.selected.id, assigns.links, assigns.nodes))
 
     ~H"""
-    <header class="flex items-start gap-2.5 border-b border-line px-4 py-3">
-      <div class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-sunken font-semibold">
-        {@selected.id}
-      </div>
-      <div class="min-w-0 flex-1">
-        <h2 class="truncate text-sm font-semibold">{@selected.name || @selected.id}</h2>
-        <p class="truncate font-mono text-[11px] text-muted">{@selected.locator || "no locator"}</p>
-      </div>
+    <header class="flex items-center justify-between gap-2 px-4 pt-4 pb-2">
+      <h2 class="text-[15px] font-medium">Metadata</h2>
       <.esc />
     </header>
 
-    <dl class="grid grid-cols-2 gap-3 border-b border-line px-4 py-3.5">
-      <div class="space-y-1">
-        <dt class="text-xs text-faint">State</dt>
-        <dd>
-          <.pill tone={node_tone(@selected.status)}>{state_label(@selected.status)}</.pill>
+    <dl class="space-y-3 border-b border-line px-4 pb-4">
+      <div>
+        <dt class="text-xs text-muted">PoP</dt>
+        <dd class="text-[15px]">{@selected.name || @selected.id}</dd>
+      </div>
+      <div>
+        <dt class="text-xs text-muted">Locator</dt>
+        <dd class="font-mono text-[14px]">{@selected.locator || "-"}</dd>
+      </div>
+      <div>
+        <dt class="text-xs text-muted">State</dt>
+        <dd class="pt-0.5">
+          <span class={[
+            "inline-flex rounded-md px-2 py-px text-[13px] font-medium",
+            pill_classes(node_tone(@selected.status))
+          ]}>
+            {state_label(@selected.status)}
+          </span>
         </dd>
       </div>
-      <div class="space-y-1">
-        <dt class="text-xs text-faint">Sites · tenants</dt>
-        <dd class="font-mono">{sites(@selected)} · {tenants(@selected)}</dd>
+      <div>
+        <dt class="text-xs text-muted">Sites · tenants</dt>
+        <dd class="text-[15px]">{sites(@selected)} · {tenants(@selected)}</dd>
       </div>
-      <div class="space-y-1">
-        <dt class="text-xs text-faint">Originates</dt>
-        <dd class="font-mono">{@roles.originates} lists</dd>
+      <div>
+        <dt class="text-xs text-muted">Originates</dt>
+        <dd class="text-[15px]">{@roles.originates} lists</dd>
       </div>
-      <div class="space-y-1">
-        <dt class="text-xs text-faint">Transit for</dt>
-        <dd class="font-mono">{@roles.transit} lists</dd>
+      <div>
+        <dt class="text-xs text-muted">Transit for</dt>
+        <dd class="text-[15px]">{@roles.transit} lists</dd>
       </div>
     </dl>
 
     <section :if={@adjacencies != []} class="border-b border-line px-4 py-3">
-      <h3 class="mb-1.5 text-[13px] font-medium">Adjacencies</h3>
+      <h3 class="mb-1.5 text-[15px] font-medium">Adjacencies</h3>
       <button
         :for={adj <- @adjacencies}
         phx-click="select"
@@ -63,8 +70,7 @@ defmodule MaetoPaneWeb.Pane.Inspector.NodePanel do
         phx-value-id={adj.link}
         class="-mx-2 flex w-[calc(100%+1rem)] items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-sunken/70"
       >
-        <span class={["size-1.5 shrink-0 rounded-full", if(adj.up, do: "bg-ok", else: "bg-bad")]} />
-        <span class="text-[13px]">{adj.name}</span>
+        <span class="text-[13px] text-link">{adj.name}</span>
         <span class="truncate font-mono text-[11px] text-faint">{adj.sid}</span>
         <span class="ml-auto rounded bg-sunken px-1.5 font-mono text-xs tabular-nums">
           {num(adj.cost)}

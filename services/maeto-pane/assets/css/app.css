@@ -185,6 +185,8 @@
   --mt-endx-ink: #93c5fd;
   --mt-dt46: #14261a;
   --mt-dt46-ink: #4ade80;
+  --mt-plot: #1c1c1c;
+  --mt-hatch: #262626;
 }
 
 [data-theme="light"] {
@@ -219,6 +221,8 @@
   --mt-endx-ink: oklch(0.45 0.15 260);
   --mt-dt46: oklch(0.96 0.04 150);
   --mt-dt46-ink: oklch(0.42 0.12 150);
+  --mt-plot: #fcfcfc;
+  --mt-hatch: #f1f2f48e;
 }
 
 body {
@@ -226,6 +230,12 @@ body {
   color: var(--mt-ink);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
+}
+
+.mt-plot {
+  background-color: var(--mt-plot);
+  background-image: repeating-linear-gradient(135deg, var(--mt-hatch) 0 1px, transparent 2px 6px),
+                    repeating-linear-gradient(45deg, var(--mt-hatch) 0 1px, transparent 2px 6px);
 }
 
 .mt-card {

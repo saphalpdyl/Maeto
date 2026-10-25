@@ -45,8 +45,8 @@ func (q *Queries) InsertIfaceCounters(ctx context.Context, arg InsertIfaceCounte
 }
 
 const insertLinkSample = `-- name: InsertLinkSample :exec
-INSERT INTO link_samples (time, telemetry_key, sequence, latency_ms, lost)
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO link_samples (time, telemetry_key, sequence, latency_ms)
+VALUES ($1, $2, $3, $4)
 ON CONFLICT (telemetry_key, time) DO NOTHING
 `
 
@@ -55,7 +55,6 @@ type InsertLinkSampleParams struct {
 	TelemetryKey string
 	Sequence     int64
 	LatencyMs    pgtype.Float8
-	Lost         bool
 }
 
 func (q *Queries) InsertLinkSample(ctx context.Context, arg InsertLinkSampleParams) error {
@@ -64,7 +63,6 @@ func (q *Queries) InsertLinkSample(ctx context.Context, arg InsertLinkSamplePara
 		arg.TelemetryKey,
 		arg.Sequence,
 		arg.LatencyMs,
-		arg.Lost,
 	)
 	return err
 }
@@ -115,7 +113,7 @@ func (q *Queries) ListIfaceCounters(ctx context.Context, arg ListIfaceCountersPa
 }
 
 const listLatestLinkSamples = `-- name: ListLatestLinkSamples :many
-SELECT time, telemetry_key, sequence, latency_ms, lost
+SELECT time, telemetry_key, sequence, latency_ms
 FROM link_samples
 WHERE telemetry_key = $1
 ORDER BY time DESC
@@ -141,7 +139,6 @@ func (q *Queries) ListLatestLinkSamples(ctx context.Context, arg ListLatestLinkS
 			&i.TelemetryKey,
 			&i.Sequence,
 			&i.LatencyMs,
-			&i.Lost,
 		); err != nil {
 			return nil, err
 		}
@@ -154,7 +151,7 @@ func (q *Queries) ListLatestLinkSamples(ctx context.Context, arg ListLatestLinkS
 }
 
 const listLinkSamples = `-- name: ListLinkSamples :many
-SELECT time, telemetry_key, sequence, latency_ms, lost
+SELECT time, telemetry_key, sequence, latency_ms
 FROM link_samples
 WHERE telemetry_key = $1
   AND time >= $2
@@ -180,7 +177,6 @@ func (q *Queries) ListLinkSamples(ctx context.Context, arg ListLinkSamplesParams
 			&i.TelemetryKey,
 			&i.Sequence,
 			&i.LatencyMs,
-			&i.Lost,
 		); err != nil {
 			return nil, err
 		}

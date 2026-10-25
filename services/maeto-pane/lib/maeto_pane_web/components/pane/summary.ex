@@ -15,7 +15,7 @@ defmodule MaetoPaneWeb.Pane.Summary do
     ~H"""
     <section
       id="summary"
-      class="mt-card grid grid-cols-2 xl:grid-cols-4 xl:divide-x xl:divide-line"
+      class="grid grid-cols-2 gap-y-4 border-b border-line px-6 py-5 xl:grid-cols-4"
     >
       <.cell label="PoPs">
         <.stat tone={if @facts.pops_ok == @facts.pops, do: "ok", else: "faint"}>
@@ -56,7 +56,7 @@ defmodule MaetoPaneWeb.Pane.Summary do
 
   defp cell(assigns) do
     ~H"""
-    <div class="flex flex-col gap-2 px-4 py-3.5">
+    <div class="flex flex-col gap-2">
       <div class="text-[13px] text-muted">{@label}</div>
       <div class="flex flex-wrap gap-1.5">{render_slot(@inner_block)}</div>
     </div>

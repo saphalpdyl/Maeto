@@ -35,7 +35,6 @@ type LinkSample struct {
 	TelemetryKey string
 	Sequence     int64
 	LatencyMs    pgtype.Float8
-	Lost         bool
 }
 
 type NodeGeneration struct {
