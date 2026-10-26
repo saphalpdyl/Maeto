@@ -43,6 +43,8 @@ class Flow:
     start: float
     duration: int
     dscp: Optional[str]
+    app: str = ""
+    size: Optional[int] = None
 
     status: str = "waiting"
     bps: float = 0.0

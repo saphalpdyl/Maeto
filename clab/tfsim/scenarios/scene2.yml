@@ -10,24 +10,24 @@ defaults:
   streams: 1
 
 flows:
-  # Constant 150M load from cA -> cC
+  # Constant 7.5M load from cA -> cC
   - from: cA
     to: cC
-    rate: 150M
+    rate: 7.5M
 
-  # Constant 50M load form cC -> cA
+  # Constant 2.5M load form cC -> cA
   - from: cC
     to: cA
-    rate: 50M
+    rate: 2.5M
 
-  # For all sites of tenant 231, have 20M load for each pair
+  # For all sites of tenant 231, have 1M load for each pair
   - mesh: 231
-    rate: 20M
+    rate: 1M
 
-  # 150M load from cA3 -> cA4 starting t=40s and ends at t=80s
+  # 7.5M load from cA3 -> cA4 starting t=40s and ends at t=80s
   - from: cA3
     to: cA4
-    rate: 150M
+    rate: 7.5M
     start: 40
     duration: 40
 
@@ -35,19 +35,19 @@ flows:
   # Voice call aggregate between HQ sites (EF, small packets)
   - from: cA
     to: cC
-    rate: 6M
+    rate: 300k
     dscp: 46
     length: 200
   - from: cC
     to: cA
-    rate: 6M
+    rate: 300k
     dscp: 46
     length: 200
 
   # Video conference / streaming peak from t=20s to t=80s
   - from: cA
     to: cC
-    rate: 80M
+    rate: 4M
     dscp: 34
     start: 20
     duration: 60
@@ -56,15 +56,15 @@ flows:
   # Branches stream video to the hub
   - from: cB
     to: cE
-    rate: 120M
+    rate: 6M
     dscp: 34
   - from: cD
     to: cE
-    rate: 90M
+    rate: 4.5M
     dscp: 34
   - from: cH
     to: cE
-    rate: 60M
+    rate: 3M
     dscp: 34
     start: 20
     duration: 80
@@ -72,72 +72,72 @@ flows:
   # Hub sends return traffic
   - from: cE
     to: cB
-    rate: 20M
+    rate: 1M
   - from: cE
     to: cD
-    rate: 20M
+    rate: 1M
 
   # Voice between hub and each branch
   - from: cB
     to: cE
-    rate: 4M
+    rate: 200k
     dscp: 46
     length: 200
   - from: cD
     to: cE
-    rate: 4M
+    rate: 200k
     dscp: 46
     length: 200
   - from: cH
     to: cE
-    rate: 4M
+    rate: 200k
     dscp: 46
     length: 200
 
   # Nightly-backup style bulk transfer, default class, t=60s to t=90s
   - from: cE
     to: cH
-    rate: 200M
+    rate: 10M
     start: 60
     duration: 30
 
   # ---- Tenant 412 (silver): voice mesh + best-effort bulk ----
   # Voice between every pair of sites
   - mesh: 412
-    rate: 5M
+    rate: 250k
     dscp: 46
     length: 200
 
   # Bulk file sync, default class
   - from: cF
     to: cG
-    rate: 100M
+    rate: 5M
     start: 30
     duration: 60
   - from: cB2
     to: cF
-    rate: 80M
+    rate: 4M
   - from: cD2
     to: cG
-    rate: 40M
+    rate: 2M
     start: 10
     duration: 100
 
   # ---- Tenant 518 (gold): streaming-heavy, mostly east side ----
   # Voice between every pair of sites
   - mesh: 518
-    rate: 3M
+    rate: 150k
     dscp: 46
     length: 200
 
   # Streaming
   - from: cC2
     to: cF2
-    rate: 200M
+    rate: 10M
     dscp: 34
   - from: cE2
     to: cH2
-    rate: 150M
+    rate: 7.5M
     dscp: 34
     start: 10
     duration: 90
@@ -145,11 +145,11 @@ flows:
   # Return traffic
   - from: cF2
     to: cC2
-    rate: 30M
+    rate: 1.5M
 
   # Large bulk burst that crosses the E-F-H segment, t=70s to t=100s
   - from: cH2
     to: cE2
-    rate: 250M
+    rate: 12.5M
     start: 70
     duration: 30

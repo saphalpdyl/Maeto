@@ -18,6 +18,8 @@ class Site:
     attach: str
     container_name: str
     address: str
+    reservation_mbps: float
+    classes: Dict[str, float]
 
 
 def find_build(state_path: Path) -> Path:
@@ -59,6 +61,8 @@ def load_sites(build: Path) -> Dict[str, Site]:
             attach=site["attach"],
             container_name=container_name,
             address=address,
+            reservation_mbps=float(site.get("reservation_mbps") or 100),
+            classes=site.get("classes") or {},
         )
 
     return sites

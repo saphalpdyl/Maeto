@@ -16,14 +16,25 @@ def server_cmd(flow: Flow) -> List[str]:
 
 
 def client_cmd(flow: Flow) -> List[str]:
-    cmd = [
+    cmd = []
+
+    # a transfer sized in bytes has no end of its own if the path stalls
+    if flow.size:
+        cmd += ["timeout", str(transfer_deadline(flow))]
+
+    cmd += [
         "iperf3", "-6",
         "-c", flow.dst.address,
         "-p", str(flow.port),
-        "-t", str(flow.duration),
         "-P", str(flow.streams),
         "--json-stream",
+        "--connect-timeout", "3000",
     ]
+
+    if flow.size:
+        cmd += ["-n", str(flow.size)]
+    else:
+        cmd += ["-t", str(flow.duration)]
 
     if flow.rate_bps > 0:
         per_stream = flow.rate_bps // flow.streams
@@ -31,6 +42,10 @@ def client_cmd(flow: Flow) -> List[str]:
 
     if flow.protocol == "udp":
         cmd += ["-u", "-l", str(flow.length)]
+    else:
+        # hosts have a 9500 MTU and path MTU discovery doesn't make it back
+        # through the SRv6 encap, so full-size segments are silently dropped
+        cmd += ["-M", str(flow.length)]
 
     if flow.dscp is not None:
         cmd += ["--dscp", str(flow.dscp)]
@@ -38,8 +53,17 @@ def client_cmd(flow: Flow) -> List[str]:
     return cmd
 
 
+def transfer_deadline(flow: Flow) -> int:
+    seconds = flow.size * 8 / max(flow.rate_bps, 1)
+    return int(seconds * 3) + 10
+
+
 def start_server(flow: Flow, container: Container):
     container.exec_run(server_cmd(flow), detach=True)
+
+
+def stop_server(flow: Flow, container: Container):
+    container.exec_run(["pkill", "-KILL", "-f", f"^{' '.join(server_cmd(flow))}$"])
 
 
 def kill_all(containers: Dict[str, Container]):
@@ -85,7 +109,11 @@ def finish(flow: Flow, interrupted: bool):
     if flow.status != "running":
         return
 
-    if flow.end:
+    sent = flow.end.get("sum_sent") or {}
+    if flow.size and flow.end and sent.get("bytes", 0) < flow.size:
+        flow.status = "failed"
+        flow.error = "transfer timed out"
+    elif flow.end:
         flow.status = "done"
     else:
         flow.status = "failed"

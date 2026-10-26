@@ -7,8 +7,10 @@ from pathlib import Path
 
 import docker
 
+import endless
 import report
 import runner
+import traffic
 
 from errors import ScenarioError
 from lab import REPO_ROOT, find_build, load_sites
@@ -27,6 +29,24 @@ def parse_args():
     return ap.parse_args()
 
 
+def run_random(args, scenario, sites) -> int:
+    config = traffic.load_config(scenario, sites)
+    print(f"seed {config.seed}; set seed: {config.seed} in the scenario to replay the same sessions")
+
+    if args.dry_run:
+        endless.print_sample(config, 30)
+        return 0
+
+    names = set()
+    for members in config.tenants.values():
+        for site in members:
+            names.add(site.container_name)
+
+    containers = runner.get_containers_by_name(args.docker, names)
+    endless.run(config, containers, args.base_port, args.interval)
+    return 0
+
+
 def main() -> int:
     args = parse_args()
 
@@ -38,6 +58,10 @@ def main() -> int:
 
         sites = load_sites(build)
         scenario = load_scenario(args.scenario)
+
+        if scenario.get("mode") == "random":
+            return run_random(args, scenario, sites)
+
         flows = build_flows(scenario, sites, args.base_port)
 
         if args.dry_run:

@@ -1,0 +1,36 @@
+# Endless customer-like traffic between every tenant's sites.
+# Sessions (web, bulk, backup, streaming, conference, voice) arrive at random,
+# busiest at 10:00 and 15:00 of a simulated business day, quiet at night.
+
+mode: random
+
+# seconds to run, 0 runs until Ctrl-C
+duration: 0
+
+# real seconds per simulated day, and the hour the run starts at
+day: 1800
+start_hour: 8
+
+# session arrivals per second at the busiest hour
+sessions: 6.0
+
+# sessions that would push the flow count past this are turned away
+max_flows: 134
+
+# multiplies every app's bitrate; raise it to load the links harder
+scale: 6.0
+
+# fix the seed to replay the same sessions; unset picks a fresh one each run
+# seed: 1234
+
+# only these tenants; unset uses all of them
+# tenants: [273, 305]
+
+# relative weight of each app among arriving sessions
+mix:
+  web: 0.50
+  bulk: 0.08
+  backup: 0.04
+  streaming: 0.12
+  conference: 0.06
+  voice: 0.20

@@ -33,6 +33,9 @@ tfsim-plan:
 tfsim:
 	sudo $(CLAB_PY) clab/tfsim/main.py -s scene1
 
+tfsim-random:
+	sudo $(CLAB_PY) clab/tfsim/main.py -s random
+
 # generate containerlab + frr config from the topology dsl into build/<hash>
 generate:
 	./scripts/clab/generate.sh $(CLAB_PY) $(TOPOLOGY_YAML)

@@ -17,12 +17,17 @@ from scenario import Flow
 
 
 def get_containers(docker_socket: str, flows: List[Flow]) -> Dict[str, Container]:
-    client = docker.DockerClient(base_url=f"unix://{docker_socket}")
-
     names = set()
     for flow in flows:
         names.add(flow.src.container_name)
         names.add(flow.dst.container_name)
+
+    return get_containers_by_name(docker_socket, names)
+
+
+def get_containers_by_name(docker_socket: str, names) -> Dict[str, Container]:
+    # every running flow holds a streaming exec open on the socket
+    client = docker.DockerClient(base_url=f"unix://{docker_socket}", max_pool_size=256)
 
     containers = {}
     for name in sorted(names):

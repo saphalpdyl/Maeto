@@ -76,173 +76,173 @@ cpes:
     tenant: 273
     prefix: fd7a:3921:111:1::/64
     portal_id: 83505cf19a08
-    reservation_bandwidth: 900
+    reservation_bandwidth: 45
   - id: cA2
     attach: A
     tenant: 231
     prefix: fd7a:3921:e7:1::/64
     portal_id: 48522cc7549b
-    reservation_bandwidth: 250
+    reservation_bandwidth: 12.5
   - id: cA3
     attach: A
     tenant: 231
     prefix: fd7a:3921:e7:2::/64
     portal_id: 32522cc7549b
-    reservation_bandwidth: 400
+    reservation_bandwidth: 20
   - id: cA4
     attach: G
     tenant: 231
     prefix: fd7a:3921:e7:bb24::/64
     portal_id: 32527fa75219
-    reservation_bandwidth: 300
+    reservation_bandwidth: 15
   - id: cC
     attach: C
     tenant: 273
     prefix: fd7a:3921:111:2::/64
     portal_id: aa400723fee3
-    reservation_bandwidth: 900
+    reservation_bandwidth: 45
   # Tenant 305 (gold)
   - id: cB
     attach: B
     tenant: 305
     prefix: fd7a:3921:131:1::/64
     portal_id: 7c1e94a2b0d3
-    reservation_bandwidth: 700
+    reservation_bandwidth: 35
   - id: cD
     attach: D
     tenant: 305
     prefix: fd7a:3921:131:2::/64
     portal_id: 19ab3e5d7f60
-    reservation_bandwidth: 500
+    reservation_bandwidth: 25
   - id: cE
     attach: E
     tenant: 305
     prefix: fd7a:3921:131:3::/64
     portal_id: e4f2086c1a95
-    reservation_bandwidth: 800
+    reservation_bandwidth: 40
   - id: cH
     attach: H
     tenant: 305
     prefix: fd7a:3921:131:4::/64
     portal_id: 5d9b7c30e1f8
-    reservation_bandwidth: 400
+    reservation_bandwidth: 20
   # Tenant 412 (silver)
   - id: cB2
     attach: B
     tenant: 412
     prefix: fd7a:3921:19c:1::/64
     portal_id: 0a63d8e9b214
-    reservation_bandwidth: 300
+    reservation_bandwidth: 15
   - id: cD2
     attach: D
     tenant: 412
     prefix: fd7a:3921:19c:2::/64
     portal_id: b8271f4c6e0a
-    reservation_bandwidth: 200
+    reservation_bandwidth: 10
   - id: cF
     attach: F
     tenant: 412
     prefix: fd7a:3921:19c:3::/64
     portal_id: 3f90a5d2c778
-    reservation_bandwidth: 350
+    reservation_bandwidth: 17.5
   - id: cG
     attach: G
     tenant: 412
     prefix: fd7a:3921:19c:4::/64
     portal_id: d1c46b8e0953
-    reservation_bandwidth: 150
+    reservation_bandwidth: 7.5
   # Tenant 518 (gold)
   - id: cC2
     attach: C
     tenant: 518
     prefix: fd7a:3921:206:1::/64
     portal_id: 66e0b3a9f4c1
-    reservation_bandwidth: 600
+    reservation_bandwidth: 30
   - id: cE2
     attach: E
     tenant: 518
     prefix: fd7a:3921:206:2::/64
     portal_id: 2b85d7f1a09e
-    reservation_bandwidth: 750
+    reservation_bandwidth: 37.5
   - id: cF2
     attach: F
     tenant: 518
     prefix: fd7a:3921:206:3::/64
     portal_id: 9ce31a7d5b48
-    reservation_bandwidth: 500
+    reservation_bandwidth: 25
   - id: cH2
     attach: H
     tenant: 518
     prefix: fd7a:3921:206:4::/64
     portal_id: f47a0c92e6d3
-    reservation_bandwidth: 450
+    reservation_bandwidth: 22.5
 
 links:
   - a: A
     b: B
     parallel:
-      - bandwidth: 1000
+      - bandwidth: 140
         delay: 4
         start_jitter: 0.05
-      - bandwidth: 400
+      - bandwidth: 50
         delay: 7
   - a: A
     b: D
     parallel:
-      - bandwidth: 1000
+      - bandwidth: 130
         delay: 3
-      - bandwidth: 250
+      - bandwidth: 30
         delay: 11
         start_jitter: 0.1
   - a: B
     b: C
     parallel:
-      - bandwidth: 1000
+      - bandwidth: 130
         delay: 5
-      - bandwidth: 1400
+      - bandwidth: 110
         delay: 6
   - a: B
     b: D
     parallel:
-      - bandwidth: 600
+      - bandwidth: 80
         delay: 9
   - a: C
     b: E
     parallel:
-      - bandwidth: 1000
+      - bandwidth: 140
         delay: 9
   - a: C
     b: F
     parallel:
-      - bandwidth: 1000
+      - bandwidth: 130
         delay: 6
   - a: D
     b: E
     parallel:
-      - bandwidth: 800
+      - bandwidth: 100
         delay: 7
-      - bandwidth: 500
+      - bandwidth: 70
         delay: 9
   - a: E
     b: F
     parallel:
-      - bandwidth: 1200
+      - bandwidth: 160
         delay: 5
   - a: F
     b: G
     parallel:
-      - bandwidth: 1000
+      - bandwidth: 90
         delay: 3
         start_jitter: 0.05
-      - bandwidth: 300
+      - bandwidth: 40
         delay: 9
   - a: F
     b: H
     parallel:
-      - bandwidth: 600
+      - bandwidth: 80
         delay: 8
   - a: G
     b: H
     parallel:
-      - bandwidth: 1000
+      - bandwidth: 80
         delay: 4
