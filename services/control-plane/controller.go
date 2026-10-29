@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
@@ -147,6 +148,10 @@ func NewController(
 			costGraph,
 			tenants,
 			pceUpdatesChan,
+			PCEConfig{
+				HoldDownDuration: 30 * time.Second,
+				PCETickDuration:  10 * time.Second,
+			},
 			logger.With(log.Domain(log.DomainPCE)),
 		),
 		pceUpdates: pceUpdatesChan,

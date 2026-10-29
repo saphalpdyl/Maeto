@@ -13,6 +13,11 @@ import (
 
 const linkStaleAfter = 15 * time.Second
 
+type PCEConfig struct {
+	HoldDownDuration time.Duration
+	PCETickDuration  time.Duration
+}
+
 type PCE struct {
 	costGraph               *CostGraph
 	tenants                 TenantRepository
@@ -26,9 +31,19 @@ type PCE struct {
 	// last tick's costs, kept so a reroute can be attributed to the edges whose
 	// cost actually moved rather than just reported as having happened
 	previousCosts map[CostGraphEdge]*Cost
+
+	pceTickDuration  time.Duration
+	holdDownDuration time.Duration
+	lastRerouteMap   map[PathKey]time.Time
 }
 
-func NewPCE(costGraph *CostGraph, tenants TenantRepository, reportChan chan<- PathSet, logger *slog.Logger) *PCE {
+func NewPCE(
+	costGraph *CostGraph,
+	tenants TenantRepository,
+	reportChan chan<- PathSet,
+	config PCEConfig,
+	logger *slog.Logger,
+) *PCE {
 	return &PCE{
 		costGraph:               costGraph,
 		tenants:                 tenants,
@@ -37,11 +52,14 @@ func NewPCE(costGraph *CostGraph, tenants TenantRepository, reportChan chan<- Pa
 		PathStore:               NewPathStore(),
 		Changes:                 NewPathChangeStore(),
 		bandwidthReservationReg: NewBandwidthReservationRegistry(logger),
+		holdDownDuration:        config.HoldDownDuration,
+		pceTickDuration:         config.PCETickDuration,
+		lastRerouteMap:          make(map[PathKey]time.Time),
 	}
 }
 
 func (p *PCE) Run(ctx context.Context, graph *Graph) {
-	ticker := time.NewTicker(10 * time.Second)
+	ticker := time.NewTicker(p.pceTickDuration)
 
 	for {
 		select {
@@ -173,6 +191,30 @@ func (p *PCE) Run(ctx context.Context, graph *Graph) {
 					continue
 				}
 
+				// Check if path recently rerouted
+				sinceReroute, exists := p.lastRerouteMap[pathKey]
+				if exists && !previousPathIsBroken {
+					heldDuration := tickReport.Timestamp.Sub(sinceReroute)
+					if p.holdDownDuration > heldDuration {
+						gatedReroute := PCETickReportReroute{
+							At:       tickReport.Timestamp,
+							Tenant:   demand.Tenant.ID,
+							Label:    pathKey.Label,
+							Src:      demand.From,
+							Dst:      demand.To,
+							Kind:     PathChangeHeldDown,
+							FromPath: *previousPath,
+							ToPath:   *computedPath,
+							Causes:   attributeCauses(previousPath, COSTDIM_LATENCY, p.previousCosts, costSnapshot),
+						}
+						tickReport.GatedReroutes = append(tickReport.GatedReroutes, gatedReroute)
+
+						p.logger.WarnContext(ctx, "gated because path rerouted recently", "gated_reroute", gatedReroute)
+						paths[pathKey] = previousPath
+						continue
+					}
+				}
+
 				// freeing an edge that left the graph is a no-op
 				err = p.bandwidthReservationReg.Move(ctx, previousPath.Edges, computedPathEdges, demand.Tenant.ID, candidateReservation)
 				if err != nil {
@@ -198,6 +240,8 @@ func (p *PCE) Run(ctx context.Context, graph *Graph) {
 					Causes:   attributeCauses(previousPath, COSTDIM_LATENCY, p.previousCosts, costSnapshot),
 				})
 
+				// record when the path change occurred
+				p.lastRerouteMap[pathKey] = tickReport.Timestamp
 				paths[pathKey] = computedPath
 			}
 

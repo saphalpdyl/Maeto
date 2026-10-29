@@ -106,7 +106,7 @@ clab/tfsim              custom dsl to inject faults deterministically and emulat
 ```
 
 ## Writeups
-Things I hit along the way, mostly SRv6 and FRR: [blogs.saphal.me/tags/maeto](https://blogs.saphal.me/tags/srv6/)
+Things I hit along the way, mostly SRv6 and FRR: [blogs.saphal.me/tags/maeto](https://blogs.saphal.me/tags/maeto/)
 
 ## Status
 Done/In-progress:

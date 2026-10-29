@@ -28,6 +28,7 @@ type PathChangeKind string
 const (
 	PathChangeRerouted PathChangeKind = "rerouted"
 	PathChangeGated    PathChangeKind = "gated"
+	PathChangeHeldDown PathChangeKind = "held_down"
 	PathChangeNew      PathChangeKind = "new"
 	PathChangeLinkDown PathChangeKind = "link_down"
 )
