@@ -50,10 +50,10 @@ func stampData(t *testing.T, sequence uint32) json.RawMessage {
 	return data
 }
 
-func probeResult(t *testing.T) Result {
+func probeResult(t *testing.T) ResultPacket {
 	t.Helper()
 
-	return Result{
+	return ResultPacket{
 		ProbeType:    ProbeTypeSTAMP,
 		TelemetryKey: "A:eth1-B:eth3",
 		SentAt:       time.Unix(1758326400, 0).UTC(),
@@ -83,7 +83,7 @@ func Test_NATSDispatcherPublishesResult(t *testing.T) {
 	require.Len(t, js.payloads, 1)
 	assert.Equal(t, []string{"maeto.probe.result.PROBE_STAMP.A:eth1-B:eth3"}, js.subjects)
 
-	var decoded Result
+	var decoded ResultPacket
 	require.NoError(t, json.Unmarshal(js.payloads[0], &decoded))
 	assert.Equal(t, probeResult(t), decoded)
 }

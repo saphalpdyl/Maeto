@@ -12,11 +12,15 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 )
 
-type Result struct {
+type ResultPacket struct {
 	ProbeType    ProbeType       `json:"probe_type"`
 	TelemetryKey string          `json:"telemetry_key"`
 	SentAt       time.Time       `json:"sent_at"`
 	Data         json.RawMessage `json:"data"` // Contains probe-specific data to be unraveled
+}
+
+type ProbeResult interface {
+	ProbeType() ProbeType
 }
 
 type STAMPResult struct {
@@ -29,12 +33,16 @@ type STAMPResult struct {
 	ReceiveTimestamp *time.Time `json:"receive_timestamp,omitempty"`
 }
 
+func (r STAMPResult) ProbeType() ProbeType { return ProbeTypeSTAMP }
+
 type NetStatResult struct {
 	Stats map[string]map[string]uint64 `json:"stats"`
 }
 
+func (r NetStatResult) ProbeType() ProbeType { return ProbeTypeNetStat }
+
 type Dispatcher interface {
-	Dispatch(ctx context.Context, result Result) error
+	Dispatch(ctx context.Context, result ResultPacket) error
 }
 
 const (
@@ -72,7 +80,7 @@ func NewNATSDispatcher(js JetStreamPublisher, cfg NATSDispatcherConfig) *NATSDis
 	return &NATSDispatcher{js: js, cfg: cfg}
 }
 
-func (d *NATSDispatcher) Subject(result Result) string {
+func (d *NATSDispatcher) Subject(result ResultPacket) string {
 	return fmt.Sprintf("%s.%s.%s",
 		d.cfg.SubjectPrefix,
 		result.ProbeType,
@@ -80,7 +88,7 @@ func (d *NATSDispatcher) Subject(result Result) string {
 	)
 }
 
-func (d *NATSDispatcher) Dispatch(ctx context.Context, result Result) error {
+func (d *NATSDispatcher) Dispatch(ctx context.Context, result ResultPacket) error {
 	payload, err := json.Marshal(result)
 	if err != nil {
 		return fmt.Errorf("failed to marshal probe result %s: %w", result.TelemetryKey, err)
@@ -97,7 +105,7 @@ func (d *NATSDispatcher) Dispatch(ctx context.Context, result Result) error {
 	return nil
 }
 
-func resultMsgID(result Result) string {
+func resultMsgID(result ResultPacket) string {
 	sum := sha256.Sum256(result.Data)
 
 	return fmt.Sprintf("%s.%s.%d.%x",

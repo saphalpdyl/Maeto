@@ -86,7 +86,7 @@ func runNetStat(
 			continue
 		}
 
-		dispatch(ctx, dispatcher, Result{
+		dispatch(ctx, dispatcher, ResultPacket{
 			ProbeType:    ProbeTypeNetStat,
 			TelemetryKey: "net_stat",
 			SentAt:       time.Now(),

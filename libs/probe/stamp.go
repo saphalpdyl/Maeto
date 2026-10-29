@@ -161,7 +161,7 @@ func runSTAMPSender(ctx context.Context, cfg *ProbeConfigSTAMP, dispatcher Dispa
 			continue
 		}
 
-		result := Result{
+		result := ResultPacket{
 			ProbeType:    ProbeTypeSTAMP,
 			TelemetryKey: cfg.TelemetryKey,
 			SentAt:       time.Now(),
@@ -247,17 +247,17 @@ func runSTAMPReflector(ctx context.Context, cfg *ProbeConfigSTAMP, dispatcher Di
 	}
 }
 
-func reflectorResult(cfg *ProbeConfigSTAMP, pkt *stamp.ReflectorPacket) (Result, error) {
+func reflectorResult(cfg *ProbeConfigSTAMP, pkt *stamp.ReflectorPacket) (ResultPacket, error) {
 	clockFormat := stampConfig(cfg).ErrorEstimate.ClockFormat
 
 	senderTimestamp, err := pkt.SenderTimestamp.ToTime(clockFormat)
 	if err != nil {
-		return Result{}, err
+		return ResultPacket{}, err
 	}
 
 	receiveTimestamp, err := pkt.ReceiveTimestamp.ToTime(clockFormat)
 	if err != nil {
-		return Result{}, err
+		return ResultPacket{}, err
 	}
 
 	senderSequence := pkt.SenderSequenceNumber
@@ -273,10 +273,10 @@ func reflectorResult(cfg *ProbeConfigSTAMP, pkt *stamp.ReflectorPacket) (Result,
 
 	stampResultJson, err := json.Marshal(stampResult)
 	if err != nil {
-		return Result{}, err
+		return ResultPacket{}, err
 	}
 
-	return Result{
+	return ResultPacket{
 		ProbeType:    ProbeTypeSTAMP,
 		TelemetryKey: telemetryKey(cfg, pkt.SRExtensions),
 		SentAt:       *senderTimestamp,
@@ -296,7 +296,7 @@ func telemetryKey(cfg *ProbeConfigSTAMP, ext *stamp.SRExtensions) string {
 	return ext.MaetoContainer.TelemetryKey.Key
 }
 
-func dispatch(ctx context.Context, dispatcher Dispatcher, result Result, logger *slog.Logger) {
+func dispatch(ctx context.Context, dispatcher Dispatcher, result ResultPacket, logger *slog.Logger) {
 	if dispatcher == nil {
 		return
 	}

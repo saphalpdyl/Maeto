@@ -19,10 +19,10 @@ import (
 const loopbackPort = 19863
 
 type collector struct {
-	results chan probe.Result
+	results chan probe.ResultPacket
 }
 
-func (c *collector) Dispatch(ctx context.Context, result probe.Result) error {
+func (c *collector) Dispatch(ctx context.Context, result probe.ResultPacket) error {
 	select {
 	case c.results <- result:
 	default:
@@ -30,7 +30,7 @@ func (c *collector) Dispatch(ctx context.Context, result probe.Result) error {
 	return nil
 }
 
-func awaitResult(t *testing.T, sink *collector) probe.Result {
+func awaitResult(t *testing.T, sink *collector) probe.ResultPacket {
 	t.Helper()
 
 	select {
@@ -38,11 +38,11 @@ func awaitResult(t *testing.T, sink *collector) probe.Result {
 		return result
 	case <-time.After(5 * time.Second):
 		t.Fatal("no probe result dispatched")
-		return probe.Result{}
+		return probe.ResultPacket{}
 	}
 }
 
-func awaitSTAMPResult(t *testing.T, sink *collector, isSender bool) (probe.Result, probe.STAMPResult) {
+func awaitSTAMPResult(t *testing.T, sink *collector, isSender bool) (probe.ResultPacket, probe.STAMPResult) {
 	t.Helper()
 
 	deadline := time.After(5 * time.Second)
@@ -60,7 +60,7 @@ func awaitSTAMPResult(t *testing.T, sink *collector, isSender bool) (probe.Resul
 			return result, stampResult
 		case <-deadline:
 			t.Fatal("no probe result dispatched")
-			return probe.Result{}, probe.STAMPResult{}
+			return probe.ResultPacket{}, probe.STAMPResult{}
 		}
 	}
 }
@@ -96,7 +96,7 @@ func newSupervisor(t *testing.T, sink *collector) (*probe.Supervisor, context.Co
 }
 
 func Test_SupervisorSendsOneWayProbes(t *testing.T) {
-	sink := &collector{results: make(chan probe.Result, 8)}
+	sink := &collector{results: make(chan probe.ResultPacket, 8)}
 	sup, ctx := newSupervisor(t, sink)
 
 	reflector := stampProbe(false, "tk-oneway")
@@ -124,7 +124,7 @@ func Test_SupervisorSendsOneWayProbes(t *testing.T) {
 }
 
 func Test_SupervisorStopsProbesOnReconcile(t *testing.T) {
-	sink := &collector{results: make(chan probe.Result, 8)}
+	sink := &collector{results: make(chan probe.ResultPacket, 8)}
 	sup, ctx := newSupervisor(t, sink)
 
 	reflector := stampProbe(false, "tk-stop")
@@ -151,7 +151,7 @@ func Test_SupervisorStopsProbesOnReconcile(t *testing.T) {
 }
 
 func Test_SupervisorReflectorReportsReceivedProbes(t *testing.T) {
-	sink := &collector{results: make(chan probe.Result, 32)}
+	sink := &collector{results: make(chan probe.ResultPacket, 32)}
 	sup, ctx := newSupervisor(t, sink)
 
 	reflector := stampProbe(false, "tk-reflector-local")

@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/avast/retry-go"
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/saphalpdyl/maeto/libs/probe"
@@ -36,7 +35,9 @@ type TelemetryCollector struct {
 	SubjectPrefix string
 	ForNode       NodeID
 
-	ewmas map[EdgeID]*Ewma
+	ewmas map[EdgeID]map[CostDimension]*Ewma
+
+	stampResultBuffer map[EdgeID]*ProbeFIFOBuffer[probe.STAMPResult]
 }
 
 func NewTelemetryCollector(
@@ -49,16 +50,18 @@ func NewTelemetryCollector(
 	topology *ClabTopologyManager,
 	costGraph *CostGraph,
 ) *TelemetryCollector {
+
 	return &TelemetryCollector{
-		js:            js,
-		logger:        logger,
-		SubjectPrefix: subjectPrefix,
-		ForNode:       forNode,
-		inventory:     inventory,
-		topology:      topology,
-		costGraph:     costGraph,
-		ewmas:         map[EdgeID]*Ewma{},
-		db:            db,
+		js:                js,
+		logger:            logger,
+		SubjectPrefix:     subjectPrefix,
+		ForNode:           forNode,
+		inventory:         inventory,
+		topology:          topology,
+		costGraph:         costGraph,
+		ewmas:             make(map[EdgeID]map[CostDimension]*Ewma),
+		db:                db,
+		stampResultBuffer: make(map[EdgeID]*ProbeFIFOBuffer[probe.STAMPResult]),
 	}
 }
 
@@ -159,7 +162,7 @@ func (t *TelemetryCollector) Stop() {
 }
 
 func (t *TelemetryCollector) handleTelemetryConsume(ctx context.Context, msg jetstream.Msg) error {
-	var resultPayload probe.Result
+	var resultPayload probe.ResultPacket
 	err := json.Unmarshal(msg.Data(), &resultPayload)
 	if err != nil {
 		t.logger.ErrorContext(ctx, "failed to unmarshal probe result", log.Err(err))
@@ -190,109 +193,101 @@ func (t *TelemetryCollector) handleTelemetryConsume(ctx context.Context, msg jet
 
 	switch resultPayload.ProbeType {
 	case probe.ProbeTypeSTAMP:
-		var stampPayload probe.STAMPResult
-		if err := json.Unmarshal(resultPayload.Data, &stampPayload); err != nil {
-			t.logger.ErrorContext(ctx, "failed to unmarshal stamp result", log.Err(err))
-			return err
-		}
-
-		if stampPayload.IsSender {
-			return nil
-		}
-
-		t.mu.Lock()
-		ewma, ok := t.ewmas[EdgeID(telemetryKey)]
-		if !ok {
-			ewma = &Ewma{
-				config: EwmaConfig{
-					Alpha:   0.3,
-					Epsilon: 0.000001,
-				},
-			}
-
-			t.ewmas[EdgeID(telemetryKey)] = ewma
-		}
-
-		duration := stampPayload.ReceiveTimestamp.Sub(*stampPayload.SenderTimestamp)
-		if duration < 0 {
-			t.logger.ErrorContext(ctx, "duration is negative")
-			t.mu.Unlock()
-			return errors.New("duration is negative")
-		}
-
-		durationMs := float64(duration.Microseconds()) / 1000
-
-		observationTime := time.Now()
-		ewma.Observe(observationTime, durationMs)
-		t.mu.Unlock()
-
-		seq := int64(0)
-		if stampPayload.SenderSequence != nil {
-			seq = int64(*stampPayload.SenderSequence)
-		}
-
-		// write to db
-		err := t.db.InTx(ctx, func(q *store.Queries) error {
-			return q.InsertLinkSample(ctx, store.InsertLinkSampleParams{
-				Time: pgtype.Timestamptz{
-					Time:  observationTime,
-					Valid: true,
-				},
-				TelemetryKey: telemetryKey,
-				Sequence:     seq,
-				LatencyMs: pgtype.Float8{
-					Float64: durationMs,
-					Valid:   true,
-				},
-			})
-		})
-
-		if err != nil {
-			t.logger.ErrorContext(ctx, "failed to insert link samples", log.Err(err))
-			return err
-		}
-
-		t.costGraph.UpdateCost(EdgeID(telemetryKey), COSTDIM_LATENCY, ewma.Mean())
-		t.costGraph.MarkSeen(EdgeID(telemetryKey), time.Now())
+		return t.handleSTAMP(
+			ctx,
+			resultPayload,
+			telemetryKey,
+		)
 	case probe.ProbeTypeNetStat:
-		var netStatPayload probe.NetStatResult
-		if err := json.Unmarshal(resultPayload.Data, &netStatPayload); err != nil {
-			t.logger.ErrorContext(ctx, "failed to unmarshal net stat result", log.Err(err))
-			return err
-		}
-
-		sampledAt := pgtype.Timestamptz{Time: resultPayload.SentAt, Valid: true}
-
-		err := t.db.InTx(ctx, func(q *store.Queries) error {
-			for iface, stats := range netStatPayload.Stats {
-				err := q.InsertIfaceCounters(ctx, store.InsertIfaceCountersParams{
-					Time:      sampledAt,
-					NodeID:    publisherNode,
-					Iface:     iface,
-					RxBytes:   int64(stats["rx_bytes"]),
-					TxBytes:   int64(stats["tx_bytes"]),
-					RxPackets: int64(stats["rx_packets"]),
-					TxPackets: int64(stats["tx_packets"]),
-					RxDropped: int64(stats["rx_dropped"]),
-					TxDropped: int64(stats["tx_dropped"]),
-				})
-				if err != nil {
-					return fmt.Errorf("insert counters for %s: %w", iface, err)
-				}
-			}
-
-			return nil
-		})
-
-		if err != nil {
-			t.logger.ErrorContext(ctx, "failed to insert iface counters", log.Err(err))
-			return err
-		}
-
+		return t.handleNetStat(ctx, resultPayload, publisherNode)
 	default:
 		t.logger.WarnContext(ctx, "unknown result probe type", slog.String("probe_type", string(resultPayload.ProbeType)))
 		return errors.New("unknown result probe type")
 	}
+}
 
-	return nil
+type ProbeFIFOBuffer[T probe.ProbeResult] struct {
+	mu  sync.RWMutex
+	buf []T
+
+	bufferSize uint32
+
+	// Ring buffer
+	head  uint32
+	count uint32
+}
+
+func NewProbeFIFOBuffer[T probe.ProbeResult](bufferSize uint32) (*ProbeFIFOBuffer[T], error) {
+
+	if bufferSize == 0 {
+		return nil, errors.New("buffer size must be greater than zero")
+	}
+
+	return &ProbeFIFOBuffer[T]{
+		buf: make([]T, bufferSize),
+		bufferSize: bufferSize,
+	}, nil
+}
+
+func (p *ProbeFIFOBuffer[T]) Len() uint32 {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	return p.count
+}
+
+func (p *ProbeFIFOBuffer[T]) EnqueueWithDrop(v T) (error, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	dropped := false
+	if p.count == uint32(len(p.buf)) {
+		p.dequeue()
+		dropped = true
+	}
+
+	p.enqueue(v)
+	return nil, dropped
+}
+
+func (p *ProbeFIFOBuffer[T]) tail() uint32 {
+	return (p.head + p.count) % uint32(len(p.buf))
+}
+
+func (p *ProbeFIFOBuffer[T]) enqueue(v T) {
+	p.buf[p.tail()] = v
+	p.count++
+}
+
+func (p *ProbeFIFOBuffer[T]) dequeue() T {
+	var zero T
+	if p.count == 0 {
+		return zero
+	}
+
+	val := p.buf[p.head]
+	p.buf[p.head] = zero
+	p.head = (p.head + 1) % uint32(len(p.buf))
+	p.count--
+
+	return val
+}
+
+func (p *ProbeFIFOBuffer[T]) Snapshot() []T {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	snapshot := make([]T, p.count)
+	for i := uint32(0); i < p.count; i++ {
+		snapshot[i] = p.buf[(p.head+i) % uint32(len(p.buf))]
+	}
+
+	return snapshot
+}
+
+func (p *ProbeFIFOBuffer[T]) IsFull() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	return p.count == uint32(len(p.buf))
 }
