@@ -29,7 +29,8 @@ defmodule MaetoPane.Pane.Analysis do
       edges: Enum.flat_map(links, &members/1),
       pce_edges: get_in(control, ["topology", "pce_edges"]) || [],
       domain: get_in(control, ["topology", "domain"]) || %{},
-      published_at: control["published_at"]
+      published_at: control["published_at"],
+      readiness: control["cost_graph"]
     }
   end
 

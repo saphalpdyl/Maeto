@@ -21,6 +21,10 @@ const (
 
 	// Number of samples to collect before the EWMA is considered converged
 	ewmaWarmupSamples = 30
+
+	costDelayReferenceMs  = 10   // ms
+	costJitterReferenceMs = 5    // ms^2
+	costLossReference     = 0.01 // dimensionless
 )
 
 func (t *TelemetryCollector) handleSTAMP(
@@ -125,9 +129,9 @@ func (t *TelemetryCollector) handleSTAMP(
 		latency.Mean,
 		latency.Variance,
 		loss,
-		100,
-		10,
-		0.05,
+		costDelayReferenceMs,
+		costJitterReferenceMs,
+		costLossReference,
 	)
 
 	if latency.N > ewmaWarmupSamples {

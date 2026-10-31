@@ -15,6 +15,7 @@ defmodule MaetoPane.Application do
       {Postgrex,
        Keyword.put(Application.get_env(:maeto_pane, MaetoPane.DB, []), :name, MaetoPane.DB)},
       MaetoPane.Pane,
+      MaetoPane.Sim,
       # Start a worker by calling: MaetoPane.Worker.start_link(arg)
       # {MaetoPane.Worker, arg},
       # Start to serve requests, typically the last entry

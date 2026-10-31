@@ -2,6 +2,9 @@
 # Sessions (web, bulk, backup, streaming, conference, voice) arrive at random,
 # busiest at 10:00 and 15:00 of a simulated business day, quiet at night.
 
+title: Customer day
+description: "Endless random sessions shaped like real customers: web, bulk, backups, video, calls. Busiest mid-morning and mid-afternoon."
+
 mode: random
 
 # seconds to run, 0 runs until Ctrl-C

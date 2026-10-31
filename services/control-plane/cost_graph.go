@@ -139,21 +139,40 @@ func (c *CostGraph) Costs() map[CostGraphEdge]*Cost {
 	return costs
 }
 
-func (c *CostGraph) IsReady() bool {
+type CostGraphReadiness struct {
+	Ready     bool      `json:"ready"`
+	TimedOut  bool      `json:"timed_out"`
+	Converged int       `json:"converged"`
+	Edges     int       `json:"edges"`
+	StartedAt time.Time `json:"started_at"`
+	Deadline  time.Time `json:"deadline"`
+}
+
+func (c *CostGraph) Readiness() CostGraphReadiness {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	if time.Since(c.startedAt) > MaxCostGraphWaitTillReady {
-		return true
-	}
-
+	converged := 0
 	for edgeID := range c.byID {
-		if _, exists := c.convergedEdges[edgeID]; !exists {
-			return false
+		if _, exists := c.convergedEdges[edgeID]; exists {
+			converged++
 		}
 	}
 
-	return true
+	timedOut := converged < len(c.byID) && time.Since(c.startedAt) > MaxCostGraphWaitTillReady
+
+	return CostGraphReadiness{
+		Ready:     converged == len(c.byID) || timedOut,
+		TimedOut:  timedOut,
+		Converged: converged,
+		Edges:     len(c.byID),
+		StartedAt: c.startedAt,
+		Deadline:  c.startedAt.Add(MaxCostGraphWaitTillReady),
+	}
+}
+
+func (c *CostGraph) IsReady() bool {
+	return c.Readiness().Ready
 }
 
 // MarkEdgeConverged marks an edge whose EWMAs have seen enough samples to be trusted

@@ -6,21 +6,21 @@ defaults:
   edge_prefix: fd00::/48
 
 pops:
-  - id: A
+  - id: SEA # Seattle
     index: 1
-  - id: B
+  - id: SFO # San Francisco
     index: 2
-  - id: C
+  - id: LAX # Los Angeles
     index: 3
-  - id: D
+  - id: SLC # Salt Lake City
     index: 4
-  - id: E
+  - id: DEN # Denver
     index: 5
-  - id: F
+  - id: ORD # Chicago
     index: 6
-  - id: G
+  - id: NYC # New York
     index: 7
-  - id: H
+  - id: IAD # Ashburn
     index: 8
 
 # label: 0 is the default/bulk low-priority class
@@ -71,178 +71,181 @@ tenants:
     tier: gold
 
 cpes:
-  - id: cA
-    attach: A
+  - id: cSEA
+    attach: SEA
     tenant: 273
     prefix: fd7a:3921:111:1::/64
     portal_id: 83505cf19a08
     reservation_bandwidth: 45
-  - id: cA2
-    attach: A
+  - id: cSEA2
+    attach: SEA
     tenant: 231
     prefix: fd7a:3921:e7:1::/64
     portal_id: 48522cc7549b
     reservation_bandwidth: 12.5
-  - id: cA3
-    attach: A
+  - id: cSEA3
+    attach: SEA
     tenant: 231
     prefix: fd7a:3921:e7:2::/64
     portal_id: 32522cc7549b
     reservation_bandwidth: 20
-  - id: cA4
-    attach: G
+  - id: cNYC2
+    attach: NYC
     tenant: 231
     prefix: fd7a:3921:e7:bb24::/64
     portal_id: 32527fa75219
     reservation_bandwidth: 15
-  - id: cC
-    attach: C
+  - id: cLAX
+    attach: LAX
     tenant: 273
     prefix: fd7a:3921:111:2::/64
     portal_id: aa400723fee3
     reservation_bandwidth: 45
   # Tenant 305 (gold)
-  - id: cB
-    attach: B
+  - id: cSFO
+    attach: SFO
     tenant: 305
     prefix: fd7a:3921:131:1::/64
     portal_id: 7c1e94a2b0d3
     reservation_bandwidth: 35
-  - id: cD
-    attach: D
+  - id: cSLC
+    attach: SLC
     tenant: 305
     prefix: fd7a:3921:131:2::/64
     portal_id: 19ab3e5d7f60
     reservation_bandwidth: 25
-  - id: cE
-    attach: E
+  - id: cDEN
+    attach: DEN
     tenant: 305
     prefix: fd7a:3921:131:3::/64
     portal_id: e4f2086c1a95
     reservation_bandwidth: 40
-  - id: cH
-    attach: H
+  - id: cIAD
+    attach: IAD
     tenant: 305
     prefix: fd7a:3921:131:4::/64
     portal_id: 5d9b7c30e1f8
     reservation_bandwidth: 20
   # Tenant 412 (silver)
-  - id: cB2
-    attach: B
+  - id: cSFO2
+    attach: SFO
     tenant: 412
     prefix: fd7a:3921:19c:1::/64
     portal_id: 0a63d8e9b214
     reservation_bandwidth: 15
-  - id: cD2
-    attach: D
+  - id: cSLC2
+    attach: SLC
     tenant: 412
     prefix: fd7a:3921:19c:2::/64
     portal_id: b8271f4c6e0a
     reservation_bandwidth: 10
-  - id: cF
-    attach: F
+  - id: cORD
+    attach: ORD
     tenant: 412
     prefix: fd7a:3921:19c:3::/64
     portal_id: 3f90a5d2c778
     reservation_bandwidth: 17.5
-  - id: cG
-    attach: G
+  - id: cNYC
+    attach: NYC
     tenant: 412
     prefix: fd7a:3921:19c:4::/64
     portal_id: d1c46b8e0953
     reservation_bandwidth: 7.5
   # Tenant 518 (gold)
-  - id: cC2
-    attach: C
+  - id: cLAX2
+    attach: LAX
     tenant: 518
     prefix: fd7a:3921:206:1::/64
     portal_id: 66e0b3a9f4c1
     reservation_bandwidth: 30
-  - id: cE2
-    attach: E
+  - id: cDEN2
+    attach: DEN
     tenant: 518
     prefix: fd7a:3921:206:2::/64
     portal_id: 2b85d7f1a09e
     reservation_bandwidth: 37.5
-  - id: cF2
-    attach: F
+  - id: cORD2
+    attach: ORD
     tenant: 518
     prefix: fd7a:3921:206:3::/64
     portal_id: 9ce31a7d5b48
     reservation_bandwidth: 25
-  - id: cH2
-    attach: H
+  - id: cIAD2
+    attach: IAD
     tenant: 518
     prefix: fd7a:3921:206:4::/64
     portal_id: f47a0c92e6d3
     reservation_bandwidth: 22.5
 
+# One-way propagation delay per member: great-circle distance x 1.4 fiber route
+# factor at 204,000 km/s (~4.9 us/km in glass). A second member stands in for a
+# physically diverse route and is 1.3x longer.
 links:
-  - a: A
-    b: B
+  - a: SEA
+    b: SFO # 1094 km
     parallel:
       - bandwidth: 140
-        delay: 4
+        delay: 7.5
         start_jitter: 0.05
       - bandwidth: 50
-        delay: 7
-  - a: A
-    b: D
+        delay: 9.8
+  - a: SEA
+    b: SLC # 1127 km
     parallel:
       - bandwidth: 130
-        delay: 3
+        delay: 7.7
       - bandwidth: 30
-        delay: 11
+        delay: 10.1
         start_jitter: 0.1
-  - a: B
-    b: C
+  - a: SFO
+    b: LAX # 559 km
     parallel:
       - bandwidth: 130
-        delay: 5
+        delay: 3.8
       - bandwidth: 110
-        delay: 6
-  - a: B
-    b: D
+        delay: 5.0
+  - a: SFO
+    b: SLC # 965 km
     parallel:
       - bandwidth: 80
-        delay: 9
-  - a: C
-    b: E
+        delay: 6.6
+  - a: LAX
+    b: DEN # 1335 km
     parallel:
       - bandwidth: 140
-        delay: 9
-  - a: C
-    b: F
+        delay: 9.2
+  - a: LAX
+    b: ORD # 2804 km
     parallel:
       - bandwidth: 130
-        delay: 6
-  - a: D
-    b: E
+        delay: 19.2
+  - a: SLC
+    b: DEN # 596 km
     parallel:
       - bandwidth: 100
-        delay: 7
+        delay: 4.1
       - bandwidth: 70
-        delay: 9
-  - a: E
-    b: F
+        delay: 5.3
+  - a: DEN
+    b: ORD # 1478 km
     parallel:
       - bandwidth: 160
-        delay: 5
-  - a: F
-    b: G
+        delay: 10.1
+  - a: ORD
+    b: NYC # 1144 km
     parallel:
       - bandwidth: 90
-        delay: 3
+        delay: 7.9
         start_jitter: 0.05
       - bandwidth: 40
-        delay: 9
-  - a: F
-    b: H
+        delay: 10.2
+  - a: ORD
+    b: IAD # 955 km
     parallel:
       - bandwidth: 80
-        delay: 8
-  - a: G
-    b: H
+        delay: 6.6
+  - a: NYC
+    b: IAD # 327 km
     parallel:
       - bandwidth: 80
-        delay: 4
+        delay: 2.2

@@ -92,6 +92,42 @@ defmodule MaetoPaneWeb.Pane.UI do
     """
   end
 
+  attr :readiness, :map, default: nil
+
+  def pce_status(%{readiness: nil} = assigns), do: ~H""
+
+  def pce_status(assigns) do
+    ~H"""
+    <span title={pce_status_title(@readiness)}>
+      <.pill tone={pce_status_tone(@readiness)}>{pce_status_label(@readiness)}</.pill>
+    </span>
+    """
+  end
+
+  defp pce_status_label(%{"ready" => false} = r),
+    do: "PCE warming up · #{r["converged"]}/#{r["edges"]}"
+
+  defp pce_status_label(%{"timed_out" => true} = r),
+    do: "PCE ready · #{r["converged"]}/#{r["edges"]} converged"
+
+  defp pce_status_label(_readiness), do: "PCE ready"
+
+  defp pce_status_tone(%{"ready" => false}), do: "warn"
+  defp pce_status_tone(%{"timed_out" => true}), do: "warn"
+  defp pce_status_tone(_readiness), do: "ok"
+
+  defp pce_status_title(%{"ready" => false} = r) do
+    "The PCE holds off routing until every link's latency and loss averages have settled. " <>
+      "#{r["converged"]} of #{r["edges"]} links have; it stops waiting at #{clock(r["deadline"])}."
+  end
+
+  defp pce_status_title(%{"timed_out" => true} = r) do
+    "Some links never settled, so the PCE stopped waiting at #{clock(r["deadline"])} " <>
+      "and routes on what it has."
+  end
+
+  defp pce_status_title(_readiness), do: "Every link's averages have settled; the PCE is routing."
+
   attr :hops, :list, required: true
 
   def chain(assigns) do

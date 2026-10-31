@@ -121,7 +121,19 @@ defmodule MaetoPaneWeb.Pane.Nav do
       %{
         label: "Operations",
         icon: "hero-bolt",
-        items: [item(:changes, "Changes", "hero-arrow-path", count(facts, :changes))]
+        items: [
+          item(:changes, "Changes", "hero-arrow-path", count(facts, :changes)),
+          %{
+            key: :sim,
+            label: "Simulator",
+            icon: "hero-beaker",
+            to: "/sim",
+            patchable: false,
+            badge: nil,
+            alert: false,
+            tone: nil
+          }
+        ]
       }
     ]
   end

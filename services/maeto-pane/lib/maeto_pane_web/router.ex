@@ -19,6 +19,7 @@ defmodule MaetoPaneWeb.Router do
 
     live "/", PaneLive, :index
     live "/pops/:id", PopLive, :show
+    live "/sim", SimLive, :index
   end
 
   # Other scopes may use custom stacks.

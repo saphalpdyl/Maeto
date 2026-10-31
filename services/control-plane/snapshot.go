@@ -144,6 +144,7 @@ type ControlSnapshot struct {
 	Classes     []ClassSnapshot         `json:"classes"`
 	Paths       []PathSnapshot          `json:"paths"`
 	PathChanges []PCETickReportReroute  `json:"path_changes"`
+	CostGraph   CostGraphReadiness      `json:"cost_graph"`
 }
 
 func SnapshotTopology(graph *Graph, domain SRv6DomainMetadata, costs *CostGraph, reservations *BandwidthReservationRegistry) TopologySnapshot {
@@ -499,6 +500,7 @@ func (s *SnapshotPublisher) Snapshot() ControlSnapshot {
 		Classes:     SnapshotClasses(s.tenants),
 		Paths:       SnapshotPaths(s.paths.Load()),
 		PathChanges: s.changes.Recent(),
+		CostGraph:   s.costs.Readiness(),
 	}
 
 	if s.registry != nil {

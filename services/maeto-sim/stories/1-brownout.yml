@@ -1,0 +1,7 @@
+title: Latency brownout on SEA–SFO
+description: "Both SEA–SFO members gain 40 ms each way for two minutes. Watch the probes pick it up and the PCE move latency-sensitive paths around SEA–SFO, then back once it clears."
+duration: 150
+steps:
+  - at: 0
+    for: 120
+    impair: {link: SEA-SFO, delay_ms: 40, jitter_ms: 3}

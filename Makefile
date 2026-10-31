@@ -1,4 +1,4 @@
-.PHONY: lint lint.editorconfig generate deploy install-virtual-environments fe ap ddbg dev ips tfsim tfsim-plan db-reset
+.PHONY: lint lint.editorconfig generate deploy install-virtual-environments fe sim ap ddbg dev ips tfsim tfsim-plan db-reset
 
 TOPOLOGY_YAML := clab/topologies/eight-pop.yaml
 TOPOLOGY_NAME := eight-pop
@@ -64,6 +64,9 @@ dev:
 
 fe:
 	docker compose up --build --force-recreate maeto-pane
+
+sim:
+	docker compose up --build --force-recreate maeto-sim
 
 ddbg: # dev debug
 	DEBUG=1 MAETO_DLV_LISTEN=[::]:2345 docker compose up --build maeto-control-plane

@@ -1,0 +1,7 @@
+title: Lossy span on SLC–DEN
+description: "Both SLC–DEN members drop 5% of packets for two minutes. Latency stays the same, so only the loss measurement can tell the PCE to avoid it."
+duration: 150
+steps:
+  - at: 0
+    for: 120
+    impair: {link: SLC-DEN, loss_pct: 5}

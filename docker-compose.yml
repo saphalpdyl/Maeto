@@ -70,6 +70,21 @@ services:
       - default
       - clab
 
+  maeto-sim:
+    image: maeto-sim:latest
+    container_name: maeto-sim
+    build:
+      context: .
+      dockerfile: docker/maeto-sim.Dockerfile
+    environment:
+      - NATS_CONNECT_URL=nats://clab-eight-pop-nats:4222
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./build/:/app/build/:ro
+      - ./.state/:/app/.state/:ro
+    networks:
+      - default
+      - clab
 
 
 networks:

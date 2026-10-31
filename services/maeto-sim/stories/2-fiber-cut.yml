@@ -1,0 +1,7 @@
+title: Fiber cut on LAX–DEN
+description: "LAX–DEN goes dark for 90 seconds. The PCE sees the link down, reroutes everything that crossed it, and returns once the link is back and stable."
+duration: 120
+steps:
+  - at: 0
+    for: 90
+    down: LAX-DEN

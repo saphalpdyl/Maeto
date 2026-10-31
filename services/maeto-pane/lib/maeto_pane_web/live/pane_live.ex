@@ -113,6 +113,7 @@ defmodule MaetoPaneWeb.PaneLive do
     |> assign(:connected_to_nats, snapshot.connected)
     |> assign(:has_control, not is_nil(snapshot.control))
     |> assign(:graph, graph)
+    |> assign(:graph_readiness, graph.readiness)
     |> assign(:access, access_interfaces(graph))
     |> assign(:registry, registry)
     |> assign(:paths, rows)
@@ -257,6 +258,7 @@ defmodule MaetoPaneWeb.PaneLive do
       </:crumbs>
 
       <:status>
+        <.pce_status readiness={@graph_readiness} />
         <.pill tone={if @connected_to_nats, do: "ok", else: "warn"}>
           {if @connected_to_nats, do: "Live", else: "Reconnecting"}
         </.pill>

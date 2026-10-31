@@ -1,0 +1,8 @@
+title: Flapping ORD–NYC
+description: "The fast ORD–NYC member drops for 15 seconds every half minute. The hold-down timer should stop paths from bouncing on and off it each time it returns."
+duration: 135
+steps:
+  - {at: 0, for: 15, down: "ORD-NYC#1"}
+  - {at: 30, for: 15, down: "ORD-NYC#1"}
+  - {at: 60, for: 15, down: "ORD-NYC#1"}
+  - {at: 90, for: 15, down: "ORD-NYC#1"}
