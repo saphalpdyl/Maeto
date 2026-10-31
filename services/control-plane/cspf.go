@@ -103,10 +103,6 @@ func (ps PathSet) LogValue() slog.Value {
 	return slog.GroupValue(attrs...)
 }
 
-func MinDimension(dim CostDimension) Objective {
-	return WeightedCost(map[CostDimension]float64{dim: 1})
-}
-
 func WeightedCost(weights map[CostDimension]float64) Objective {
 	return func(_ *PCEEdge, c *Cost) float64 {
 		if c == nil {

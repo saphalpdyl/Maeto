@@ -37,7 +37,7 @@ type TelemetryCollector struct {
 
 	ewmas map[EdgeID]map[CostDimension]*Ewma
 
-	stampResultBuffer map[EdgeID]*ProbeFIFOBuffer[probe.STAMPResult]
+	stampLastSeq map[EdgeID]uint32
 }
 
 func NewTelemetryCollector(
@@ -52,16 +52,16 @@ func NewTelemetryCollector(
 ) *TelemetryCollector {
 
 	return &TelemetryCollector{
-		js:                js,
-		logger:            logger,
-		SubjectPrefix:     subjectPrefix,
-		ForNode:           forNode,
-		inventory:         inventory,
-		topology:          topology,
-		costGraph:         costGraph,
-		ewmas:             make(map[EdgeID]map[CostDimension]*Ewma),
-		db:                db,
-		stampResultBuffer: make(map[EdgeID]*ProbeFIFOBuffer[probe.STAMPResult]),
+		js:            js,
+		logger:        logger,
+		SubjectPrefix: subjectPrefix,
+		ForNode:       forNode,
+		inventory:     inventory,
+		topology:      topology,
+		costGraph:     costGraph,
+		ewmas:         make(map[EdgeID]map[CostDimension]*Ewma),
+		db:            db,
+		stampLastSeq:  make(map[EdgeID]uint32),
 	}
 }
 
@@ -204,90 +204,4 @@ func (t *TelemetryCollector) handleTelemetryConsume(ctx context.Context, msg jet
 		t.logger.WarnContext(ctx, "unknown result probe type", slog.String("probe_type", string(resultPayload.ProbeType)))
 		return errors.New("unknown result probe type")
 	}
-}
-
-type ProbeFIFOBuffer[T probe.ProbeResult] struct {
-	mu  sync.RWMutex
-	buf []T
-
-	bufferSize uint32
-
-	// Ring buffer
-	head  uint32
-	count uint32
-}
-
-func NewProbeFIFOBuffer[T probe.ProbeResult](bufferSize uint32) (*ProbeFIFOBuffer[T], error) {
-
-	if bufferSize == 0 {
-		return nil, errors.New("buffer size must be greater than zero")
-	}
-
-	return &ProbeFIFOBuffer[T]{
-		buf: make([]T, bufferSize),
-		bufferSize: bufferSize,
-	}, nil
-}
-
-func (p *ProbeFIFOBuffer[T]) Len() uint32 {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-
-	return p.count
-}
-
-func (p *ProbeFIFOBuffer[T]) EnqueueWithDrop(v T) (error, bool) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	dropped := false
-	if p.count == uint32(len(p.buf)) {
-		p.dequeue()
-		dropped = true
-	}
-
-	p.enqueue(v)
-	return nil, dropped
-}
-
-func (p *ProbeFIFOBuffer[T]) tail() uint32 {
-	return (p.head + p.count) % uint32(len(p.buf))
-}
-
-func (p *ProbeFIFOBuffer[T]) enqueue(v T) {
-	p.buf[p.tail()] = v
-	p.count++
-}
-
-func (p *ProbeFIFOBuffer[T]) dequeue() T {
-	var zero T
-	if p.count == 0 {
-		return zero
-	}
-
-	val := p.buf[p.head]
-	p.buf[p.head] = zero
-	p.head = (p.head + 1) % uint32(len(p.buf))
-	p.count--
-
-	return val
-}
-
-func (p *ProbeFIFOBuffer[T]) Snapshot() []T {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-
-	snapshot := make([]T, p.count)
-	for i := uint32(0); i < p.count; i++ {
-		snapshot[i] = p.buf[(p.head+i) % uint32(len(p.buf))]
-	}
-
-	return snapshot
-}
-
-func (p *ProbeFIFOBuffer[T]) IsFull() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-
-	return p.count == uint32(len(p.buf))
 }

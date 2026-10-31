@@ -13,6 +13,13 @@ import (
 	"github.com/saphalpdyl/maeto/services/control-plane/log"
 )
 
+const (
+	// a late or redelivered probe this close behind the newest one is not a restart
+	stampReorderTolerance = 64
+	// past this many lost in a row the loss average is already pinned near 1
+	stampMaxLostPerSample = 200
+)
+
 func (t *TelemetryCollector) handleSTAMP(
 	ctx context.Context,
 	resultPayload probe.ResultPacket,
@@ -28,88 +35,29 @@ func (t *TelemetryCollector) handleSTAMP(
 		return nil
 	}
 
+	if stampPayload.SenderSequence == nil || stampPayload.SenderTimestamp == nil || stampPayload.ReceiveTimestamp == nil {
+		t.logger.ErrorContext(ctx, "stamp result is missing sequence or timestamps")
+		return errors.New("stamp result is missing sequence or timestamps")
+	}
+
+	duration := stampPayload.ReceiveTimestamp.Sub(*stampPayload.SenderTimestamp)
+	if duration < 0 {
+		t.logger.ErrorContext(ctx, "duration is negative")
+		return errors.New("duration is negative")
+	}
+
+	durationMs := float64(duration.Microseconds()) / 1000
+	seq := *stampPayload.SenderSequence
+	edgeID := EdgeID(telemetryKey)
+
 	t.mu.Lock()
-	buffer, exists := t.stampResultBuffer[EdgeID(telemetryKey)]
-	if !exists {
-		var err error
-		buffer, err = NewProbeFIFOBuffer[probe.STAMPResult](7)
-		if err != nil {
-			t.logger.ErrorContext(ctx, "failed to create buffer", log.Err(err))
-			t.mu.Unlock()
-			return err
-		}
 
-		t.stampResultBuffer[EdgeID(telemetryKey)] = buffer
-	}
-
-	err, _ := buffer.EnqueueWithDrop(stampPayload)
-	if err != nil {
-		t.logger.ErrorContext(ctx, "failed to enqueue stamp result", log.Err(err))
-		t.mu.Unlock()
-		return err
-	}
-
-	jitter := float64(-1)
-	loss := float64(-1)
-
-	if buffer.IsFull() {
-		// Buffer saturated, can calculate loss and jitter
-		bufferSnapshot := buffer.Snapshot()
-
-		maxSeq := uint32(0)
-		minSeq := uint32(math.MaxUint32)
-
-		for i := 0; i < len(bufferSnapshot)-1; i++ {
-			p1 := bufferSnapshot[i]
-			p2 := bufferSnapshot[i+1]
-
-			// loss
-			if i == 0 {
-				if *p1.SenderSequence > maxSeq {
-					maxSeq = *p1.SenderSequence
-				}
-				if *p1.SenderSequence < minSeq {
-					minSeq = *p1.SenderSequence
-				}
-			}
-
-			if *p2.SenderSequence > maxSeq {
-				maxSeq = *p2.SenderSequence
-			}
-			if *p2.SenderSequence < minSeq {
-				minSeq = *p2.SenderSequence
-			}
-
-			// jitter
-			d1 := p1.ReceiveTimestamp.Sub(*p1.SenderTimestamp)
-			d2 := p2.ReceiveTimestamp.Sub(*p2.SenderTimestamp)
-
-			d1Ms := float64(d1.Microseconds()) / 1000
-			d2Ms := float64(d2.Microseconds()) / 1000
-
-			jitter += math.Abs(d1Ms - d2Ms)
-		}
-
-		jitter /= float64(len(bufferSnapshot) - 1)
-
-		// loss
-		expectedPktsCount := maxSeq - minSeq + 1
-		loss = 1 - float64(buffer.Len())/float64(expectedPktsCount)
-	}
-
-	ewmas, ok := t.ewmas[EdgeID(telemetryKey)]
+	ewmas, ok := t.ewmas[edgeID]
 	if !ok {
 		ewmas = make(map[CostDimension]*Ewma)
 		ewmas[COSTDIM_LATENCY] = &Ewma{
 			config: EwmaConfig{
 				Alpha:   0.3,
-				Epsilon: 0.000001,
-			},
-		}
-
-		ewmas[COSTDIM_JITTER] = &Ewma{
-			config: EwmaConfig{
-				Alpha:   0.1,
 				Epsilon: 0.000001,
 			},
 		}
@@ -121,45 +69,43 @@ func (t *TelemetryCollector) handleSTAMP(
 			},
 		}
 
-		t.ewmas[EdgeID(telemetryKey)] = ewmas
+		t.ewmas[edgeID] = ewmas
 	}
-
-	duration := stampPayload.ReceiveTimestamp.Sub(*stampPayload.SenderTimestamp)
-	if duration < 0 {
-		t.logger.ErrorContext(ctx, "duration is negative")
-		t.mu.Unlock()
-		return errors.New("duration is negative")
-	}
-
-	durationMs := float64(duration.Microseconds()) / 1000
 
 	observationTime := time.Now()
-
 	ewmas[COSTDIM_LATENCY].Observe(observationTime, durationMs)
-	if jitter != -1 {
-		ewmas[COSTDIM_JITTER].Observe(observationTime, jitter)
+
+	lastSeq, seen := t.stampLastSeq[edgeID]
+	switch {
+	case !seen:
+		ewmas[COSTDIM_LOSS].Observe(observationTime, 0)
+		t.stampLastSeq[edgeID] = seq
+	case seq > lastSeq:
+		lost := min(seq-lastSeq-1, stampMaxLostPerSample)
+		for range lost {
+			ewmas[COSTDIM_LOSS].Observe(observationTime, 1)
+		}
+		ewmas[COSTDIM_LOSS].Observe(observationTime, 0)
+		t.stampLastSeq[edgeID] = seq
+	case lastSeq-seq > stampReorderTolerance:
+		// the sender restarted and its sequence began again from zero
+		ewmas[COSTDIM_LOSS].Observe(observationTime, 0)
+		t.stampLastSeq[edgeID] = seq
 	}
 
-	if loss != -1 {
-		ewmas[COSTDIM_LOSS].Observe(observationTime, loss)
-	}
+	latency := ewmas[COSTDIM_LATENCY].Snapshot()
+	loss := ewmas[COSTDIM_LOSS].Mean()
 
 	t.mu.Unlock()
 
-	seq := int64(0)
-	if stampPayload.SenderSequence != nil {
-		seq = int64(*stampPayload.SenderSequence)
-	}
-
-	// write to db
-	err = t.db.InTx(ctx, func(q *store.Queries) error {
+	err := t.db.InTx(ctx, func(q *store.Queries) error {
 		return q.InsertLinkSample(ctx, store.InsertLinkSampleParams{
 			Time: pgtype.Timestamptz{
 				Time:  observationTime,
 				Valid: true,
 			},
 			TelemetryKey: telemetryKey,
-			Sequence:     seq,
+			Sequence:     int64(seq),
 			LatencyMs: pgtype.Float8{
 				Float64: durationMs,
 				Valid:   true,
@@ -172,17 +118,41 @@ func (t *TelemetryCollector) handleSTAMP(
 		return err
 	}
 
-	t.costGraph.UpdateCost(EdgeID(telemetryKey), COSTDIM_LATENCY, ewmas[COSTDIM_LATENCY].Mean())
+	delayNormalized, jitterNormalized, lossNormalized := NormalizeDelayJitterLoss(
+		latency.Mean,
+		latency.Variance,
+		loss,
+		100,
+		10,
+		0.05,
+	)
 
-	if jitter != -1 {
-		t.costGraph.UpdateCost(EdgeID(telemetryKey), COSTDIM_JITTER, ewmas[COSTDIM_JITTER].Mean())
-	}
+	t.costGraph.UpdateCost(edgeID, COSTDIM_LATENCY, delayNormalized)
+	t.costGraph.UpdateCost(edgeID, COSTDIM_JITTER, jitterNormalized)
+	t.costGraph.UpdateCost(edgeID, COSTDIM_LOSS, lossNormalized)
 
-	if loss != -1 {
-		t.costGraph.UpdateCost(EdgeID(telemetryKey), COSTDIM_LOSS, ewmas[COSTDIM_LOSS].Mean())
-	}
-
-	t.costGraph.MarkSeen(EdgeID(telemetryKey), time.Now())
+	t.costGraph.MarkSeen(edgeID, time.Now())
 
 	return nil
+}
+
+// NormalizeDelayJitterLoss scales delay, jitter and loss against reference values
+// into costs that add up along a path: delay as is, jitter as variance (variances
+// of independent links sum) and loss as -log(1-p) (survival probabilities multiply).
+// lossReference is a plain probability, not log-transformed.
+func NormalizeDelayJitterLoss(
+	delayMs float64, // [0, inf)
+	jitterVarianceMs2 float64, // [0, inf)
+	loss float64, // [0, 1]
+	delayReferenceMs float64,
+	jitterReferenceMs float64,
+	lossReference float64,
+) (float64, float64, float64) {
+	lossRefLog := -math.Log1p(-lossReference)
+
+	delayNormalized := delayMs / delayReferenceMs
+	jitterNormalized := jitterVarianceMs2 / (jitterReferenceMs * jitterReferenceMs)
+	lossNormalized := -math.Log1p(-math.Min(loss, 0.999999)) / lossRefLog
+
+	return delayNormalized, jitterNormalized, lossNormalized
 }

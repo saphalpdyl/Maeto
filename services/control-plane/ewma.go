@@ -91,6 +91,10 @@ func (e *Ewma) Mean() float64 {
 	return e.Snapshot().Mean
 }
 
+func (e *Ewma) Variance() float64 {
+	return e.Snapshot().Variance
+}
+
 func (e *Ewma) Stddev() float64 {
 	return e.Snapshot().Stddev
 }
