@@ -8,6 +8,8 @@ import (
 	"time"
 )
 
+const MaxCostGraphWaitTillReady = 5 * time.Minute
+
 type CostGraphEdge struct {
 	ID   EdgeID
 	From NodeID
@@ -24,6 +26,9 @@ type CostGraph struct {
 	byID  map[EdgeID]CostGraphEdge
 
 	lastSeen map[EdgeID]time.Time
+
+	convergedEdges map[EdgeID]struct{}
+	startedAt      time.Time
 }
 
 type CostDimension string
@@ -42,9 +47,11 @@ func NewTestCostGraph(
 	g *Graph,
 ) (*CostGraph, error) {
 	cg := &CostGraph{
-		graph:    make(map[CostGraphEdge]*Cost),
-		byID:     make(map[EdgeID]CostGraphEdge),
-		lastSeen: make(map[EdgeID]time.Time),
+		graph:          make(map[CostGraphEdge]*Cost),
+		byID:           make(map[EdgeID]CostGraphEdge),
+		lastSeen:       make(map[EdgeID]time.Time),
+		convergedEdges: make(map[EdgeID]struct{}),
+		startedAt:      time.Now(),
 	}
 
 	g.mu.RLock()
@@ -130,4 +137,29 @@ func (c *CostGraph) Costs() map[CostGraphEdge]*Cost {
 	}
 
 	return costs
+}
+
+func (c *CostGraph) IsReady() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	if time.Since(c.startedAt) > MaxCostGraphWaitTillReady {
+		return true
+	}
+
+	for edgeID := range c.byID {
+		if _, exists := c.convergedEdges[edgeID]; !exists {
+			return false
+		}
+	}
+
+	return true
+}
+
+// MarkEdgeConverged marks an edge whose EWMAs have seen enough samples to be trusted
+func (c *CostGraph) MarkEdgeConverged(id EdgeID) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.convergedEdges[id] = struct{}{}
 }

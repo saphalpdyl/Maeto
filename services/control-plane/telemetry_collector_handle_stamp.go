@@ -18,6 +18,9 @@ const (
 	stampReorderTolerance = 64
 	// past this many lost in a row the loss average is already pinned near 1
 	stampMaxLostPerSample = 200
+
+	// Number of samples to collect before the EWMA is considered converged
+	ewmaWarmupSamples = 30
 )
 
 func (t *TelemetryCollector) handleSTAMP(
@@ -126,6 +129,10 @@ func (t *TelemetryCollector) handleSTAMP(
 		10,
 		0.05,
 	)
+
+	if latency.N > ewmaWarmupSamples {
+		t.costGraph.MarkEdgeConverged(edgeID)
+	}
 
 	t.costGraph.UpdateCost(edgeID, COSTDIM_LATENCY, delayNormalized)
 	t.costGraph.UpdateCost(edgeID, COSTDIM_JITTER, jitterNormalized)

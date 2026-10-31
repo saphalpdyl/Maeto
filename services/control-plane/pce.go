@@ -68,6 +68,11 @@ func (p *PCE) Run(ctx context.Context, graph *Graph) {
 			ticker.Stop()
 			return
 		case <-ticker.C:
+			if !p.costGraph.IsReady() {
+				p.logger.WarnContext(ctx, "skipping PCE tick; cost graph not ready")
+				continue
+			}
+
 			previous := p.PathStore.ClonePaths()
 			paths := p.PathStore.ClonePaths()
 
