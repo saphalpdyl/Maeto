@@ -244,3 +244,59 @@ func (c *Controller) handlePETunnelUpdate(ctx context.Context, data []byte) erro
 
 	return nil
 }
+
+func (c *Controller) expectedResyncReplies() int {
+	expected := 0
+
+	for _, node := range c.inventory.Nodes() {
+		if node.HasAccessSide() {
+			expected++
+		}
+	}
+
+	for _, tenant := range c.tenants.Tenants() {
+		expected += len(tenant.Sites)
+	}
+
+	return expected
+}
+
+func (c *Controller) sendTunnelResyncRequest(ctx context.Context, timeout time.Duration) error {
+	nc := c.js.Conn()
+
+	inbox := nats.NewInbox()
+	sub, err := nc.SubscribeSync(inbox)
+	if err != nil {
+		return fmt.Errorf("subscribe to resync inbox: %w", err)
+	}
+	defer sub.Unsubscribe() // nolint:errcheck
+
+	if err := nc.PublishRequest(controlapi.SubjectControllerPETunnelResync, inbox, nil); err != nil {
+		return fmt.Errorf("publish pe tunnel resync: %w", err)
+	}
+
+	if err := nc.PublishRequest(controlapi.SubjectControllerCPETunnelResync, inbox, nil); err != nil {
+		return fmt.Errorf("publish cpe tunnel resync: %w", err)
+	}
+
+	waitCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	expected := c.expectedResyncReplies()
+	replies := 0
+
+	for replies < expected {
+		if _, err := sub.NextMsgWithContext(waitCtx); err != nil {
+			break
+		}
+
+		replies++
+	}
+
+	c.logger.InfoContext(ctx, "tunnel resync finished",
+		slog.Int("replies", replies),
+		slog.Int("expected", expected),
+	)
+
+	return nil
+}

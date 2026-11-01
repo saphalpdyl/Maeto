@@ -33,7 +33,8 @@ RUN apk add --no-cache \
       tcpdump \
       iputils \
       netcat-openbsd \
-      curl
+      curl \
+      mandoc man-pages
 
 RUN mkdir -p /var/log/supervisor
 COPY docker/conf/cpe/supervisord.conf /etc/supervisor/conf.d/supervisord.conf

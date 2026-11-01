@@ -32,7 +32,8 @@ type Controller struct {
 	nodeReports         *NodeReportRecorder
 	db                  *store.DataStore
 
-	ready bool
+	ready    bool
+	bootMode BootMode
 
 	pceUpdates chan PathSet
 }
@@ -157,7 +158,8 @@ func NewController(
 		pceUpdates: pceUpdatesChan,
 		db:         db,
 
-		ready: false,
+		ready:    false,
+		bootMode: bootMode,
 	}, nil
 }
 
@@ -211,6 +213,10 @@ func (c *Controller) Start(ctx context.Context) {
 
 	if err := c.setupCPETunnelUpdate(ctx); err != nil {
 		return
+	}
+
+	if err := c.sendTunnelResyncRequest(ctx, 5*time.Second); err != nil {
+		c.logger.ErrorContext(ctx, "failed to send resync request", log.Err(err))
 	}
 
 	go c.startPCEUpdatesDispatcher(ctx)

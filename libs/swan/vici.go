@@ -18,6 +18,8 @@ type ConnConf struct {
 	Local       AuthConf             `vici:"local"`
 	Remote      AuthConf             `vici:"remote"`
 	Children    map[string]ChildConf `vici:"children"`
+	IfIDIn      string               `vici:"if_id_in"`
+	IfIDOut     string               `vici:"if_id_out"`
 }
 
 type AuthConf struct {
@@ -31,8 +33,8 @@ type ChildConf struct {
 	Mode        string   `vici:"mode"`
 	LocalTS     []string `vici:"local_ts"`
 	RemoteTS    []string `vici:"remote_ts"`
-	IfIDIn      string   `vici:"if_id_in"`
-	IfIDOut     string   `vici:"if_id_out"`
+	IfIDIn      string   `vici:"if_id_in,omitempty"`
+	IfIDOut     string   `vici:"if_id_out,omitempty"`
 	StartAction string   `vici:"start_action"`
 }
 
@@ -153,20 +155,30 @@ func ParseUpDownEvent(name string, m *vici.Message) (*UpDownEvent, error) {
 		ev.Up = true
 	}
 
-	for _, k := range m.Keys() {
-		sub, ok := m.Get(k).(*vici.Message)
-		if !ok {
-			continue // "up" and any other kv pair
-		}
-		ev.Conn = k
-		if err := vici.UnmarshalMessage(sub, &ev.IKE); err != nil {
-			return nil, fmt.Errorf("unmarshal ike-sa %q: %w", k, err)
-		}
-		break // exactly one connection section per event
-	}
-
-	if ev.Conn == "" {
+	conn, section, ok := connSection(m)
+	if !ok {
 		return nil, fmt.Errorf("%s: no connection section in message", name)
 	}
+
+	ev.Conn = conn
+	if err := vici.UnmarshalMessage(section, &ev.IKE); err != nil {
+		return nil, fmt.Errorf("unmarshal ike-sa %q: %w", conn, err)
+	}
+
 	return ev, nil
+}
+
+// updown and list-sa messages wrap the IKE_SA in a section named after its connection
+func connSection(m *vici.Message) (string, *vici.Message, bool) {
+	for _, k := range m.Keys() {
+		if section, ok := m.Get(k).(*vici.Message); ok {
+			return k, section, true
+		}
+	}
+
+	return "", nil, false
+}
+
+type ListSAEvent struct {
+	Event string
 }

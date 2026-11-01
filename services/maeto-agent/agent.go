@@ -7,13 +7,13 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/saphalpdyl/maeto/libs/controlapi"
-	"github.com/strongswan/govici/vici"
-
 	"github.com/saphalpdyl/maeto/libs/dataplane"
 	"github.com/saphalpdyl/maeto/libs/nodesync"
 	"github.com/saphalpdyl/maeto/libs/probe"
+	"github.com/saphalpdyl/maeto/libs/swan"
 	"github.com/saphalpdyl/maeto/services/maeto-agent/log"
 )
 
@@ -30,9 +30,17 @@ type Agent struct {
 	probeIntentFeed     chan *nodesync.NodeIntent
 
 	probeSupervisor *probe.Supervisor
+
+	swanClient *swan.Client
 }
 
-func NewAgent(node *Node, js jetstream.JetStream, logger *slog.Logger, dp dataplane.Dataplane) *Agent {
+func NewAgent(
+	node *Node,
+	js jetstream.JetStream,
+	logger *slog.Logger,
+	dp dataplane.Dataplane,
+	swanClient *swan.Client,
+) *Agent {
 	dataplaneIntentFeed := make(chan *nodesync.NodeIntent, 32)
 	probeIntentFeed := make(chan *nodesync.NodeIntent, 32)
 
@@ -58,6 +66,7 @@ func NewAgent(node *Node, js jetstream.JetStream, logger *slog.Logger, dp datapl
 		probeIntentFeed:     probeIntentFeed,
 		dp:                  dp,
 		probeSupervisor:     probeSupervisor,
+		swanClient:          swanClient,
 	}
 }
 
@@ -114,28 +123,23 @@ func (a *Agent) Run(ctx context.Context) {
 
 	go a.setupIntentWatch(ctx)
 
-	s, err := vici.NewSession()
+	eventChan, err := a.swanClient.WatchIKEUpdownEvents(ctx)
 	if err != nil {
-		a.logger.ErrorContext(ctx, "failed to open vici session", log.Err(err))
-		return
-	}
-	defer s.Close() // nolint:errcheck
-
-	eventChan, err := a.watchEvents(ctx, s)
-	if err != nil {
+		a.logger.ErrorContext(ctx, "failed to watch events", log.Err(err))
 		return
 	}
 
 	go a.watchTunnelUpdates(ctx, eventChan)
+	go a.setupResyncWatch(ctx)
 
 	if a.node.Access != nil {
 		// Loads private key from /etc/swanctl/private/key.pem and sends to charon via vici
-		if err := a.loadCredentials(ctx, s); err != nil {
+		if err := a.loadCredentials(ctx); err != nil {
 			return
 		}
 
 		// Loads connection from /etc/swanctl/x509/cert.pem and /etc/swanctl/x509ca/ca-cert.pem and sends to charon via vici
-		if err := a.loadConnection(ctx, s); err != nil {
+		if err := a.loadConnection(ctx); err != nil {
 			return
 		}
 	}
@@ -184,4 +188,28 @@ func (a *Agent) waitForReady(ctx context.Context) bool {
 		case <-time.After(2000 * time.Millisecond):
 		}
 	}
+}
+
+func (a *Agent) setupResyncWatch(ctx context.Context) {
+	_, _ = a.js.Conn().Subscribe(controlapi.SubjectControllerPETunnelResync, func(msg *nats.Msg) {
+		sas, err := a.swanClient.GetSAs(ctx)
+		if err != nil {
+			a.logger.ErrorContext(ctx, "failed to get SAS info", log.Err(err))
+		}
+
+		// Loop through the list of IKE_SA
+		for _, sa := range sas {
+			err := a.sendPETunnelUpdate(ctx, sa)
+			if err != nil {
+				a.logger.ErrorContext(ctx, "failed to send CPETunnelUpdate", log.Err(err))
+				continue
+			}
+		}
+
+		if err := msg.Ack(); err != nil {
+			a.logger.ErrorContext(ctx, "failed to ack message", log.Err(err))
+		}
+	})
+
+	<-ctx.Done()
 }

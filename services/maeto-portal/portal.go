@@ -7,18 +7,13 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/saphalpdyl/maeto/libs/controlapi"
 	"github.com/saphalpdyl/maeto/libs/dataplane"
 	"github.com/saphalpdyl/maeto/libs/nodesync"
+	"github.com/saphalpdyl/maeto/libs/swan"
 	"github.com/saphalpdyl/maeto/services/maeto-portal/log"
-	"github.com/strongswan/govici/vici"
-)
-
-const (
-	initiateTimeout    = 10 * time.Second
-	initiateBackoffMin = 1 * time.Second
-	initiateBackoffMax = 30 * time.Second
 )
 
 type Portal struct {
@@ -30,6 +25,8 @@ type Portal struct {
 	intentFeed chan *nodesync.NodeIntent
 	reconciler *dataplane.Reconciler
 
+	swanClient *swan.Client
+
 	config PortalConfig
 	logger *slog.Logger
 }
@@ -40,6 +37,7 @@ func NewPortal(
 	config PortalConfig,
 	dp dataplane.Dataplane,
 	logger *slog.Logger,
+	swanClient *swan.Client,
 ) *Portal {
 	intentFeed := make(chan *nodesync.NodeIntent, 32)
 	reconciler := dataplane.NewReconciler(
@@ -56,6 +54,7 @@ func NewPortal(
 		js:         js,
 		reconciler: reconciler,
 		intentFeed: intentFeed,
+		swanClient: swanClient,
 	}
 }
 
@@ -69,16 +68,9 @@ func (p *Portal) Run(ctx context.Context) error {
 
 	p.logger.InfoContext(ctx, "portal ready", log.PortalID(p.config.PortalID))
 
-	s, err := vici.NewSession()
+	eventChan, err := p.swanClient.WatchIKEUpdownEvents(ctx)
 	if err != nil {
-		p.logger.ErrorContext(ctx, "failed to open vici session", log.Err(err))
-		return err
-	}
-	defer s.Close() // nolint:errcheck
-
-	eventChan, err := p.watchEvents(ctx, s)
-	if err != nil {
-		p.logger.ErrorContext(ctx, "failed to listen to vici child-updown event", log.Err(err))
+		p.logger.ErrorContext(ctx, "portal swan watch events failed", log.PortalID(p.config.PortalID))
 		return err
 	}
 
@@ -93,48 +85,23 @@ func (p *Portal) Run(ctx context.Context) error {
 					continue
 				}
 
-				var cSa ChildSA
+				var childSA swan.ChildSA
 				for _, v := range e.IKE.ChildSAs {
-					cSa = v
+					childSA = v
 				}
 
-				ifID, err := cSa.IfID()
+				if e.IKE.State != "ESTABLISHED" || childSA.State != "INSTALLED" {
+					p.logger.ErrorContext(ctx, "child-updown: invalid state", log.PortalID(p.config.PortalID))
+				}
+
+				ifID, err := childSA.IfID()
 				if err != nil {
 					p.logger.ErrorContext(ctx, "failed to parse IfID into uint32", log.Err(err))
 					continue
 				}
 
-				req := controlapi.CPETunnelUpdateRequest{
-					PortalID: p.config.PortalID,
-					IfID:     ifID,
-				}
-
-				data, err := json.Marshal(req)
-				if err != nil {
-					p.logger.ErrorContext(ctx, "failed to marshal cpe tunnel update request", log.Err(err))
-					continue
-				}
-
-				respData, err := p.js.Conn().Request(controlapi.SubjectCPETunnelUpdate, data, 5*time.Second)
-
-				if err != nil {
-					p.logger.ErrorContext(ctx, "failed to publish cpe tunnel update request", log.Err(err))
-					continue
-				}
-
-				p.logger.InfoContext(ctx, "cpe tunnel update request published",
-					log.PortalID(p.config.PortalID),
-					slog.Int("if_id", int(ifID)),
-				)
-
-				var resp controlapi.TunnelUpdateResponse
-				if err := json.Unmarshal(respData.Data, &resp); err != nil {
-					p.logger.ErrorContext(ctx, "failed to unmarshal cpe tunnel update response", log.Err(err))
-					continue
-				}
-
-				if !resp.Ok {
-					p.logger.ErrorContext(ctx, "cpe tunnel update failed")
+				if err := p.sendCPETunnelUpdate(ifID, ctx); err != nil {
+					p.logger.ErrorContext(ctx, "failed to send CPETunnelUpdate", log.Err(err))
 					continue
 				}
 
@@ -172,18 +139,21 @@ func (p *Portal) Run(ctx context.Context) error {
 	)
 
 	// TODO: Generate credentials in the control plane signed by the CA
-	if err := p.loadCredentials(ctx, s); err != nil {
+	if err := p.loadCredentials(ctx); err != nil {
 		return err
 	}
 
-	if err := p.loadConnection(ctx, s, swanConnOptsResp.AttachNodeAddr,
+	if err := p.loadConnection(ctx, swanConnOptsResp.AttachNodeAddr,
 		swanConnOptsResp.LocalSwanIdentity, swanConnOptsResp.RemoteSwanIdentity); err != nil {
 		return err
 	}
 
-	if err := p.initiateTunnel(ctx, s, "pop"); err != nil {
+	if err := p.swanClient.InitiateTunnel(ctx, "pop"); err != nil {
 		return err
 	}
+
+	// Handles the RESYNC event when the controller restarts
+	go p.setupResyncWatch(ctx)
 
 	go func() {
 		err := p.reconciler.Start(ctx)
@@ -213,6 +183,88 @@ func (p *Portal) Run(ctx context.Context) error {
 	<-ctx.Done()
 
 	return p.shutdown(ctx)
+}
+
+func (p *Portal) setupResyncWatch(ctx context.Context) {
+	_, _ = p.js.Conn().Subscribe(controlapi.SubjectControllerCPETunnelResync, func(msg *nats.Msg) {
+		sas, err := p.swanClient.GetSAs(ctx)
+		if err != nil {
+			p.logger.ErrorContext(ctx, "failed to get SAS info", log.Err(err))
+		}
+
+		// Loop through the list of IKE_SA ( for portal it's supposed to be one)
+		for _, ikeSA := range sas {
+			var ifID uint32
+
+			for _, childSA := range ikeSA.ChildSAs {
+				if ikeSA.State != "ESTABLISHED" || childSA.State != "INSTALLED" {
+					p.logger.ErrorContext(ctx, "child-updown: invalid state", log.PortalID(p.config.PortalID))
+					continue
+				}
+
+				childIfID, err := childSA.IfID()
+				if err != nil {
+					p.logger.ErrorContext(ctx, "failed to parse IfID into uint32", log.Err(err))
+					continue
+				}
+
+				ifID = childIfID
+			}
+
+			if ifID == 0 {
+				continue
+			}
+
+			err := p.sendCPETunnelUpdate(ifID, ctx)
+			if err != nil {
+				p.logger.ErrorContext(ctx, "failed to send CPETunnelUpdate", log.Err(err))
+				continue
+			}
+
+		}
+		if err := msg.Ack(); err != nil {
+			p.logger.ErrorContext(ctx, "failed to ack message", log.Err(err))
+		}
+	})
+
+	<-ctx.Done()
+}
+
+func (p *Portal) sendCPETunnelUpdate(ifID uint32, ctx context.Context) error {
+	req := controlapi.CPETunnelUpdateRequest{
+		PortalID: p.config.PortalID,
+		IfID:     ifID,
+	}
+
+	data, err := json.Marshal(req)
+	if err != nil {
+		p.logger.ErrorContext(ctx, "failed to marshal cpe tunnel update request", log.Err(err))
+		return err
+	}
+
+	respData, err := p.js.Conn().Request(controlapi.SubjectCPETunnelUpdate, data, 5*time.Second)
+
+	if err != nil {
+		p.logger.ErrorContext(ctx, "failed to publish cpe tunnel update request", log.Err(err))
+		return err
+	}
+
+	p.logger.InfoContext(ctx, "cpe tunnel update request published",
+		log.PortalID(p.config.PortalID),
+		slog.Int("if_id", int(ifID)),
+	)
+
+	var resp controlapi.TunnelUpdateResponse
+	if err := json.Unmarshal(respData.Data, &resp); err != nil {
+		p.logger.ErrorContext(ctx, "failed to unmarshal cpe tunnel update response", log.Err(err))
+		return err
+	}
+
+	if !resp.Ok {
+		p.logger.ErrorContext(ctx, "cpe tunnel update failed")
+		return err
+	}
+	return nil
 }
 
 func (p *Portal) shutdown(ctx context.Context) error {

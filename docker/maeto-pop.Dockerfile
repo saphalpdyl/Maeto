@@ -26,7 +26,7 @@ RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache
 # PoP node: FRR for IS-IS + SRv6, strongSwan for customer IPsec termination.
 FROM quay.io/frrouting/frr:10.6.0
 
-RUN apk add --no-cache strongswan nftables supervisor tcpdump
+RUN apk add --no-cache strongswan nftables supervisor tcpdump mandoc man-pages
 
 RUN mkdir -p /var/log/supervisor
 RUN mkdir -p /var/log/maeto

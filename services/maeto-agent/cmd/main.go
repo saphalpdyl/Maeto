@@ -8,9 +8,12 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
+	"github.com/avast/retry-go"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
+	"github.com/saphalpdyl/maeto/libs/swan"
 
 	"github.com/saphalpdyl/maeto/libs/dataplane"
 	"github.com/saphalpdyl/maeto/libs/observability"
@@ -92,6 +95,32 @@ func main() {
 	if err != nil {
 		logger.ErrorContext(ctx, "failed to create linux dataplane", log.Err(err))
 	}
-	agent := maetoagent.NewAgent(node, js, logger.With(log.Domain(log.DomainAgentLifecycle)), linuxDataplane)
+
+	var swanClient *swan.Client
+	err = retry.Do(func() error {
+		swanClient, err = swan.NewClient(logger.With(log.Domain(log.DomainAgentLifecycle)))
+		if err != nil {
+			logger.ErrorContext(ctx, "failed to create swan client", log.Err(err))
+			return err
+		}
+
+		return nil
+	},
+		retry.Attempts(3),
+		retry.DelayType(retry.BackOffDelay),
+		retry.Delay(2*time.Second),
+	)
+
+	if err != nil {
+		os.Exit(1)
+	}
+
+	agent := maetoagent.NewAgent(
+		node,
+		js,
+		logger.With(log.Domain(log.DomainAgentLifecycle)),
+		linuxDataplane,
+		swanClient,
+	)
 	agent.Run(ctx)
 }

@@ -4,6 +4,8 @@ const SubjectPortalAuthIdentity = "maeto.control.portal.auth.identity"
 const SubjectHealthReady = "maeto.control.health.ready"
 const SubjectPETunnelUpdate = "maeto.control.report.pe.tunnel_update"
 const SubjectCPETunnelUpdate = "maeto.control.report.cpe.tunnel_update"
+const SubjectControllerPETunnelResync = "maeto.control.request.pe.tunnel_resync"
+const SubjectControllerCPETunnelResync = "maeto.control.request.cpe.tunnel_resync"
 
 type PortalAuthEndpointRequest struct {
 	PortalID string `json:"portal_id"`

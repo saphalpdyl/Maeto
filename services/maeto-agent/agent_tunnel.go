@@ -11,7 +11,6 @@ import (
 	"github.com/saphalpdyl/maeto/libs/controlapi"
 	"github.com/saphalpdyl/maeto/libs/swan"
 	"github.com/saphalpdyl/maeto/services/maeto-agent/log"
-	"github.com/strongswan/govici/vici"
 )
 
 func (a *Agent) watchTunnelUpdates(ctx context.Context, eventChan <-chan *swan.UpDownEvent) {
@@ -29,108 +28,70 @@ func (a *Agent) watchTunnelUpdates(ctx context.Context, eventChan <-chan *swan.U
 				continue
 			}
 
-			var cSa swan.ChildSA
-			for _, v := range e.IKE.ChildSAs {
-				cSa = v
-			}
-
-			// X.509 cert of CPE to get SAN for portalID
-			cert, err := e.RemoteCertificate()
+			err := a.sendPETunnelUpdate(ctx, e.IKE)
 			if err != nil {
-				a.logger.ErrorContext(ctx, "failed to get remote certificate", log.Err(err))
+				a.logger.ErrorContext(ctx, fmt.Sprintf("child-updown: failed to send PETunnel update: %v", err))
 				continue
 			}
 
-			ifID, err := cSa.IfID()
-			if err != nil {
-				a.logger.ErrorContext(ctx, "invalid child sa if_id", log.Err(err))
-				continue
-			}
-
-			// Assume a <portal_id>.cpe.maeto.net format
-			// *.cpe.maeto.net is already verified by strongswan, so we can trust the SAN
-			cpeSAN := cert.DNSNames[0]
-			sanParts := strings.Split(cpeSAN, ".")
-			if len(sanParts) <= 0 {
-				a.logger.ErrorContext(ctx, "invalid SAN format", slog.String("san", cpeSAN))
-				continue
-			}
-
-			portalID := sanParts[0]
-
-			a.logger.InfoContext(ctx, "got child updown event SAN", slog.Any("san", cpeSAN), slog.Any("if_id", ifID), slog.Any("portal_id", portalID))
-
-			// Push the connection event to the control plane
-			// 	The control plane then pushes to ServiceRegistry
-			// 	and delivers a new NodeIntent to reconcile on.
-			// So connection -> push_to_controller -> new intent -> reconcile -> FIB updated
-			var req controlapi.PETunnelUpdateRequest
-			req.PortalID = portalID
-			req.IfID = ifID
-			req.NodeID = a.node.ID
-
-			data, err := json.Marshal(req)
-			if err != nil {
-				a.logger.ErrorContext(ctx, "failed to marshal request", log.Err(err))
-				continue
-			}
-
-			resp, err := a.js.Conn().Request(controlapi.SubjectPETunnelUpdate, data, 5*time.Second)
-			if err != nil {
-				a.logger.ErrorContext(ctx, "failed to send push tunnel initiate request", log.Err(err))
-				continue
-			}
-
-			var pushResp controlapi.TunnelUpdateResponse
-			if err := json.Unmarshal(resp.Data, &pushResp); err != nil {
-				a.logger.ErrorContext(ctx, "failed to unmarshal push tunnel initiate response", log.Err(err))
-				continue
-			}
-
-			if !pushResp.Ok {
-				a.logger.ErrorContext(ctx, "push tunnel initiate request failed", slog.String("portal_id", portalID))
-				continue
-			}
-
-			a.logger.InfoContext(ctx, "successfully sent req", slog.Any("data", req))
+			a.logger.InfoContext(ctx, "successfully sent req")
 		}
 	}
 }
 
-func (a *Agent) watchEvents(ctx context.Context, s *vici.Session) (<-chan *swan.UpDownEvent, error) {
-	viciEventChan := make(chan vici.Event, 16)
-	s.NotifyEvents(viciEventChan)
-
-	eventChan := make(chan *swan.UpDownEvent, 32)
-
-	if err := s.Subscribe("ike-updown", "child-updown"); err != nil {
-		a.logger.WarnContext(ctx, "ike-updown EVENT failed to subscribe", log.Err(err))
-		return nil, err
+func (a *Agent) sendPETunnelUpdate(
+	ctx context.Context,
+	ikeSA swan.IKESA,
+) error {
+	var childSA swan.ChildSA
+	for _, v := range ikeSA.ChildSAs {
+		childSA = v
 	}
 
-	go func() {
-		defer s.StopEvents(viciEventChan)
+	if ikeSA.State != "ESTABLISHED" || childSA.State != "INSTALLED" {
+		return fmt.Errorf("invalid state IKE_SA(%s) and CHILD_SA(%s)", ikeSA.State, childSA.State)
+	}
 
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case e, ok := <-viciEventChan:
-				if !ok {
-					a.logger.InfoContext(ctx, "ike/child even not ok")
-					continue
-				}
+	ifID, err := childSA.IfID()
+	if err != nil {
+		return fmt.Errorf("invalid child sa if_id: %w", err)
+	}
 
-				parsedEvent, err := swan.ParseUpDownEvent(e.Name, e.Message)
-				if err != nil {
-					a.logger.ErrorContext(ctx, "failed to parse vici updown event", log.Err(err))
-					continue
-				}
+	portalID, found := strings.CutSuffix(ikeSA.RemoteID, ".cpe.maeto.net")
+	if !found || portalID == "" || strings.Contains(portalID, ".") {
+		return fmt.Errorf("remote-id %q is not <portal_id>.cpe.maeto.net", ikeSA.RemoteID)
+	}
 
-				eventChan <- parsedEvent
-			}
-		}
-	}()
+	// Push the connection event to the control plane
+	// 	The control plane then pushes to ServiceRegistry
+	// 	and delivers a new NodeIntent to reconcile on.
+	// So connection -> push_to_controller -> new intent -> reconcile -> FIB updated
+	var req controlapi.PETunnelUpdateRequest
+	req.PortalID = portalID
+	req.IfID = ifID
+	req.NodeID = a.node.ID
 
-	return eventChan, nil
+	data, err := json.Marshal(req)
+	if err != nil {
+		a.logger.ErrorContext(ctx, "failed to marshal request", log.Err(err))
+		return err
+	}
+
+	resp, err := a.js.Conn().Request(controlapi.SubjectPETunnelUpdate, data, 5*time.Second)
+	if err != nil {
+		a.logger.ErrorContext(ctx, "failed to send push tunnel initiate request", log.Err(err))
+		return err
+	}
+
+	var pushResp controlapi.TunnelUpdateResponse
+	if err := json.Unmarshal(resp.Data, &pushResp); err != nil {
+		a.logger.ErrorContext(ctx, "failed to unmarshal push tunnel initiate response", log.Err(err))
+		return err
+	}
+
+	if !pushResp.Ok {
+		a.logger.ErrorContext(ctx, "push tunnel initiate request failed", slog.String("portal_id", portalID))
+		return err
+	}
+	return nil
 }

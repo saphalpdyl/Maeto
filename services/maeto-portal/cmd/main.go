@@ -8,11 +8,14 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
+	"github.com/avast/retry-go"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/saphalpdyl/maeto/libs/dataplane"
 	"github.com/saphalpdyl/maeto/libs/observability"
+	"github.com/saphalpdyl/maeto/libs/swan"
 	maetoportal "github.com/saphalpdyl/maeto/services/maeto-portal"
 	"github.com/saphalpdyl/maeto/services/maeto-portal/log"
 )
@@ -77,12 +80,33 @@ func main() {
 	if err != nil {
 		logger.ErrorContext(ctx, "failed to create linux dataplane", log.Err(err))
 	}
+
+	var swanClient *swan.Client
+	err = retry.Do(func() error {
+		swanClient, err = swan.NewClient(logger.With(log.Domain(log.DomainPortalLifecycle)))
+		if err != nil {
+			logger.ErrorContext(ctx, "failed to create swan client", log.Err(err))
+			return err
+		}
+
+		return nil
+	},
+		retry.Attempts(3),
+		retry.DelayType(retry.BackOffDelay),
+		retry.Delay(2*time.Second),
+	)
+
+	if err != nil {
+		os.Exit(1)
+	}
+
 	portal := maetoportal.NewPortal(
 		serviceInstanceId,
 		js,
 		config,
 		linuxDataplane,
 		logger.With(log.Domain(log.DomainPortalLifecycle)),
+		swanClient,
 	)
 
 	if err := portal.Run(ctx); err != nil {
