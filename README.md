@@ -1,7 +1,13 @@
-![ada](docs/images/maeto-logo-colorful.svg)
+<img src="docs/images/maeto-logo-colorful.svg" alt="maeto" width="210">
+
 ---
 
-Maeto is a SRv6-based SD-WAN control plane. Computes directional least-cost paths across a PoP mesh and programs the kernel dataplane. It's a hobby project.
+Maeto is a SRv6-based SD-WAN platform that provides L3VPN services and routes customer traffic intelligently based on measured latency, jitter, loss and classes. It features:
+- a centralized controller (`control-plane`) for computing traffic engineered paths for customers of different tiers with different SLAs and classes, 
+- provider daemons (`maeto-agent`) that manage dataplane state for provider-owned routers, and 
+- CPE edge daemons (`maeto-portal`) that manage tunnel states towards the provider edge. 
+
+It's a hobby project that runs Docker containers w/ network namespaces to emulate routers through Containerlab.
 
 > [!NOTE]
 > The repository on GitHub is a mirror maintained for visibility. Issue tracking and active development are done on [Forgejo](https://git.saphal.me/saphalpdyl/Maeto).
@@ -9,66 +15,125 @@ Maeto is a SRv6-based SD-WAN control plane. Computes directional least-cost path
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Tag](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fgit.saphal.me%2Fapi%2Fv1%2Frepos%2Fsaphalpdyl%2Fmaeto%2Ftags%3Flimit%3D1&query=%24%5B0%5D.name&label=tag)](https://git.saphal.me/saphalpdyl/Maeto/tags)
 
-## Contents
-- [](#)
-- [Contents](#contents)
-- [Architecture](#architecture)
-  - [Reconciliation](#reconciliation)
-  - [Measurement](#measurement)
-  - [Bandwidth reservation](#bandwidth-reservation)
-  - [CPE onboarding](#cpe-onboarding)
-  - [Topology](#topology)
-- [Running it](#running-it)
-- [Layout](#layout)
-- [Writeups](#writeups)
-- [Status](#status)
-- [Screenshots](#screenshots)
+<img src="docs/images/screenshots/maeto-dashboard-showing-links.png" alt="Link View" width="100%">
+
+---
 
 ## Architecture
-This is the conceptual architecture of the system excluding implementation features. v1 uses NATS w/ custom structs instead of PCEP. The agent used to shell out for linux commands; it talks Netlink now.
+Distributed architecture of Maeto. The design evolved from shelling out to netlink-based communication. It intends to be compatible with a VPP backend, which is a TO-DO.
 
-![Conceptual Architecture of Maeto](/docs/images/arch/basic_arch.svg)
+<img src="docs/images/arch/basic_arch.svg" alt="Conceptual Architecture of Maeto" width="100%">
 
-### Reconciliation
-Everything that touches state is level-triggered. The agent renders what it wants from the intent, reads what the kernel actually has over Netlink, diffs the two as typed resources, and applies the difference. It never applies deltas. A dropped message, a crashed agent, or someone poking `ip -6 route` by hand all converge on the next pass.
+### Controller
+The controller, or control plane, is the centralized brain of Maeto. It features the Path Computation Element (PCE, [RFC 5440](https://www.rfc-editor.org/info/rfc5440/)), 
+tenant management, topology database, telemetry collection, tunnel management, and the cost graph for path computation. 
 
-Each resource carries its own identity and its own comparison. `ID()` has to be exactly as discriminating as the dataplane's key for the same object. Coarser and it thrashes; finer and it never converges, because the model believes two things can coexist where the kernel only holds one.
+Although the Path Computation Element (PCE) derives the design heavily from [RFC 5440](https://www.rfc-editor.org/info/rfc5440/), 
+it does implement the PCEP (protocol) itself. A few reasons:
 
-The agent reads and writes only routes tagged with its own protocol numbers, so it never fights FRR and will not touch anything it did not install.
+- PCEP follows a edge-triggered reconciliation design i.e. it applies deltas/changes as they arrive. While this is simpler to make sense of, it has issues during network parition events where a delta packet being lost completely desyncs agent.
+- PCEP support for FRR's `pathd` exists for SR-MPLS, but not for SRv6.
 
-Intent moves the same way. Agents watch a NATS KV key and get the current value rather than a stream of changes, so a restart needs no replay.
+Instead, the controller heavily derives from Kubernetes-style level-triggered reconciliation. Explained [here](#level-triggered-reconciliation).
 
-### Measurement
-Probes are one-way. The sender does not ask for a reply, the reflector timestamps what it receives and publishes its own result. Both directions of a link are measured separately.
+Currently, the controller supports weighted multi-cost objectives to calculate paths. Currently, latency, jitter, and observed loss are supported as objectives with bandwidth supported as the constraint.
+Path computation is yet to mature. It assumes flows to be unsplittable and reroutes are bang-bang instead of drain-and-switch. It does not support constraints such as Shared Risk Link Group(SRLG), affinity, hop counts etc.
 
-The generator builds the physical fabric and the control plane measures it. Propagation delay is applied with netem and deliberately never handed to the controller. If the controller wants to know how far apart two PoPs are, it has to find out.
+#### FRR
+Maeto uses FRR's `isisd` with its SRv6 extensions, to distribute reachability info and SR locators throughout the network. 
+Initially, I planned to use `pathd` to drive the dataplane installation, but I pivoted given the development was thin for SRv6 (SR-MPLS was supported).
 
-Costs are continuous and shortest-path over continuous costs flaps. The PCE will not move a path unless the alternative is at least 10% cheaper, and it records the near-misses too.
+Maeto runs FRR 10.6.0.
 
-### Bandwidth reservation
-![Bandwidth reservation hose model](docs/images/arch/hose-model.png)
+### Provider & CPE Agent
+The provider agents (`maeto-agent`) and CPE agent (`maeto-portal`) are daemons that run on Linux-based routers in Maeto. 
+The daemons accept high-level intent from the controller and reconcile it against their dataplane state. Provider agents 
+are equivalent to Path Computation Client (PCC) as per RFC 5440.
 
-Sites reserve bandwidth, not pairs of sites. A tenant's sites at the same PoP add up to one rate for that PoP, so PE1 above sends and receives at most 500 + 200 = 700 Mbps.
+Portals are gateways installed in the customer premises edge. They are responsible for creating IPSec tunnels towards the 
+Provider Point of Presence (PoP) of choice. They are also responsible for out-of-band device onboarding. The tunnel is driven by 
+[strongSwan](https://strongswan.org/) through its VICI socket. 
 
-The PCE books a hose bound on every directed edge a tenant's paths cross: the smaller of what the PoPs on one side can send and what the PoPs on the other side can receive, each PoP counted once. On the shared path out of PE1 that is min(700, 600 + 800) = 700 Mbps. Booking each pair on its own would reserve 600 + 700 = 1300 Mbps for traffic that can never exceed 700.
+<img src="docs/images/screenshots/cpe-pe-conn-architecture.png" alt="CPE to PE tunnel architecture" width="100%">
 
-Each direction of a link is its own edge with its own capacity, so the way back into PE1 gets its own bound. Traffic classes get a bound each and add up. A path is admitted only if the sum over tenants stays under 95% of every edge it crosses. Paths are computed per pair, so the bound is an upper bound rather than exact, which errs on the safe side.
+## Features
+These are a collection of the interesting features of Maeto that I gathered while developing the platform.
 
-### CPE onboarding
-![How a CPE reaches its ingress PoP](docs/images/screenshots/cpe-pe-conn-architecture.png)
+### Level-triggered reconciliation
+Everything that touches state is level-triggered. The reconciler goes through three steps towards reconciliation.
+1. **PLAN** This phase collects the desired high-level intent as well as the current dataplane state.
+2. **RENDERING** The controller always send dataplane-agnostic high-level intent to the agents. It should never include details that apply to a specific dataplane. This phase is where high-level intent is "rendered" into domain-objects. Similarly, the reconciler renders dataplane state to domain-objects to compare with the desired state.
+3. **DIFF** Each domain object (VRF,XFRM,Route,SRRoutes) has a `ID()` method that must be exactly discriminating as the dataplane's key for the same object fetched from it. The reconciler diffs the two rendered states and get a list of objects to remove and add. Currently, the reconciler only support `add`, `remove`, and `remove-and-add` operation. Replace and in-place edit operation require finer comparison through the `CompareTo(...)` method which exists, but is not supported.
+4. **APPLY** This phase is where the dataplane state is applied. For Linux, it is done through Netlink.
 
-Customer traffic rides an IPsec tunnel from the CPE to its ingress PoP, across whatever ISP or transit sits in between. `portald` on the CPE brings it up, strongSwan carries it, IKEv2 with mutual X.509.
+### Bandwidth Reservation
+Maeto supports bandwidth as a constraint i.e. the physical capacity of the link is involved in path computation. 
+Naive bandwidth reservation leads to capacity being wasted due to undersubscription. Initially, Maeto implemented the pipe model for bandwidth reservation.
 
-Certificates are the identity. Each CPE holds a portal ID that works like an LDevID, and its cert is issued off the maeto CA against `<portal-id>.cpe.maeto.net`. The PoP presents `<node>.maeto.net`. Neither side trusts an address, they trust the certificate, so a CPE can move networks and still come up.
+<img src="docs/images/screenshots/bandwidth_reservation_pipe_model.svg" alt="Pipe model bandwidth reservation" width="100%">
 
-The control path never goes through the tunnel. `portald` asks the controller over NATS who it is and where it attaches, and gets back its own strongSwan identity, the PoP's, the PoP's access address, and its site prefix. That is out-of-band on purpose: the tunnel cannot bootstrap itself.
+The source-sink hose model does not cause undersubscription since it allocated bandwidth for the minimum bandwidth contracted between the designated sources (one or more customer site) and designated sinks.
 
-Once the SA is up the PoP lands the traffic on an xfrm interface inside the tenant VRF, which is where the SRv6 side picks it up.
+<img src="docs/images/screenshots/bandwidth_reservation_hose_model.svg" alt="Hose model bandwidth reservation" width="100%">
 
-### Topology
-The project ships with a default eight POP topology to test on. `PopX` represent the POP (P/PE Router). The `agent` runs on these.
-`CpeX` represent he Customer Premises Equipment(CPE). The `portal` daemon runs on CPEs. `Transit` represent the unowned middle-mile. `Host` represent devices connected to the portal/CPE.
-![Example topology](docs/images/screenshots/topology.png)
+### Path Computation
+The controller runs constrainted shortes path first algorithm on a pruned topology. A demand matrix is produced from different
+customers, their tiers (gold, silver) and classes (voice, streaming, bulk/default). We run greedy CSPF on the graph ordering
+customers by their tiers and tie-breaking on their tenant IDs to make the ordering deterministic and prevent path churn. 
+
+Before a path of a certain color ([RFC 9256](https://datatracker.ietf.org/doc/rfc9256/)), or class, is computed for, we calculate the required bandwidth for that class of that tenant and prune
+the links which do not meet the minimum bandwidth criteria. The path computation moves on as usual.
+
+The computed path is compared with the previous path with updated costs. Reroute is forbidden with:
+- **HYSTERESIS** The new path has to be at least 10% better in terms of cost than the old path. This prevents reroutes on small benefits.
+- **HOLD-DOWN TIMERS** A reroute holds that path down for some time, no matter how much better the new path is. The exceptions to this are when a link in the current path goes down, or SLA is breached (future implementation).
+
+
+### Active telemetry through STAMP
+Instead of ICMP ping, Maeto agents run unidirectional stateless Simple Two-Way Active Measurement Protocol (STAMP) sessions between two PoPs. [libs/stamp](libs/stamp) implements the [RFC 8762](https://www.rfc-editor.org/info/rfc8762/) 
+with Segment Routing Extension [RFC 9503](https://www.rfc-editor.org/info/rfc9503/), and custom Maeto-specific Container TLVs to enable the unidirectional sessions itself. 
+
+The reflector in each PoP collects the telemetry data from its peers, reads the TelemetryKey inside Maeto-Container TLV and forwards to NATS based on the key. 
+The controller collects these telmetry, and regroups them based on the source. Then after, jitter and packet loss are derived from the latency and sequence number of the STAMP packet. 
+
+The collected telemetry is smoothed through an EWMA (Exponentially Weighted Moving Average) and stored as the cost for the given link
+for the given objective. During path computation the costs in different units and scale are normalized and scaled using reference "considered bad"
+values for each objective.
+
+$$C(l,\sigma^2,p) = w_l \frac{l}{l_{ref}} + w_{\sigma^2} \frac{\sigma^2}{\sigma^2_{ref}} + w_p \frac{-\ln(1-p)}{-\ln(1-p_{ref})}$$
+
+### Realistic traffic with tfsim
+A control plane that reroutes on measured cost needs traffic worth reacting to. `clab/tfsim` drives the lab with iperf3 sessions
+shaped like real customers. Sessions arrive as a Poisson process whose rate follows a business day, quiet overnight and busiest
+mid-morning and mid-afternoon, with a slow log-normal drift on top that produces busy and quiet spells lasting about a minute.
+
+Transfer sizes are Pareto or log-normal and call lengths are log-normal, so a handful of elephant flows carry most of the bytes.
+Over a long run the top 10% of sessions carry roughly 70% of them. Each session is one of web, bulk, backup, video streaming,
+conference or voice, with its own size, rate, protocol and DSCP marking, which gives the traffic classes something real to steer.
+A tenant's largest site acts as its data centre, so content flows out to the branches, backups flow back in and calls run both
+ways at different rates. When the flow table is full, new sessions are turned away the way a busy trunk drops a call.
+
+```shell
+make tfsim-random # Runs random traffic forever
+make tfsim # Runs scene1.yml 
+```
+
+### Breaking the testbed on purpose with maeto-sim
+The demo is about watching the control plane react, so visitors can break the network themselves from the pane's Simulator page.
+`services/maeto-sim` receives their commands over NATS, applies them inside the PoP containers and publishes its state to a KV
+bucket that the pane renders.
+
+A visitor can add delay, jitter, loss or a rate cap to a core link in either direction, or take the link down like a fiber cut.
+The generator already shapes every link at deploy time with `netem` delay feeding a `tbf` rate limit, and maeto-sim rebuilds that
+same chain with the fault added on top, so the base propagation delay and capacity return exactly when the fault clears. The page
+also offers one-click stories that each show one behaviour: a latency brownout on SEA–SFO, a fiber cut on LAX–DEN, a lossy span
+that only the loss measurement can catch, a flapping link that exercises the hold-down timer, and a rush hour that squeezes a
+corridor under customer traffic. Traffic scenarios can be started from the same page.
+
+Because the demo is public, every fault is bounded and temporary. Faults revert on their own after two minutes by default and ten
+at most, the size of each impairment is capped, only a few links can be faulted at once and no cut is allowed to isolate a PoP.
+One traffic scenario runs at a time and endless ones stop after 15 minutes. maeto-sim also resets the testbed whenever it starts,
+so a crash never leaves a fault behind.
 
 ## Running it
 VM-based local deployment requires [Vagrant](https://developer.hashicorp.com/vagrant) to be installed with the `libvirt` provider. Highly recommend running inside a VM due to strict dependencies and to prevent stale network namespaces/configuration ending up on the host.
@@ -82,6 +147,7 @@ make pki     # one-time CA, the generator signs PoP and CPE certs off it
 make ap      # generate the topology, build the images, deploy the lab
 make dev     # start the controller
 make fe      # maeto-pane
+make sim     # maeto-sim, the pane's Simulator page
 
 make clean   # to destroy the lab
 
@@ -102,7 +168,8 @@ services/maeto-agent    runs on each PoP, reconciles intent onto the kernel
 services/maeto-portal   runs on each CPE
 services/maeto-pane     phoenix liveview ui
 clab/generator          topology dsl -> containerlab, frr, addressing, link shaping
-clab/tfsim              custom dsl to inject faults deterministically and emulate scenarios
+clab/tfsim              customer-like traffic: random sessions or fixed scenarios over iperf3
+services/maeto-sim      fault injection (netem, link down), stories and tfsim runs for the pane
 ```
 
 ## Writeups
@@ -119,20 +186,24 @@ Done/In-progress:
 - maeto-pane: topology, per-link cost, and path changes with the edge whose cost caused them
 - Bandwidth-aware hose-modeled path computation
 - Passive telemetry collection
+- Loss and jitter are NOT seeded values anymore.
 
 Not yet:
 - BGP-LS defined topology instead of statically generated topology
 - Link and Node Utilization in Cost  Graph as logical links.
 - Flexible Bandwidth Reservation: CIR, PIR and best-effort traffic allocation
-- Loss and jitter are seeded values, only latency is measured
 - Hybrid: Fast greedy + Slow LP optimization with hold-down timer and partially moving traffic with observations as confirmation
 - Cost impact prediction before moving paths
 - Flowlet switching for elephant flows w/ eBPF for flow detection and switching itself.
 
 ## Screenshots 
-![Link View](docs/images/screenshots/maeto-dashboard-showing-links.png)
-![Screenshot of the Segment lists menu](docs/images/screenshots/maeto-dashboard-showing-segments.png)
-![Drilldown View](docs/images/screenshots/maeto-dashboard-showing-drilldown.png)
+<img src="docs/images/screenshots/maeto-dashboard-showing-links.png" alt="Link View" width="100%">
+
+<img src="docs/images/screenshots/maeto-dashboard-showing-segments.png" alt="Screenshot of the Segment lists menu" width="100%">
+
+<img src="docs/images/screenshots/maeto-dashboard-showing-drilldown.png" alt="Drilldown View" width="100%">
+
+<img src="docs/images/screenshots/maeto-dashboard-showing-simulator.png" alt="Simulator" width="100%">
 
 ---
 <img src="docs/images/maeto-logo-monochrome.svg" width="70" height="30" style="vertical-align: middle;"> by saphalpdyl
