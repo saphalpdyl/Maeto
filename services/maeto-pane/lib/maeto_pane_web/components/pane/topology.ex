@@ -15,7 +15,8 @@ defmodule MaetoPaneWeb.Pane.Topology do
   attr :sites_by_node, :map, required: true
   attr :overlay, :atom, required: true
   attr :overlays, :list, required: true
-  attr :trace, :map, required: true
+  attr :traces, :list, required: true
+  attr :classes, :list, required: true
   attr :selection, :any, required: true
   attr :ceiling, :any, required: true
 
@@ -78,9 +79,21 @@ defmodule MaetoPaneWeb.Pane.Topology do
             <span class="h-0.5 w-3.5 rounded-full bg-bad" />Down
           </span>
         <% end %>
-        <span :if={@overlay == :path and @trace.nodes != []} class="font-mono text-accent">
-          {Enum.join(@trace.nodes, " › ")}
-        </span>
+        <%= if @overlay == :path do %>
+          <span
+            :for={class <- @classes}
+            class={[
+              "flex items-center gap-1.5",
+              (@traces != [] and !traced?(@traces, class)) && "opacity-40"
+            ]}
+          >
+            <span class="h-[3px] w-3.5 rounded-full" style={"background: #{class_color(class.slot)}"} />
+            {class.name}
+            <span :for={trace <- traces_for(@traces, class)} class="font-mono text-faint">
+              {Enum.join(trace.nodes, " › ")}
+            </span>
+          </span>
+        <% end %>
       </footer>
     </section>
     """
@@ -91,7 +104,7 @@ defmodule MaetoPaneWeb.Pane.Topology do
       nodes: Enum.map(assigns.graph.nodes, &node_payload(&1, assigns.sites_by_node)),
       links: Enum.map(assigns.links, &link_payload/1),
       overlay: assigns.overlay,
-      trace: assigns.trace.nodes,
+      traces: Enum.map(assigns.traces, &%{nodes: &1.nodes, slot: &1.slot}),
       selection: selection_payload(assigns.selection),
       ceiling: assigns.ceiling
     })
@@ -122,6 +135,11 @@ defmodule MaetoPaneWeb.Pane.Topology do
       latency: link.latency
     }
   end
+
+  defp traced?(traces, class),
+    do: Enum.any?(traces, &(&1.slot == class.slot and &1.class == class.name))
+
+  defp traces_for(traces, class), do: Enum.filter(traces, &(&1.class == class.name))
 
   defp selection_payload({kind, id}), do: %{kind: kind, id: id}
   defp selection_payload(_selection), do: nil

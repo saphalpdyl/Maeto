@@ -94,6 +94,11 @@ defmodule MaetoPaneWeb.Pane.Inspector.LinkPanel do
         class="mt-scroll max-h-40 space-y-1 overflow-auto"
       >
         <li :for={path <- crossing(@computed, @selected)} class="flex items-baseline gap-2 text-xs">
+          <span
+            class="size-2 shrink-0 self-center rounded-full"
+            style={"background: #{class_color(path.slot)}"}
+            title={path.class}
+          />
           <span class="font-mono font-semibold">{path.source} &rarr; {path.dest}</span>
           <span class="truncate font-mono text-faint">{Enum.join(path.nodes, "›")}</span>
           <span class="ml-auto font-mono tabular-nums text-muted">{num(path.cost)}</span>

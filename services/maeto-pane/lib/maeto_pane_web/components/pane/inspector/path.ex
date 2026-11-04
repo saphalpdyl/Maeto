@@ -17,14 +17,14 @@ defmodule MaetoPaneWeb.Pane.Inspector.PathPanel do
         <h2 class="truncate text-sm font-semibold">
           {@selected.pe_name || @selected.pe} &rarr; {@selected.dest_name || @selected.dest || "?"}
         </h2>
-        <p class="mt-0.5 truncate text-xs text-muted">
-          {Enum.join(
-            Enum.reject(
-              [@selected.site && @selected.site.cpe, @selected.tenant, @selected.class],
-              &is_nil/1
-            ),
-            " · "
-          )}
+        <p class="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-muted">
+          <span class="truncate">
+            {Enum.join(
+              Enum.reject([@selected.site && @selected.site.cpe, @selected.tenant], &is_nil/1),
+              " · "
+            )} ·
+          </span>
+          <.class_tag color={@selected.slot} name={@selected.class} />
         </p>
       </div>
       <.esc />

@@ -20,7 +20,7 @@ const (
 	stampMaxLostPerSample = 200
 
 	// Number of samples to collect before the EWMA is considered converged
-	ewmaWarmupSamples = 30
+	ewmaWarmupSamples = 120
 
 	costDelayReferenceMs  = 10   // ms
 	costJitterReferenceMs = 5    // ms^2

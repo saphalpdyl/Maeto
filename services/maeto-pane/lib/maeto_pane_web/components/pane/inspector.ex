@@ -9,6 +9,7 @@ defmodule MaetoPaneWeb.Pane.Inspector do
   import MaetoPaneWeb.Pane.Inspector.Issues
   import MaetoPaneWeb.Pane.Inspector.LinkPanel
   import MaetoPaneWeb.Pane.Inspector.NodePanel
+  import MaetoPaneWeb.Pane.Inspector.PairPanel
   import MaetoPaneWeb.Pane.Inspector.PathPanel
   import MaetoPaneWeb.Pane.Inspector.SitePanel
 
@@ -22,6 +23,7 @@ defmodule MaetoPaneWeb.Pane.Inspector do
 
   def panel(%{selected: nil} = assigns), do: ~H"<.issues_panel issues={@issues} />"
   def panel(%{selected: %{kind: :path}} = assigns), do: ~H"<.path_panel selected={@selected} />"
+  def panel(%{selected: %{kind: :pair}} = assigns), do: ~H"<.pair_panel selected={@selected} />"
   def panel(%{selected: %{portal_id: _}} = assigns), do: ~H"<.site_panel selected={@selected} />"
 
   def panel(%{selected: %{kind: :node}} = assigns),

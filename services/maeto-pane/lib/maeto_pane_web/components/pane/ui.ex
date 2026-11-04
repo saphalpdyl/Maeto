@@ -128,6 +128,20 @@ defmodule MaetoPaneWeb.Pane.UI do
 
   defp pce_status_title(_readiness), do: "Every link's averages have settled; the PCE is routing."
 
+  def class_color(slot), do: "var(--mt-class-#{slot || 0})"
+
+  attr :color, :integer, default: 0
+  attr :name, :string, required: true
+  attr :class, :any, default: nil
+
+  def class_tag(assigns) do
+    ~H"""
+    <span class={["inline-flex items-center gap-1.5 whitespace-nowrap", @class]}>
+      <span class="size-2 shrink-0 rounded-full" style={"background: #{class_color(@color)}"} />{@name}
+    </span>
+    """
+  end
+
   attr :hops, :list, required: true
 
   def chain(assigns) do

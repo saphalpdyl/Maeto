@@ -14,7 +14,7 @@ defmodule MaetoPaneWeb.Pane.PathsTable do
   def paths_table(assigns) do
     ~H"""
     <table class="w-full min-w-[940px] border-collapse text-left text-[13px]">
-      <thead class="border-b border-line text-xs text-faint">
+      <thead class="sticky top-0 z-10 bg-surface text-xs text-faint shadow-[inset_0_-1px_0_var(--mt-line)]">
         <tr>
           <th class="px-4 py-2 font-normal">Towards</th>
           <th class="py-2 font-normal">Tenant</th>
@@ -53,7 +53,7 @@ defmodule MaetoPaneWeb.Pane.PathsTable do
             <span :if={row.site}>{row.site.cpe}</span>
             <span class="ml-1 font-mono text-[11px] text-faint tabular-nums">{row.tenant}</span>
           </td>
-          <td class="py-3 pr-4 whitespace-nowrap text-muted">{row.class}</td>
+          <td class="py-3 pr-4 text-muted"><.class_tag color={row.slot} name={row.class} /></td>
           <td class="max-w-[220px] truncate py-3 pr-3 font-mono text-xs text-muted">{row.prefix}</td>
           <td class="py-3 pr-3"><.chain hops={row.hops} /></td>
           <td class="py-3 text-right font-mono tabular-nums">{num(row.cost)}</td>

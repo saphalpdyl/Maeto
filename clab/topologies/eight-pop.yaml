@@ -29,12 +29,12 @@ classes:
     label: 2
     index: 1 # Greater the value, the more priority it has during path computation
     match: { dscp: [46] } # EF, RFC 4594 telephony
-    objective: { latency: 0.5, jitter: 0.5} # Represents the weight of cost dimension
+    objective: { latency: 0.4, jitter: 0.3, loss: 0.3} # Represents the weight of cost dimension
   streaming:
     label: 3
     index: 2
     match: { dscp: [34, 36, 38] } # AF4 High-assurance class for interactive video and streaming
-    objective: {latency: 0.2, jitter: 0.8}
+    objective: {latency: 0.2, jitter: 0.6, loss: 0.2}
 #  <class-name>:
 #    label: <color>
 #    index: <priority>  Higher value means higher priority

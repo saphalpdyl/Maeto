@@ -187,6 +187,12 @@
   --mt-dt46-ink: #4ade80;
   --mt-plot: #1c1c1c;
   --mt-hatch: #262626;
+  --mt-class-0: #3ecf8e;
+  --mt-class-1: #60a5fa;
+  --mt-class-2: #f472b6;
+  --mt-class-3: #22d3ee;
+  --mt-class-4: #fb923c;
+  --mt-class-5: #c084fc;
 }
 
 [data-theme="light"] {
@@ -223,6 +229,12 @@
   --mt-dt46-ink: oklch(0.42 0.12 150);
   --mt-plot: #fcfcfc;
   --mt-hatch: #f1f2f48e;
+  --mt-class-0: oklch(0.62 0.15 150);
+  --mt-class-1: oklch(0.55 0.17 260);
+  --mt-class-2: oklch(0.6 0.2 350);
+  --mt-class-3: oklch(0.62 0.12 210);
+  --mt-class-4: oklch(0.66 0.17 50);
+  --mt-class-5: oklch(0.56 0.2 300);
 }
 
 body {

@@ -9,6 +9,7 @@ defmodule MaetoPane.Pane.Paths do
   import Bitwise
 
   @default_label 0
+  @class_slots 6
 
   # the agent puts a class's routes in table color<<24 | vrf table, and color 0
   # in the vrf table itself, so a table id carries both the tenant and the class
@@ -36,6 +37,7 @@ defmodule MaetoPane.Pane.Paths do
   def computed(snapshot) do
     control = Map.get(snapshot, :control) || %{}
     names = class_names(control)
+    slots = class_slots(control)
 
     (control["paths"] || [])
     |> Enum.map(fn path ->
@@ -45,6 +47,7 @@ defmodule MaetoPane.Pane.Paths do
         dest: path["dest"],
         label: path["label"],
         class: class_name(names, path["label"]),
+        slot: class_slot(slots, path["label"]),
         nodes: path["nodes"] || [],
         edges: path["edges"] || [],
         cost: path["cost"],
@@ -62,6 +65,7 @@ defmodule MaetoPane.Pane.Paths do
   def changes(snapshot) do
     control = Map.get(snapshot, :control) || %{}
     names = class_names(control)
+    slots = class_slots(control)
 
     (control["path_changes"] || [])
     |> Enum.map(fn change ->
@@ -75,6 +79,7 @@ defmodule MaetoPane.Pane.Paths do
         dst: change["dst"],
         label: change["label"],
         class: class_name(names, change["label"]),
+        slot: class_slot(slots, change["label"]),
         kind: change["kind"],
         from_nodes: from["nodes"] || [],
         to_nodes: to["nodes"] || [],
@@ -100,8 +105,69 @@ defmodule MaetoPane.Pane.Paths do
     Map.new(computed, fn path -> {{path.tenant, path.source, path.dest, path.label}, path} end)
   end
 
+  @doc """
+  The tenant site pairs the PCE computed paths for, each carrying one path per
+  class it steers.
+  """
+  def pairs(computed) do
+    computed
+    |> Enum.group_by(&pair_key/1)
+    |> Enum.map(fn {key, paths} ->
+      first = hd(paths)
+
+      %{
+        key: key,
+        tenant: first.tenant,
+        source: first.source,
+        dest: first.dest,
+        paths: Enum.sort_by(paths, &{&1.slot, &1.label})
+      }
+    end)
+    |> Enum.sort_by(&{&1.source, &1.dest, &1.tenant})
+  end
+
+  def pair_key(path), do: "#{path.tenant}|#{path.source}|#{path.dest}"
+
+  def select_pair(pairs, key), do: Enum.find(pairs, &(&1.key == key))
+
+  @doc """
+  Every class the controller publishes, with the color slot the pane draws it in.
+  The default class is always present, even from a controller that publishes none.
+  """
+  def classes(snapshot) do
+    control = Map.get(snapshot, :control) || %{}
+    slots = class_slots(control)
+
+    published =
+      Enum.map(control["classes"] || [], fn class ->
+        %{label: class["label"], name: class["name"], slot: class_slot(slots, class["label"])}
+      end)
+
+    if Enum.any?(published, &(&1.label == @default_label)) do
+      Enum.sort_by(published, &{&1.slot, &1.label})
+    else
+      [
+        %{label: @default_label, name: "default", slot: 0}
+        | Enum.sort_by(published, &{&1.slot, &1.label})
+      ]
+    end
+  end
+
   defp class_names(control) do
     Map.new(control["classes"] || [], &{&1["label"], &1["name"]})
+  end
+
+  defp class_slots(control) do
+    Map.new(control["classes"] || [], &{&1["label"], &1["index"]})
+  end
+
+  # the class index is stable across restarts, so a class keeps its color
+  defp class_slot(slots, label) do
+    case Map.fetch(slots, label) do
+      {:ok, index} when is_integer(index) -> rem(index, @class_slots)
+      _ when label in [0, nil] -> 0
+      _ -> rem(label, @class_slots)
+    end
   end
 
   @doc """
@@ -129,7 +195,8 @@ defmodule MaetoPane.Pane.Paths do
     locators = index(snapshot)
     sites = sites(snapshot)
     costs = snapshot |> computed() |> computed_index()
-    names = class_names(Map.get(snapshot, :control) || %{})
+    control = Map.get(snapshot, :control) || %{}
+    names = %{names: class_names(control), slots: class_slots(control)}
 
     (Map.keys(intents) ++ Map.keys(states))
     |> Enum.uniq()
@@ -257,7 +324,8 @@ defmodule MaetoPane.Pane.Paths do
       tenant: tenant,
       prefix: prefix,
       color: color,
-      class: class_name(names, color),
+      class: class_name(names.names, color),
+      slot: class_slot(names.slots, color),
       table: first_of([want, got], :table, sides.table),
       dest: egress.node,
       dest_name: egress.node_name,

@@ -32,8 +32,9 @@ defmodule MaetoPaneWeb.Pane.ChangesTable do
           <td class="px-4 py-2.5 font-mono text-xs whitespace-nowrap text-muted">
             {clock(change.at)}
           </td>
-          <td class="py-2.5 font-mono font-medium whitespace-nowrap text-accent">
-            {change.src} &rarr; {change.dst}
+          <td class="py-2.5 whitespace-nowrap">
+            <span class="font-mono font-medium text-accent">{change.src} &rarr; {change.dst}</span>
+            <.class_tag color={change.slot} name={change.class} class="ml-2 text-xs text-muted" />
           </td>
           <td class="py-2.5 font-mono text-xs text-muted">
             <.pill tone={kind_tone(change.kind)}>{change.kind}</.pill>

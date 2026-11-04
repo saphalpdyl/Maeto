@@ -20,6 +20,8 @@ defmodule MaetoPaneWeb.PaneLive do
 
   import MaetoPaneWeb.Pane.ChangesTable
   import MaetoPaneWeb.Pane.ComputedTable
+
+  alias MaetoPaneWeb.Pane.ComputedTable
   import MaetoPaneWeb.Pane.Inspector
   import MaetoPaneWeb.Pane.LinksTable
   import MaetoPaneWeb.Pane.Nav
@@ -47,6 +49,7 @@ defmodule MaetoPaneWeb.PaneLive do
     {:ok,
      socket
      |> assign(:selection, nil)
+     |> assign(:expanded, MapSet.new())
      |> assign(:link_stats, nil)
      |> assign(:section, :paths)
      |> assign(:overlay, :health)
@@ -73,10 +76,10 @@ defmodule MaetoPaneWeb.PaneLive do
 
   @impl true
   def handle_event("select", %{"kind" => kind, "id" => id}, socket)
-      when kind in ~w(node link path site) do
-    # a segment list is what the path overlay exists to draw, so reach for it
+      when kind in ~w(node link path site pair computed) do
+    # a path is what the path overlay exists to draw, so reach for it
     overlay =
-      if kind == "path" and socket.assigns.overlay == :health,
+      if kind in ~w(path pair computed) and socket.assigns.overlay == :health,
         do: :path,
         else: socket.assigns.overlay
 
@@ -85,7 +88,19 @@ defmodule MaetoPaneWeb.PaneLive do
      |> assign(:selection, {String.to_existing_atom(kind), id})
      |> assign(:overlay, overlay)
      |> resolve()
+     |> then(&expand(&1, &1.assigns.selected))
      |> load_link_stats()}
+  end
+
+  def handle_event("toggle_pair", %{"id" => key}, socket) do
+    expanded = socket.assigns.expanded
+
+    expanded =
+      if MapSet.member?(expanded, key),
+        do: MapSet.delete(expanded, key),
+        else: MapSet.put(expanded, key)
+
+    {:noreply, assign(socket, :expanded, expanded)}
   end
 
   def handle_event("clear", _params, socket) do
@@ -107,6 +122,7 @@ defmodule MaetoPaneWeb.PaneLive do
     sites = Paths.sites(snapshot)
     links = Links.from_graph(graph)
     computed = Paths.computed(snapshot)
+    classes = Paths.classes(snapshot)
     changes = Paths.changes(snapshot)
 
     socket
@@ -120,6 +136,8 @@ defmodule MaetoPaneWeb.PaneLive do
     |> assign(:sites, sites)
     |> assign(:links, links)
     |> assign(:computed, computed)
+    |> assign(:pairs, Paths.pairs(computed))
+    |> assign(:classes, classes)
     |> assign(:changes, changes)
     |> assign(:sites_by_node, Enum.frequencies_by(sites, & &1.attach))
     |> assign(:issues, Analysis.issues(nodes) ++ Analysis.drift(registry) ++ Paths.issues(rows))
@@ -162,24 +180,51 @@ defmodule MaetoPaneWeb.PaneLive do
   defp load_link_stats(socket), do: assign(socket, :link_stats, nil)
 
   defp resolve(socket) do
-    %{graph: graph, paths: paths, sites: sites} = socket.assigns
+    %{graph: graph, paths: paths, sites: sites, pairs: pairs} = socket.assigns
 
     selected =
       case socket.assigns.selection do
         {:path, id} -> Paths.select(paths, id)
         {:site, id} -> Enum.find(sites, &(&1.portal_id == id))
+        {:pair, key} -> select_pair(pairs, key, nil)
+        {:computed, id} -> select_computed(socket.assigns.computed, pairs, id)
         selection -> Analysis.select(graph, selection)
       end
 
     socket
     |> assign(:selected, selected)
-    |> assign(:trace, trace(selected))
+    |> assign(:traces, traces(selected))
   end
 
-  defp trace(%{kind: :path} = row),
-    do: %{nodes: Paths.chain(row), pairs: MapSet.new(Paths.hop_pairs(row))}
+  defp select_pair(pairs, key, focus) do
+    case Paths.select_pair(pairs, key) do
+      nil -> nil
+      pair -> pair |> Map.put(:kind, :pair) |> Map.put(:focus, focus)
+    end
+  end
 
-  defp trace(_selected), do: %{nodes: [], pairs: MapSet.new()}
+  defp select_computed(computed, pairs, id) do
+    case Enum.find(computed, &(ComputedTable.computed_key(&1) == id)) do
+      nil -> nil
+      path -> select_pair(pairs, Paths.pair_key(path), path.label)
+    end
+  end
+
+  defp expand(socket, %{kind: :pair, key: key}),
+    do: assign(socket, :expanded, MapSet.put(socket.assigns.expanded, key))
+
+  defp expand(socket, _selected), do: socket
+
+  defp traces(%{kind: :path} = row),
+    do: [%{nodes: Paths.chain(row), slot: row.slot, class: row.class}]
+
+  defp traces(%{kind: :pair, paths: paths, focus: focus}) do
+    for path <- paths, focus == nil or path.label == focus do
+      %{nodes: path.nodes, slot: path.slot, class: path.class}
+    end
+  end
+
+  defp traces(_selected), do: []
 
   defp facts(graph, links, sites, rows, computed, changes) do
     members = Enum.flat_map(graph.links, & &1.edges)
@@ -308,7 +353,8 @@ defmodule MaetoPaneWeb.PaneLive do
           sites_by_node={@sites_by_node}
           overlay={@overlay}
           overlays={@overlays}
-          trace={@trace}
+          traces={@traces}
+          classes={@classes}
           selection={@selection}
           ceiling={@ceiling}
         />
@@ -330,7 +376,10 @@ defmodule MaetoPaneWeb.PaneLive do
             </span>
           </div>
 
-          <div class="mt-scroll overflow-x-auto border-t border-line px-2">
+          <div class={[
+            "mt-scroll overflow-x-auto border-t border-line px-2",
+            @section in [:paths, :computed] && "max-h-[max(16rem,calc(100dvh-40rem))] overflow-y-auto"
+          ]}>
             <%= case @section do %>
               <% :changes -> %>
                 <.changes_table changes={@changes} selection={@selection} />
@@ -339,7 +388,12 @@ defmodule MaetoPaneWeb.PaneLive do
               <% :links -> %>
                 <.links_table links={@links} selection={@selection} />
               <% :computed -> %>
-                <.computed_table computed={@computed} programmed={@programmed_pairs} />
+                <.computed_table
+                  pairs={@pairs}
+                  programmed={@programmed_pairs}
+                  expanded={@expanded}
+                  selection={@selection}
+                />
               <% :sites -> %>
                 <.sites_table sites={@sites} selection={@selection} />
               <% :registry -> %>

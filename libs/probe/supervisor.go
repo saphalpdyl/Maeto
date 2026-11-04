@@ -162,7 +162,7 @@ func (s *Supervisor) Start(ctx context.Context) error {
 						IsSender:        true,
 						NoReply:         true,
 						DestPort:        DefaultSTAMPPort,
-						ProbeInterval:   2 * time.Second,
+						ProbeInterval:   500 * time.Millisecond,
 						EncapSegments:   []netip.Addr{},
 						EgressInterface: p.LocalInterface,
 					}

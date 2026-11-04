@@ -240,10 +240,56 @@ defmodule MaetoPaneWeb.PaneLivePathsTest do
     # A > B > C: the renderer is handed the chain and the overlay flips to path
     graph = graph_payload(rendered)
 
-    assert graph["trace"] == ["A", "B", "C"]
+    assert graph["traces"] == [%{"nodes" => ["A", "B", "C"], "slot" => 0}]
     assert graph["overlay"] == "path"
     assert graph["selection"] == %{"kind" => "path", "id" => "A|273|#{@prefix}|0"}
     assert rendered =~ "A › B › C"
+  end
+
+  test "computed paths group by tenant pair and trace every class in its color", %{conn: conn} do
+    paths = [
+      %{
+        "tenant" => 273,
+        "source" => "A",
+        "dest" => "C",
+        "label" => 0,
+        "nodes" => ["A", "B", "C"],
+        "cost" => 5.0
+      },
+      %{
+        "tenant" => 273,
+        "source" => "A",
+        "dest" => "C",
+        "label" => 2,
+        "nodes" => ["A", "C"],
+        "cost" => 3.0
+      }
+    ]
+
+    seed(Map.put(@control, "paths", paths), %{"pop.A" => @intent}, %{
+      "pop.A" => state([sr_route(@segments)])
+    })
+
+    {:ok, view, _html} = live(conn, "/?section=computed")
+
+    assert has_element?(view, ~s{tr[phx-value-kind="pair"][phx-value-id="273|A|C"]})
+    refute has_element?(view, ~s{tr[phx-value-kind="computed"]})
+    assert render(view) =~ "2 distinct routes"
+
+    rendered = render_click(view, "select", %{"kind" => "pair", "id" => "273|A|C"})
+    graph = graph_payload(rendered)
+
+    assert graph["traces"] == [
+             %{"nodes" => ["A", "B", "C"], "slot" => 0},
+             %{"nodes" => ["A", "C"], "slot" => 2}
+           ]
+
+    assert has_element?(view, ~s{tr[phx-value-kind="computed"][phx-value-id="273|A|C|2"]})
+    assert rendered =~ "voice"
+
+    rendered = render_click(view, "select", %{"kind" => "computed", "id" => "273|A|C|2"})
+
+    assert graph_payload(rendered)["traces"] == [%{"nodes" => ["A", "C"], "slot" => 2}]
   end
 
   test "a drifted segment list shows what the fib holds instead", %{conn: conn} do

@@ -35,6 +35,10 @@ const palette = () => ({
   idle: token("--mt-idle"),
 })
 
+const classColor = slot => token(`--mt-class-${slot || 0}`)
+
+const pairKey = (a, b) => [a, b].sort().join("|")
+
 const statusColor = (colors, status) =>
   ({
     ok: colors.ok,
@@ -297,6 +301,69 @@ export default {
     this.paint()
   },
 
+  // each class on a hop gets its own colored line, fanned out across the link
+  // so classes sharing an adjacency stay distinguishable
+  //
+  // X6 renders views asynchronously, so removing a cell and adding another with
+  // the same id in one frame can orphan the old svg. Redraw only on change, and
+  // never reuse an id.
+  drawTraces(payload, hops) {
+    const signature = JSON.stringify([...hops])
+    if (signature === this.traceSignature) return
+    this.traceSignature = signature
+    this.traceGeneration = (this.traceGeneration || 0) + 1
+
+    const stale = this.graph.getEdges().filter(edge => edge.id.startsWith("t:"))
+    if (stale.length) this.graph.removeCells(stale)
+    if (hops.size === 0) return
+
+    const pos = this.positions
+    const cells = []
+
+    for (const link of payload.links) {
+      const slots = hops.get(pairKey(link.a, link.b))
+      if (!slots) continue
+
+      const p = pos.get(link.a)
+      const q = pos.get(link.b)
+      if (!p || !q) continue
+
+      const dx = q.x - p.x
+      const dy = q.y - p.y
+      const d = Math.max(Math.hypot(dx, dy), 1)
+      const ux = dx / d
+      const uy = dy / d
+      const trim = R + 4
+
+      slots.forEach((slot, i) => {
+        const off = (i - (slots.length - 1) / 2) * 5
+        const ox = -uy * off
+        const oy = ux * off
+
+        cells.push(
+          this.graph.createEdge({
+            id: `t:${this.traceGeneration}:${link.id}:${slot}`,
+            source: {x: p.x + ux * trim + ox, y: p.y + uy * trim + oy},
+            target: {x: q.x - ux * trim + ox, y: q.y - uy * trim + oy},
+            zIndex: 1,
+            data: {link: link.id},
+            attrs: {
+              line: {
+                targetMarker: null,
+                strokeLinecap: "round",
+                stroke: classColor(slot),
+                strokeWidth: 3.5,
+              },
+              wrap: {cursor: "pointer"},
+            },
+          }),
+        )
+      })
+    }
+
+    this.graph.addCell(cells)
+  },
+
   draw(payload) {
     const colors = palette()
     const pos = this.positions
@@ -382,28 +449,45 @@ export default {
     }
 
     this.graph.resetCells(cells)
+    this.traceSignature = null
   },
 
   paint() {
     const payload = this.payload
     const colors = palette()
     const overlay = payload.overlay
-    const trace = payload.trace || []
-    const tracing = overlay === "path" && trace.length > 0
-    const traced = new Set(trace)
-    const hops = new Set()
-    for (let i = 0; i < trace.length - 1; i++) hops.add([trace[i], trace[i + 1]].sort().join("|"))
+    const traces = overlay === "path" ? payload.traces || [] : []
+    const tracing = traces.length > 0
+    const traced = new Map()
+    const hops = new Map()
+    for (const trace of traces) {
+      for (const node of trace.nodes) if (!traced.has(node)) traced.set(node, trace.slot)
+      for (let i = 0; i < trace.nodes.length - 1; i++) {
+        const key = pairKey(trace.nodes[i], trace.nodes[i + 1])
+        if (!hops.has(key)) hops.set(key, [])
+        if (!hops.get(key).includes(trace.slot)) hops.get(key).push(trace.slot)
+      }
+    }
     const ceiling = Math.max(payload.ceiling || 1, 1)
     const picked = payload.selection || {}
 
     this.graph.batchUpdate(() => {
+      this.drawTraces(payload, hops)
+
       for (const node of payload.nodes) {
         const cell = this.graph.getCellById(node.id)
         if (!cell) continue
 
         const isPicked = picked.kind === "node" && picked.id === node.id
         const status = statusColor(colors, node.status)
-        const ring = overlay === "health" ? status : tracing && traced.has(node.id) ? colors.accent : colors.lineStrong
+        const ring =
+          overlay === "health"
+            ? status
+            : tracing && traced.has(node.id)
+              ? traces.length === 1
+                ? classColor(traced.get(node.id))
+                : colors.ink
+              : colors.lineStrong
         const alarm = overlay === "health" && node.status === "issue"
         const dim = tracing && !traced.has(node.id)
 
@@ -420,7 +504,7 @@ export default {
 
       for (const link of payload.links) {
         const isPicked = picked.kind === "link" && picked.id === link.id
-        const onPath = tracing && hops.has([link.a, link.b].sort().join("|"))
+        const onPath = tracing && hops.has(pairKey(link.a, link.b))
         const dim = tracing && !onPath
         const up = link.members.filter(m => m.up).length
         const ratio = link.latency == null ? 0 : link.latency / ceiling
@@ -435,9 +519,11 @@ export default {
 
           if (!member.up) {
             stroke = colors.bad
-          } else if (isPicked || onPath) {
+          } else if (isPicked) {
             stroke = colors.accent
             width = 3
+          } else if (onPath) {
+            opacity = 0.25
           } else if (overlay === "cost") {
             stroke = colors.accent
             width = 1.5 + ratio * 3
@@ -460,7 +546,8 @@ export default {
         let tone = colors.muted
         if (up === 0) tone = colors.bad
         else if (up < link.members.length) tone = colors.warn
-        else if (isPicked || onPath || overlay === "cost") tone = colors.accent
+        else if (isPicked || overlay === "cost") tone = colors.accent
+        else if (onPath) tone = colors.ink
 
         label.attr({
           body: {
