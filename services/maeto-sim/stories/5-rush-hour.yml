@@ -1,5 +1,5 @@
 title: Rush hour squeeze
-description: "Customer traffic runs for five minutes. After one minute the SFO–LAX corridor is throttled to 20 Mbps per member, squeezing the reservations that ride it."
+description: "Customer traffic runs for five minutes. After one minute the SFO–LAX corridor is throttled to 10 Mbps per member, squeezing the reservations that ride it."
 duration: 300
 steps:
   - at: 0
@@ -7,4 +7,4 @@ steps:
     traffic: random
   - at: 60
     for: 180
-    impair: {link: SFO-LAX, rate_mbps: 20}
+    impair: {link: SFO-LAX, rate_mbps: 10}

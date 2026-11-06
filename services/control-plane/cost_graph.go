@@ -34,16 +34,18 @@ type CostGraph struct {
 type CostDimension string
 
 const (
-	COSTDIM_LOSS    CostDimension = "LOSS"
-	COSTDIM_LATENCY CostDimension = "LATENCY"
-	COSTDIM_JITTER  CostDimension = "JITTER"
+	COSTDIM_LOSS               CostDimension = "LOSS"
+	COSTDIM_LATENCY            CostDimension = "LATENCY"
+	COSTDIM_JITTER             CostDimension = "JITTER"
+	COSTDIM_STATIC_UTILIZATION CostDimension = "STATIC_UTILIZATION"
+	COSTDIM_UTILIZATION        CostDimension = "UTILIZATION"
 )
 
 type Cost struct {
 	Costs map[CostDimension]float64
 }
 
-func NewTestCostGraph(
+func NewCostGraph(
 	g *Graph,
 ) (*CostGraph, error) {
 	cg := &CostGraph{
@@ -73,9 +75,10 @@ func NewTestCostGraph(
 			cg.byID[e] = key
 			cg.graph[key] = &Cost{
 				Costs: map[CostDimension]float64{
-					COSTDIM_LOSS:    5,
-					COSTDIM_LATENCY: 5,
-					COSTDIM_JITTER:  5,
+					COSTDIM_LOSS:               1,
+					COSTDIM_LATENCY:            float64(edge.Delay.Microseconds()) / 1000 / costDelayReferenceMs,
+					COSTDIM_JITTER:             1,
+					COSTDIM_STATIC_UTILIZATION: staticUtilizationCost(0),
 				},
 			}
 		}

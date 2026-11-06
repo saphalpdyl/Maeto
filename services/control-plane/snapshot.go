@@ -5,6 +5,7 @@ import (
 	"context"
 	"log/slog"
 	"maps"
+	"math"
 	"net/netip"
 	"slices"
 	"sort"
@@ -119,10 +120,32 @@ type TenantSnapshot struct {
 }
 
 type ClassSnapshot struct {
-	Label uint64 `json:"label"`
-	Name  string `json:"name"`
-	Index int    `json:"index"`
-	DSCP  []int  `json:"dscp"`
+	Label     uint64                    `json:"label"`
+	Name      string                    `json:"name"`
+	Index     int                       `json:"index"`
+	DSCP      []int                     `json:"dscp"`
+	Objective map[CostDimension]float64 `json:"objective"`
+}
+
+// CostModel is what a reader needs to turn published costs back into units and
+// into the totals CSPF adds up: each dimension is 1.0 at its reference, and a
+// class's edge cost is epsilon plus its weighted sum of dimensions.
+type CostModel struct {
+	EdgeEpsilon    float64 `json:"edge_epsilon"`
+	DelayRefMs     float64 `json:"delay_ref_ms"`
+	JitterRefMs    float64 `json:"jitter_ref_ms"`
+	LossRef        float64 `json:"loss_ref"`
+	UtilizationRef float64 `json:"utilization_ref"`
+}
+
+func SnapshotCostModel() CostModel {
+	return CostModel{
+		EdgeEpsilon:    costEdgeEpsilon,
+		DelayRefMs:     costDelayReferenceMs,
+		JitterRefMs:    costJitterReferenceMs,
+		LossRef:        costLossReference,
+		UtilizationRef: staticUtilizationRef,
+	}
 }
 
 type PathSnapshot struct {
@@ -145,6 +168,7 @@ type ControlSnapshot struct {
 	Paths       []PathSnapshot          `json:"paths"`
 	PathChanges []PCETickReportReroute  `json:"path_changes"`
 	CostGraph   CostGraphReadiness      `json:"cost_graph"`
+	CostModel   CostModel               `json:"cost_model"`
 }
 
 func SnapshotTopology(graph *Graph, domain SRv6DomainMetadata, costs *CostGraph, reservations *BandwidthReservationRegistry) TopologySnapshot {
@@ -186,7 +210,7 @@ func SnapshotTopology(graph *Graph, domain SRv6DomainMetadata, costs *CostGraph,
 	for _, edge := range dedupeEdges(graph.edges) {
 		var edgeCosts map[CostDimension]float64
 		if cost, ok := costSnapshot[CostKey(edge)]; ok && cost != nil {
-			edgeCosts = cost.Costs
+			edgeCosts = finiteCosts(cost.Costs)
 		}
 
 		snapshot.Edges = append(snapshot.Edges, TopologyEdgeSnapshot{
@@ -253,7 +277,7 @@ func snapshotPCEEdges(
 		}
 
 		if cost := edge.Cost(costs); cost != nil {
-			entry.Costs = cost.Costs
+			entry.Costs = finiteCosts(cost.Costs)
 		}
 
 		if state, ok := reservations[id]; ok {
@@ -402,10 +426,11 @@ func SnapshotClasses(tenants TenantRepository) []ClassSnapshot {
 		}
 
 		out = append(out, ClassSnapshot{
-			Label: class.Label,
-			Name:  class.Name,
-			Index: class.Index,
-			DSCP:  dscp,
+			Label:     class.Label,
+			Name:      class.Name,
+			Index:     class.Index,
+			DSCP:      dscp,
+			Objective: maps.Clone(ClassObjective(class)),
 		})
 	}
 
@@ -498,6 +523,7 @@ func (s *SnapshotPublisher) Snapshot() ControlSnapshot {
 		Inventory:   SnapshotInventory(s.inventory),
 		Tenants:     SnapshotTenants(s.tenants),
 		Classes:     SnapshotClasses(s.tenants),
+		CostModel:   SnapshotCostModel(),
 		Paths:       SnapshotPaths(s.paths.Load()),
 		PathChanges: s.changes.Recent(),
 		CostGraph:   s.costs.Readiness(),
@@ -530,6 +556,21 @@ func (s *SnapshotPublisher) publish(ctx context.Context) {
 	if _, err := s.publisher.Publish(ctx, nodesync.KeyControlSnapshot, s.Snapshot()); err != nil {
 		s.logger.ErrorContext(ctx, "failed to publish control snapshot", log.Err(err))
 	}
+}
+
+// json cannot carry +Inf, which marks a saturated or unusable edge, so the
+// snapshot leaves those dimensions out rather than failing to publish
+func finiteCosts(costs map[CostDimension]float64) map[CostDimension]float64 {
+	out := make(map[CostDimension]float64, len(costs))
+	for dim, value := range costs {
+		if math.IsInf(value, 0) || math.IsNaN(value) {
+			continue
+		}
+
+		out[dim] = value
+	}
+
+	return out
 }
 
 func prefixString(prefix netip.Prefix) string {

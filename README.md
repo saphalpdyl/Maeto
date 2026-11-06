@@ -15,9 +15,28 @@ It's a hobby project that runs Docker containers w/ network namespaces to emulat
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Tag](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fgit.saphal.me%2Fapi%2Fv1%2Frepos%2Fsaphalpdyl%2Fmaeto%2Ftags%3Flimit%3D1&query=%24%5B0%5D.name&label=tag)](https://git.saphal.me/saphalpdyl/Maeto/tags)
 
-<img src="docs/images/screenshots/maeto-dashboard-showing-links.png" alt="Link View" width="100%">
-
+![reroute_demo.webp](docs/images/reroute_demo.webp)
 ---
+
+## Contents
+
+- [Architecture](#architecture)
+  - [Controller](#controller)
+  - [Provider & CPE Agent](#provider--cpe-agent)
+- [Features](#features)
+  - [Level-triggered reconciliation](#level-triggered-reconciliation)
+  - [Bandwidth Reservation](#bandwidth-reservation)
+  - [Path Computation](#path-computation)
+  - [Active telemetry through STAMP](#active-telemetry-through-stamp)
+  - [Realistic traffic with tfsim](#realistic-traffic-with-tfsim)
+  - [Breaking the testbed on purpose with maeto-sim](#breaking-the-testbed-on-purpose-with-maeto-sim)
+- [Running it](#running-it)
+  - [Custom topology](#custom-topology)
+- [Layout](#layout)
+- [Writeups](#writeups)
+- [Status](#status)
+- [Screenshots](#screenshots)
+- [AI Disclosure](#ai-disclosure)
 
 ## Architecture
 Distributed architecture of Maeto. The design evolved from shelling out to netlink-based communication. It intends to be compatible with a VPP backend, which is a TO-DO.
@@ -88,19 +107,39 @@ The computed path is compared with the previous path with updated costs. Reroute
 - **HYSTERESIS** The new path has to be at least 10% better in terms of cost than the old path. This prevents reroutes on small benefits.
 - **HOLD-DOWN TIMERS** A reroute holds that path down for some time, no matter how much better the new path is. The exceptions to this are when a link in the current path goes down, or SLA is breached (future implementation).
 
+PCE runs a weighted cost function when running CSPF where the weights come from class definition. There are four dimensions:
+- `LATENCY`
+- `JITTER`
+- `LOSS`
+- `STATIC UTILIZATION`
+
+Collected telemetry from STAMP (see below) is smoothed through an EWMA (Exponentially Weighted Moving Average) and stored as the cost for the given link
+for the given objective. Similarly, static bandwidth utilization cost is calculated after bandwidth reservation in the PCE. During path computation the costs in different units and scale are normalized and scaled using reference "considered bad"
+values for each objective.
+
+$$C(l,\sigma^2,p,u) = w_l \frac{l}{l_{ref}} + w_{\sigma^2} \frac{\sigma^2}{\sigma^2_{ref}} + w_p \frac{-\ln(1-p)}{-\ln(1-p_{ref})} + w_u \frac{\varphi(u)}{\varphi(u_{ref})} + \varepsilon$$
+
+where,
+$$u = \frac{R_e}{B_e \times (1 - h)}, \varphi(f) = \frac{f}{1-f}$$
+
+- $R_e$ is the reserved bandwidth for the link
+- $Be$ is the total capacity of the link
+- $h$ is the head room fraction to leave for probes and adminstrative traffic
+- $u$ is the reserved utilization of the link (not measured)
+- $\varepsilon$ is the a tie-break. During path compute, it's the hop count
+
+So with all this mathematical jargon, the total cost of the path, calculated after path computation on pruned graph, comes down to be:
+$$C_c(P) = \sum_{e \in P}C_c(e)$$
+
+As you might have noticed, I like to include LaTeX equations wherever I can.  
 
 ### Active telemetry through STAMP
 Instead of ICMP ping, Maeto agents run unidirectional stateless Simple Two-Way Active Measurement Protocol (STAMP) sessions between two PoPs. [libs/stamp](libs/stamp) implements the [RFC 8762](https://www.rfc-editor.org/info/rfc8762/) 
 with Segment Routing Extension [RFC 9503](https://www.rfc-editor.org/info/rfc9503/), and custom Maeto-specific Container TLVs to enable the unidirectional sessions itself. 
 
 The reflector in each PoP collects the telemetry data from its peers, reads the TelemetryKey inside Maeto-Container TLV and forwards to NATS based on the key. 
-The controller collects these telmetry, and regroups them based on the source. Then after, jitter and packet loss are derived from the latency and sequence number of the STAMP packet. 
+The controller collects these telemetry, and regroups them based on the source. Then after, jitter and packet loss are derived from the latency and sequence number of the STAMP packet. 
 
-The collected telemetry is smoothed through an EWMA (Exponentially Weighted Moving Average) and stored as the cost for the given link
-for the given objective. During path computation the costs in different units and scale are normalized and scaled using reference "considered bad"
-values for each objective.
-
-$$C(l,\sigma^2,p) = w_l \frac{l}{l_{ref}} + w_{\sigma^2} \frac{\sigma^2}{\sigma^2_{ref}} + w_p \frac{-\ln(1-p)}{-\ln(1-p_{ref})}$$
 
 ### Realistic traffic with tfsim
 A control plane that reroutes on measured cost needs traffic worth reacting to. `clab/tfsim` drives the lab with iperf3 sessions
@@ -142,9 +181,13 @@ VM-based local deployment requires [Vagrant](https://developer.hashicorp.com/vag
 vagrant up # Highly recommended to run in VMs
 vagrant ssh
 
+# Run sequentially
 make setup   # venvs + git hooks
 make pki     # one-time CA, the generator signs PoP and CPE certs off it
 make ap      # generate the topology, build the images, deploy the lab
+# IMPORTANT: Wait for ap to complete fully
+
+# Run in parallel
 make dev     # start the controller
 make fe      # maeto-pane
 make sim     # maeto-sim, the pane's Simulator page
@@ -155,6 +198,71 @@ make clean   # to destroy the lab
 make dozzle  # for container logs (will later be replaced by Grafana stack)
 make nui     # to view NATS state
 make ips     # lists ipv6 addresses of interface of each node
+```
+
+### Custom topology
+Topologies can be defined in `clab/topologies/**` as a `.yml` file. 
+
+```yaml
+name: <your-lab-name>
+
+defaults:
+  # The generator deterministically generates IPv6 address from these prefixes
+  locator_prefix: <node-locator-prefix>
+  link_prefix: <interface-prefix>
+  edge_prefix: <edge-prefix> # A stand-in for the "internet" in-between customers and the access edge
+
+classes:
+  <class-name>: # For eg. voice
+    label: 2 # identifier [MUST be unique] RFC 9256 equivalent
+    index: 1 # Greater the value, the more priority it has during path computation
+    match: { dscp: [...] } # Maeto will match these dscps for this class to <label> when computing paths
+    objective: # Weights to count towards the total cost, see [Active telemetry through STAMP]
+      latency: x
+      jitter: y
+      loss: z
+  # ... more classes
+
+tiers:
+  <tier-name>:
+    # index == 0, is always designated as the default/bulk traffic
+    index: 2 # Greater the value, the more priority it has during path computation
+    # The remaining bandwidth is always assigned to default/bulk
+    classes: { <class-name>: <fraction-of-total-bandwidth-assigned> } # For eg. voice: 0.3, streaming: 0.2
+
+tenants:
+  - id: xxx # numeric customer identifier
+    allocation: <customer-prefix> # Currently only one prefix is supported
+    tier: <tier-name>
+  # ...
+
+# Topology
+pops: # Provider owned edge/transit routers
+  - id: <pop-name> # For eg. NYC
+    index: 1 # Unique numeric identifier
+  # ...
+
+cpes: # This defines customer sites
+  - id: cABC # Unique string identifier
+    tenant: xxx # id of the tenant this site belongs to
+    # We only support a site connecting to one assigned PoP
+    # Dynamic access edge selection is future work
+    attach: <pop-id>
+    prefix: <site-prefix> # Must sit inside the tenant's allocation
+    portal_id: <unique-string-id> # Comparable to LDevID [802.1AR: Secure Device Identity]
+    reservation_bandwidth: xxx # Total in-out bandwidth contracted for the site in Mbps
+    classes: { <class-name>: <Mbps> } # Optional, replaces the tier's split for this site
+  # ...
+
+links:
+  - a: <pop-id>
+    b: <pop-id>
+    parallel:
+      - bandwidth: <total-capacity-of-link-Mbps>
+        delay: xx # Propagation delay in ms
+        start_jitter: xx # Jitters propagation delay by start_jitter(ms) during generation
+      # ...
+  # ...
 ```
 
 ## Layout
@@ -186,7 +294,7 @@ Done/In-progress:
 - maeto-pane: topology, per-link cost, and path changes with the edge whose cost caused them
 - Bandwidth-aware hose-modeled path computation
 - Passive telemetry collection
-- Loss and jitter are NOT seeded values anymore.
+- Loss and jitter are NOT seeded values anymore. 
 
 Not yet:
 - BGP-LS defined topology instead of statically generated topology
@@ -207,3 +315,11 @@ Not yet:
 
 ---
 <img src="docs/images/maeto-logo-monochrome.svg" width="70" height="30" style="vertical-align: middle;"> by saphalpdyl
+
+
+## AI Disclosure
+Maeto is AI-assisted on peripheral components such as the topology generator, traffic simulator, frontend and DB-related/CRUD
+operations in the control-plane. Almost everything in control-plane is written by me excepting for state snapshotting
+(for the frontend's use). Likewise, maeto-agent, maeto-portal and libs/ are written by hand.
+
+I use AI assistance where what I'm building isn't focused on the core problem (building an SD-WAN in this case). 

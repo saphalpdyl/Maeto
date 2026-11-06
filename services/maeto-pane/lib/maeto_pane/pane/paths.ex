@@ -140,18 +140,28 @@ defmodule MaetoPane.Pane.Paths do
 
     published =
       Enum.map(control["classes"] || [], fn class ->
-        %{label: class["label"], name: class["name"], slot: class_slot(slots, class["label"])}
+        %{
+          label: class["label"],
+          name: class["name"],
+          slot: class_slot(slots, class["label"]),
+          objective: class["objective"] || default_objective(class["label"])
+        }
       end)
 
     if Enum.any?(published, &(&1.label == @default_label)) do
       Enum.sort_by(published, &{&1.slot, &1.label})
     else
       [
-        %{label: @default_label, name: "default", slot: 0}
+        %{label: @default_label, name: "default", slot: 0, objective: default_objective(0)}
         | Enum.sort_by(published, &{&1.slot, &1.label})
       ]
     end
   end
+
+  # a controller older than the published objectives still routes the default
+  # class on reservations alone
+  defp default_objective(@default_label), do: %{"STATIC_UTILIZATION" => 1}
+  defp default_objective(_label), do: %{}
 
   defp class_names(control) do
     Map.new(control["classes"] || [], &{&1["label"], &1["name"]})
@@ -266,10 +276,6 @@ defmodule MaetoPane.Pane.Paths do
       }
     end
     |> Enum.sort_by(&{&1.tenant, &1.cpe})
-  end
-
-  def site_counts(sites) do
-    %{total: length(sites), up: Enum.count(sites, &(&1.status == :up))}
   end
 
   def path_counts(rows) do
@@ -426,15 +432,12 @@ defmodule MaetoPane.Pane.Paths do
     end)
   end
 
+  # portals do not report state yet, so a site is as up as the tunnel the
+  # controller has recorded for it
   defp site_status(nil, _state), do: :offline
 
-  defp site_status(intent, state) do
-    cond do
-      (intent["tunnel_interface_id"] || 0) == 0 -> :no_tunnel
-      is_nil(state) -> :no_report
-      state["converged"] -> :up
-      true -> :converging
-    end
+  defp site_status(intent, _state) do
+    if (intent["tunnel_interface_id"] || 0) == 0, do: :no_tunnel, else: :up
   end
 
   defp path_issue_kind(:missing), do: :path_not_installed

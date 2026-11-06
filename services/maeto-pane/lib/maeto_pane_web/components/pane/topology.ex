@@ -17,6 +17,7 @@ defmodule MaetoPaneWeb.Pane.Topology do
   attr :overlays, :list, required: true
   attr :traces, :list, required: true
   attr :classes, :list, required: true
+  attr :cost_class, :any, default: 0
   attr :selection, :any, required: true
   attr :ceiling, :any, required: true
 
@@ -29,7 +30,31 @@ defmodule MaetoPaneWeb.Pane.Topology do
           {overlay_caption(assigns)}
         </p>
 
-        <div class="ml-auto flex gap-0.5 rounded-[7px] border border-line bg-sunken p-0.5">
+        <div
+          :if={@overlay == :cost and length(@classes) > 1}
+          class="ml-auto flex gap-0.5 rounded-[7px] border border-line bg-sunken p-0.5"
+        >
+          <button
+            :for={class <- @classes}
+            id={"cost-class-#{class.label}"}
+            phx-click="cost_class"
+            phx-value-label={class.label}
+            class={[
+              "rounded-[5px] px-2.5 py-[3px] text-xs transition-colors",
+              if(@cost_class == class.label,
+                do: "bg-surface text-ink shadow-sm",
+                else: "text-muted hover:text-ink"
+              )
+            ]}
+          >
+            <.class_tag color={class.slot} name={class.name} />
+          </button>
+        </div>
+
+        <div class={[
+          "flex gap-0.5 rounded-[7px] border border-line bg-sunken p-0.5",
+          !(@overlay == :cost and length(@classes) > 1) && "ml-auto"
+        ]}>
           <button
             :for={{key, label} <- @overlays}
             id={"overlay-#{key}"}
@@ -132,7 +157,7 @@ defmodule MaetoPaneWeb.Pane.Topology do
       a: link.a,
       b: link.b,
       members: Enum.map(link.edges, &%{id: &1["id"], up: &1["up"] == true}),
-      latency: link.latency
+      cost: link.class_cost
     }
   end
 
@@ -144,6 +169,7 @@ defmodule MaetoPaneWeb.Pane.Topology do
   defp selection_payload({kind, id}), do: %{kind: kind, id: id}
   defp selection_payload(_selection), do: nil
 
-  defp overlay_caption(%{overlay: :cost} = assigns), do: "worst #{num(assigns.ceiling)} ms"
+  defp overlay_caption(%{overlay: :cost} = assigns), do: "worst #{num(assigns.ceiling)}"
+
   defp overlay_caption(_assigns), do: nil
 end

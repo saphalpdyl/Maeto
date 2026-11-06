@@ -12,6 +12,7 @@ defmodule MaetoPaneWeb.PaneLive do
 
   alias MaetoPane.Pane
   alias MaetoPane.Pane.Analysis
+  alias MaetoPane.Pane.Costs
   alias MaetoPane.Pane.Paths
   alias MaetoPane.Pane.Links
   alias MaetoPane.Pane.IfaceStats
@@ -50,6 +51,8 @@ defmodule MaetoPaneWeb.PaneLive do
      socket
      |> assign(:selection, nil)
      |> assign(:expanded, MapSet.new())
+     |> assign(:expanded_links, MapSet.new())
+     |> assign(:cost_class, 0)
      |> assign(:link_stats, nil)
      |> assign(:section, :paths)
      |> assign(:overlay, :health)
@@ -61,12 +64,33 @@ defmodule MaetoPaneWeb.PaneLive do
   end
 
   @impl true
-  def handle_params(%{"section" => section}, _uri, socket)
-      when section in ~w(changes paths links computed sites registry) do
-    {:noreply, assign(socket, :section, String.to_existing_atom(section))}
+  def handle_params(params, _uri, socket) do
+    socket =
+      case params["section"] do
+        section when section in ~w(changes paths links computed sites registry) ->
+          assign(socket, :section, String.to_existing_atom(section))
+
+        _other ->
+          socket
+      end
+
+    {:noreply, open_link(socket, params["link"])}
   end
 
-  def handle_params(_params, _uri, socket), do: {:noreply, socket}
+  # the inspector's link details land here: select the link and open its costs
+  defp open_link(socket, nil), do: socket
+
+  defp open_link(socket, id) do
+    if Enum.any?(socket.assigns.links, &(&1.id == id)) do
+      socket
+      |> assign(:selection, {:link, id})
+      |> assign(:expanded_links, MapSet.put(socket.assigns.expanded_links, id))
+      |> resolve()
+      |> load_link_stats()
+    else
+      socket
+    end
+  end
 
   @impl true
   def handle_info(:pane_updated, socket), do: {:noreply, load(socket)}
@@ -103,6 +127,27 @@ defmodule MaetoPaneWeb.PaneLive do
     {:noreply, assign(socket, :expanded, expanded)}
   end
 
+  def handle_event("cost_class", %{"label" => label}, socket) do
+    case Integer.parse(label) do
+      {label, ""} ->
+        {:noreply, socket |> assign(:cost_class, label) |> price_links()}
+
+      _invalid ->
+        {:noreply, socket}
+    end
+  end
+
+  def handle_event("toggle_link", %{"id" => id}, socket) do
+    expanded = socket.assigns.expanded_links
+
+    expanded =
+      if MapSet.member?(expanded, id),
+        do: MapSet.delete(expanded, id),
+        else: MapSet.put(expanded, id)
+
+    {:noreply, assign(socket, :expanded_links, expanded)}
+  end
+
   def handle_event("clear", _params, socket) do
     {:noreply, socket |> assign(:selection, nil) |> assign(:link_stats, nil) |> resolve()}
   end
@@ -120,7 +165,8 @@ defmodule MaetoPaneWeb.PaneLive do
     graph = Analysis.graph(snapshot)
     rows = Paths.rows(snapshot)
     sites = Paths.sites(snapshot)
-    links = Links.from_graph(graph)
+    model = Costs.model(snapshot)
+    links = Links.from_graph(graph, model)
     computed = Paths.computed(snapshot)
     classes = Paths.classes(snapshot)
     changes = Paths.changes(snapshot)
@@ -134,6 +180,7 @@ defmodule MaetoPaneWeb.PaneLive do
     |> assign(:registry, registry)
     |> assign(:paths, rows)
     |> assign(:sites, sites)
+    |> assign(:cost_model, model)
     |> assign(:links, links)
     |> assign(:computed, computed)
     |> assign(:pairs, Paths.pairs(computed))
@@ -144,8 +191,20 @@ defmodule MaetoPaneWeb.PaneLive do
     |> assign(:facts, facts(graph, links, sites, rows, computed, changes))
     |> then(&assign(&1, :nav, Nav.groups(&1.assigns.facts, graph.nodes)))
     |> assign(:programmed_pairs, MapSet.new(rows, &{&1.pe, &1.dest}))
-    |> assign(:ceiling, Enum.max([1.0 | Enum.map(links, & &1.cost)]))
+    |> price_links()
     |> resolve()
+  end
+
+  # the map labels and shades links by what the chosen class pays on them
+  defp price_links(socket) do
+    %{links: links, classes: classes, cost_class: label, cost_model: model} = socket.assigns
+    class = Enum.find(classes, &(&1.label == label)) || List.first(classes)
+    links = Links.put_class_cost(links, class, model)
+
+    socket
+    |> assign(:links, links)
+    |> assign(:cost_class, class && class.label)
+    |> assign(:ceiling, Enum.max([1.0 | Enum.map(links, &(&1.class_cost || 0))]))
   end
 
   # every PE names the interface its CPEs attach to; transit PoPs have none
@@ -228,7 +287,6 @@ defmodule MaetoPaneWeb.PaneLive do
 
   defp facts(graph, links, sites, rows, computed, changes) do
     members = Enum.flat_map(graph.links, & &1.edges)
-    site_counts = Paths.site_counts(sites)
     path_counts = Paths.path_counts(rows)
 
     pop_states = Enum.frequencies_by(graph.nodes, & &1.status)
@@ -243,8 +301,7 @@ defmodule MaetoPaneWeb.PaneLive do
       adjacencies: length(members),
       adjacencies_up: Enum.count(members, & &1["up"]),
       links: length(links),
-      sites: site_counts.total,
-      sites_up: site_counts.up,
+      sites: length(sites),
       paths: path_counts.total,
       paths_installed: path_counts.installed,
       paths_degraded: path_counts.degraded,
@@ -264,7 +321,7 @@ defmodule MaetoPaneWeb.PaneLive do
   defp section_meta(:paths, facts), do: "#{facts.paths_installed}/#{facts.paths} programmed"
   defp section_meta(:links, facts), do: "#{facts.adjacencies_up}/#{facts.adjacencies} members up"
   defp section_meta(:computed, facts), do: "#{facts.computed} paths"
-  defp section_meta(:sites, facts), do: "#{facts.sites_up}/#{facts.sites} reporting"
+  defp section_meta(:sites, facts), do: "#{facts.sites} registered"
   defp section_meta(:changes, facts), do: "#{facts.changes} events"
   defp section_meta(:registry, _facts), do: nil
 
@@ -355,6 +412,7 @@ defmodule MaetoPaneWeb.PaneLive do
           overlays={@overlays}
           traces={@traces}
           classes={@classes}
+          cost_class={@cost_class}
           selection={@selection}
           ceiling={@ceiling}
         />
@@ -378,7 +436,8 @@ defmodule MaetoPaneWeb.PaneLive do
 
           <div class={[
             "mt-scroll overflow-x-auto border-t border-line px-2",
-            @section in [:paths, :computed] && "max-h-[max(16rem,calc(100dvh-40rem))] overflow-y-auto"
+            @section in [:paths, :computed, :links] &&
+              "max-h-[max(16rem,calc(100dvh-40rem))] overflow-y-auto"
           ]}>
             <%= case @section do %>
               <% :changes -> %>
@@ -386,7 +445,13 @@ defmodule MaetoPaneWeb.PaneLive do
               <% :paths -> %>
                 <.paths_table paths={@paths} selection={@selection} />
               <% :links -> %>
-                <.links_table links={@links} selection={@selection} />
+                <.links_table
+                  links={@links}
+                  selection={@selection}
+                  expanded={@expanded_links}
+                  classes={@classes}
+                  model={@cost_model}
+                />
               <% :computed -> %>
                 <.computed_table
                   pairs={@pairs}

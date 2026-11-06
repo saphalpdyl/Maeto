@@ -89,6 +89,8 @@ func (p *PCE) Run(ctx context.Context, graph *Graph) {
 			graph.mu.RLock()
 			pceGraph := NewPCEGraph(graph)
 
+			p.updateStaticBandwidthUtilizationCost(pceGraph)
+
 			costSnapshot := p.costGraph.Costs()
 
 		DemandLoop:
@@ -106,13 +108,7 @@ func (p *PCE) Run(ctx context.Context, graph *Graph) {
 					continue
 				}
 
-				var objectiveFunc Objective
-				if pathKey.Label == 0 {
-					// Bulk/Default class
-					objectiveFunc = StaticBandwidthUtilization(p.bandwidthReservationReg.ReservedMapExcluding(demand.Tenant.ID, candidateReservation.Key))
-				} else {
-					objectiveFunc = WeightedCost(demand.Class.Objective)
-				}
+				objectiveFunc := WeightedCost(ClassObjective(demand.Class))
 
 				computedPath, err := p.ComputePath(prunedGraph, demand.From, demand.To, objectiveFunc)
 				if err != nil {
@@ -150,6 +146,8 @@ func (p *PCE) Run(ctx context.Context, graph *Graph) {
 						continue
 					}
 
+					p.updateStaticBandwidthUtilizationCost(pceGraph)
+
 					tickReport.Reroutes = append(tickReport.Reroutes, PCETickReportReroute{
 						At:       tickReport.Timestamp,
 						Tenant:   demand.Tenant.ID,
@@ -162,6 +160,7 @@ func (p *PCE) Run(ctx context.Context, graph *Graph) {
 					})
 
 					paths[pathKey] = computedPath
+
 					continue
 				}
 
@@ -228,6 +227,8 @@ func (p *PCE) Run(ctx context.Context, graph *Graph) {
 					continue
 				}
 
+				p.updateStaticBandwidthUtilizationCost(pceGraph)
+
 				rerouteKind := PathChangeRerouted
 				if previousPathIsBroken {
 					rerouteKind = PathChangeLinkDown
@@ -264,6 +265,61 @@ func (p *PCE) Run(ctx context.Context, graph *Graph) {
 			p.reportChan <- paths
 		}
 	}
+}
+
+func (p *PCE) updateStaticBandwidthUtilizationCost(pceGraph *PCEGraph) {
+	reserved := p.bandwidthReservationReg.ReservedMap()
+
+	for pceEdgeID, edge := range pceGraph.edges {
+		if edge == nil {
+			continue
+		}
+
+		r := reserved[pceEdgeID]
+
+		// PCEEdge is a logical edge containing one or more physical edges
+		// CostGraph tracks cost for real edges not logical
+		for _, e := range edge.RealEdges {
+			capacity := e.Bandwidth * (1 - capacityHeadroom)
+
+			cost := math.Inf(1)
+			if capacity > 0 {
+				cost = staticUtilizationCost(r / capacity)
+			}
+
+			p.costGraph.UpdateCost(e.ID, COSTDIM_STATIC_UTILIZATION, cost)
+		}
+	}
+}
+
+const staticUtilizationRef = 0.8 // f_ref
+
+// Bulk/default class. Pruning already happened, so this is used to prefer
+// routes based on reservation
+var defaultClassObjective = map[CostDimension]float64{
+	COSTDIM_STATIC_UTILIZATION: 1,
+}
+
+func ClassObjective(class *TrafficClass) map[CostDimension]float64 {
+	if class == nil || class.Label == DefaultClassLabel {
+		return defaultClassObjective
+	}
+
+	return class.Objective
+}
+
+func convexUtilization(f float64) float64 {
+	return f / (1 - f)
+}
+
+// Normalized so an edge at f_ref costs 1 and an idle edge 1/(1+convex(f_ref))
+// A full or overbooked edge is unusable.
+func staticUtilizationCost(f float64) float64 {
+	if f >= 1 {
+		return math.Inf(1)
+	}
+
+	return convexUtilization(f) / convexUtilization(staticUtilizationRef)
 }
 
 // A link that has been probed before but has gone quiet is treated as down.

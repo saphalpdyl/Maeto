@@ -54,7 +54,12 @@ defmodule MaetoPaneWeb.PaneLivePathsTest do
           "to" => "B",
           "members" => ["A:eth2-B:eth2", "A:eth3-B:eth3"],
           "capacity_mbps" => 800,
-          "costs" => %{"LATENCY" => 25.4},
+          "costs" => %{
+            "LATENCY" => 2.54,
+            "JITTER" => 0.04,
+            "LOSS" => 1.0,
+            "STATIC_UTILIZATION" => 0.6
+          },
           "reservation" => %{"bookable_mbps" => 760, "booked_mbps" => 600}
         },
         %{
@@ -64,7 +69,7 @@ defmodule MaetoPaneWeb.PaneLivePathsTest do
           "to" => "A",
           "members" => ["B:eth2-A:eth2", "B:eth3-A:eth3"],
           "capacity_mbps" => 800,
-          "costs" => %{"LATENCY" => 7.2},
+          "costs" => %{"LATENCY" => 0.72},
           "reservation" => %{"bookable_mbps" => 760, "booked_mbps" => 300}
         }
       ]
@@ -204,7 +209,7 @@ defmodule MaetoPaneWeb.PaneLivePathsTest do
     assert html =~ "Reconciled"
   end
 
-  test "the summary strip tallies pops, adjacencies, segment lists and sites", %{conn: conn} do
+  test "the summary strip tallies pops, adjacencies and segment lists", %{conn: conn} do
     {:ok, view, _html} = live(conn, "/")
 
     summary = view |> element("#reconciliation") |> render()
@@ -212,7 +217,7 @@ defmodule MaetoPaneWeb.PaneLivePathsTest do
     assert summary =~ "PoPs"
     assert summary =~ "Adjacencies"
     assert summary =~ "Segment lists in FIB"
-    assert summary =~ "Sites reporting"
+    refute summary =~ "Sites reporting"
   end
 
   test "selecting a segment list opens it in the inspector", %{conn: conn} do
@@ -365,16 +370,51 @@ defmodule MaetoPaneWeb.PaneLivePathsTest do
     assert html =~ "79%"
   end
 
-  test "the cost overlay labels every link with its latency cost", %{conn: conn} do
+  test "expanding a link breaks its cost into dimensions in real units", %{conn: conn} do
+    {:ok, view, _html} = live(conn, "/?section=links")
+
+    refute render(view) =~ "Static utilization"
+
+    html = render_click(view, "toggle_link", %{"id" => "A|B"})
+
+    # 2.54 is 25.4 ms, 0.04 a variance of 1 ms², 1.0 one percent loss
+    assert html =~ "Static utilization"
+    assert html =~ "25.4 ms"
+    assert html =~ "σ 1.0 ms"
+    assert html =~ "1.00%"
+    assert html =~ "600/760 Mbps"
+  end
+
+  test "the cost overlay labels every link with what the chosen class pays", %{conn: conn} do
     {:ok, view, _html} = live(conn, "/")
 
     html = view |> element("#overlay-cost") |> render_click()
 
-    assert html =~ "worst 25.4 ms"
-    # probed latency, worst direction, not the configured delay; nil until probed
+    # default routes on static utilization alone: epsilon 1 + 0.6 on A -> B, and
+    # B -> A carries no utilization, so it cannot be priced
     assert graph_payload(html)["overlay"] == "cost"
-    assert Enum.map(graph_payload(html)["links"], & &1["latency"]) == [25.4, nil]
-    assert graph_payload(html)["ceiling"] == 25.4
+    assert Enum.map(graph_payload(html)["links"], & &1["cost"]) == [1.6, nil]
+    assert graph_payload(html)["ceiling"] == 1.6
+    assert html =~ "worst 1.6"
+
+    # voice publishes no objective in this fixture, so it cannot be priced
+    html = view |> element("#cost-class-2") |> render_click()
+
+    assert Enum.map(graph_payload(html)["links"], & &1["cost"]) == [nil, nil]
+  end
+
+  test "link details opens the links section with the link selected and expanded", %{
+    conn: conn
+  } do
+    {:ok, view, _html} = live(conn, "/")
+
+    render_click(view, "select", %{"kind" => "link", "id" => "A|B"})
+
+    view |> element("#open-link") |> render_click()
+
+    assert_patch(view, "/?link=A%7CB&section=links")
+    html = render(view)
+    assert html =~ "Static utilization"
   end
 
   test "sites attached to a pop ride along for the map badge", %{conn: conn} do

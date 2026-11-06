@@ -116,7 +116,7 @@ defmodule MaetoPaneWeb.Pane.Nav do
       %{
         label: "Tenants",
         icon: "hero-building-office-2",
-        items: [item(:sites, "Sites", "hero-map-pin", count(facts, :sites), wrong(facts, :sites))]
+        items: [item(:sites, "Sites", "hero-map-pin", count(facts, :sites))]
       },
       %{
         label: "Operations",
@@ -143,7 +143,6 @@ defmodule MaetoPaneWeb.Pane.Nav do
 
   defp wrong(nil, _key), do: 0
   defp wrong(facts, :paths), do: facts.paths_degraded
-  defp wrong(facts, :sites), do: facts.sites - facts.sites_up
 
   # a section's badge is its size, unless something in it is wrong: then it is
   # how many things are wrong, in the bad tone

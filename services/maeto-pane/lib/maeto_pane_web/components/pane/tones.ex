@@ -18,9 +18,7 @@ defmodule MaetoPaneWeb.Pane.Tones do
   def path_tone(_status), do: "faint"
 
   def site_tone(:up), do: "ok"
-  def site_tone(:converging), do: "warn"
   def site_tone(:no_tunnel), do: "warn"
-  def site_tone(:no_report), do: "idle"
   def site_tone(:offline), do: "faint"
 
   def path_label(:installed), do: "Reconciled"
@@ -30,10 +28,8 @@ defmodule MaetoPaneWeb.Pane.Tones do
   def path_label(:pending), do: "Pending"
   def path_label(status), do: to_string(status)
 
-  def site_label(:up), do: "Online"
-  def site_label(:converging), do: "Converging"
+  def site_label(:up), do: "Tunnel up"
   def site_label(:no_tunnel), do: "No tunnel"
-  def site_label(:no_report), do: "No report"
   def site_label(:offline), do: "Offline"
 
   def kind_tone("rerouted"), do: "ok"

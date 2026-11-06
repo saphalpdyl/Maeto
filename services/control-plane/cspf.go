@@ -103,6 +103,9 @@ func (ps PathSet) LogValue() slog.Value {
 	return slog.GroupValue(attrs...)
 }
 
+// added once per edge so idle paths still prefer fewer hops
+const costEdgeEpsilon = 1.0
+
 func WeightedCost(weights map[CostDimension]float64) Objective {
 	return func(_ *PCEEdge, c *Cost) float64 {
 		if c == nil {
@@ -114,7 +117,7 @@ func WeightedCost(weights map[CostDimension]float64) Objective {
 			total += weights[dim] * c.Costs[dim]
 		}
 
-		return total
+		return costEdgeEpsilon + total
 	}
 }
 
@@ -134,7 +137,7 @@ func StaticBandwidthUtilization(reserved map[PCEEdgeID]float64) Objective {
 		// Convex function because bulk traffic prioritizes less loaded paths
 		// 	without it, cspf chooses the heavy link even because the sum of
 		// 	the light n links otherwise have a greater cost.
-		return 1 / (1 - frac)
+		return frac / (1 - frac)
 	}
 }
 

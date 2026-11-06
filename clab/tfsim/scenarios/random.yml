@@ -15,13 +15,13 @@ day: 1800
 start_hour: 8
 
 # session arrivals per second at the busiest hour
-sessions: 6.0
+sessions: 2.0
 
 # sessions that would push the flow count past this are turned away
-max_flows: 134
+max_flows: 40
 
 # multiplies every app's bitrate; raise it to load the links harder
-scale: 6.0
+scale: 1.0
 
 # fix the seed to replay the same sessions; unset picks a fresh one each run
 # seed: 1234

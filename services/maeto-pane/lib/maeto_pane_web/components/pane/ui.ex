@@ -199,6 +199,7 @@ defmodule MaetoPaneWeb.Pane.UI do
   attr :subtitle, :string, default: nil
   attr :tone, :any, default: nil
   attr :state, :any, default: nil
+  slot :actions
 
   def head(assigns) do
     ~H"""
@@ -210,7 +211,10 @@ defmodule MaetoPaneWeb.Pane.UI do
         </div>
         <p :if={@subtitle} class="mt-0.5 truncate font-mono text-[11px] text-muted">{@subtitle}</p>
       </div>
-      <.esc />
+      <div class="flex shrink-0 items-center gap-1.5">
+        {render_slot(@actions)}
+        <.esc />
+      </div>
     </header>
     """
   end

@@ -41,11 +41,32 @@ func (b *BandwidthReservationRegistry) ReservedMapExcluding(tenantID TenantID, k
 	return rMap
 }
 
+func (b *BandwidthReservationRegistry) ReservedMap() map[PCEEdgeID]float64 {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+
+	rMap := make(map[PCEEdgeID]float64, len(b.registry))
+	for edgeID, rEdge := range b.registry {
+		rMap[edgeID] = rEdge.loadAndCapacity()
+	}
+
+	return rMap
+}
+
 // Directional, one physical link will have two reservation edge
 type BandwidthReservationEdge struct {
 	ForEdge *PCEEdge
 
 	Bookings map[TenantID]*BandwidthReservationTenantEntry
+}
+
+func (b *BandwidthReservationEdge) loadAndCapacity() float64 {
+	load := 0.0
+	for _, booking := range b.Bookings {
+		load += booking.CalculateReservedBandwidth()
+	}
+
+	return load
 }
 
 func (b *BandwidthReservationEdge) loadExcluding(tenantID TenantID, key BandwidthReservationKey, with *BandwidthReservation) float64 {
@@ -58,13 +79,13 @@ func (b *BandwidthReservationEdge) loadExcluding(tenantID TenantID, key Bandwidt
 	}
 
 	if b == nil {
-		return rest.CalculateBandwidth()
+		return rest.CalculateReservedBandwidth()
 	}
 
 	load := 0.0
 	for tID, entry := range b.Bookings {
 		if tID != tenantID {
-			load += entry.CalculateBandwidth()
+			load += entry.CalculateReservedBandwidth()
 			continue
 		}
 
@@ -75,7 +96,7 @@ func (b *BandwidthReservationEdge) loadExcluding(tenantID TenantID, key Bandwidt
 		}
 	}
 
-	return load + rest.CalculateBandwidth()
+	return load + rest.CalculateReservedBandwidth()
 }
 
 type BandwidthReservationTenantEntry struct {
@@ -113,7 +134,7 @@ func (e *BandwidthReservationTenantEntry) getBandwidthSums() (map[uint64]float64
 	return sumSources, sumSinks
 }
 
-func (e *BandwidthReservationTenantEntry) CalculateBandwidth() float64 {
+func (e *BandwidthReservationTenantEntry) CalculateReservedBandwidth() float64 {
 	sumSources, sumSinks := e.getBandwidthSums()
 
 	total := 0.0
@@ -271,7 +292,7 @@ func (b *BandwidthReservationRegistry) Snapshot(graph *PCEGraph) map[PCEEdgeID]B
 		bookings := 0
 		if rEdge, exists := b.registry[id]; exists {
 			for _, tenantEntry := range rEdge.Bookings {
-				booked += tenantEntry.CalculateBandwidth()
+				booked += tenantEntry.CalculateReservedBandwidth()
 				bookings += len(tenantEntry.Reservations)
 			}
 		}

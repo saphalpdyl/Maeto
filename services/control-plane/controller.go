@@ -81,7 +81,7 @@ func NewController(
 		slog.String("boot_mode", string(bootMode)),
 	)
 
-	costGraph, err := NewTestCostGraph(topology.Graph())
+	costGraph, err := NewCostGraph(topology.Graph())
 	if err != nil {
 		return nil, fmt.Errorf("failed to create cost graph: %w", err)
 	}

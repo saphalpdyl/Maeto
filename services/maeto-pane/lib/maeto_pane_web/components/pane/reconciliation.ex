@@ -1,6 +1,6 @@
 defmodule MaetoPaneWeb.Pane.Reconciliation do
   @moduledoc """
-  The mesh's reconciliation state at a glance: one overall verdict and the four
+  The mesh's reconciliation state at a glance: one overall verdict and the
   layers it is made of, each as healthy-over-total.
   """
 
@@ -31,13 +31,8 @@ defmodule MaetoPaneWeb.Pane.Reconciliation do
             {@facts.adjacencies_up} / {@facts.adjacencies}
           </.stat>
         </.cell>
-        <.cell label="Segment lists in FIB" class="border-r">
+        <.cell label="Segment lists in FIB" class="col-span-2">
           <.stat tone={paths_tone(@facts)}>{@facts.paths_installed} / {@facts.paths}</.stat>
-        </.cell>
-        <.cell label="Sites reporting">
-          <.stat tone={if @facts.sites_up == @facts.sites, do: "ok", else: "bad"}>
-            {@facts.sites_up} / {@facts.sites}
-          </.stat>
         </.cell>
       </div>
     </section>

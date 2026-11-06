@@ -24,7 +24,17 @@ defmodule MaetoPaneWeb.Pane.Inspector.LinkPanel do
       subtitle={"#{Enum.count(@selected.edges, & &1["up"])}/#{length(@selected.edges)} member link(s) up"}
       tone={if @selected.up, do: "ok", else: "bad"}
       state={if @selected.up, do: "Up", else: "Down"}
-    />
+    >
+      <:actions>
+        <.link
+          id="open-link"
+          patch={~p"/?#{[section: "links", link: @selected.id]}"}
+          class="flex items-center gap-1 rounded-md border border-line bg-surface px-2 py-0.5 text-xs whitespace-nowrap text-muted transition-colors hover:text-ink"
+        >
+          <.icon name="hero-table-cells" class="size-3.5" /> Link details
+        </.link>
+      </:actions>
+    </.head>
 
     <section class="space-y-5 border-b border-line px-4 py-4">
       <div class="flex items-center gap-4 text-xs text-muted">

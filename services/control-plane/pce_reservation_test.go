@@ -90,7 +90,7 @@ func bookedOn(r *BandwidthReservationRegistry, g *PCEGraph, name string) float64
 
 	total := 0.0
 	for _, entry := range rEdge.Bookings {
-		total += entry.CalculateBandwidth()
+		total += entry.CalculateReservedBandwidth()
 	}
 
 	return total

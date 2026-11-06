@@ -224,7 +224,7 @@ const layout = (nodes, links, aspect) => {
   return pos
 }
 
-const latencyText = value => {
+const costText = value => {
   if (value == null) return "–"
   return value >= 10 ? String(Math.round(value)) : value.toFixed(1)
 }
@@ -232,7 +232,7 @@ const latencyText = value => {
 const labelText = link => {
   const up = link.members.filter(m => m.up).length
   const total = link.members.length
-  return up === 0 ? `∞ · 0/${total}` : `${latencyText(link.latency)} · ${up}/${total}`
+  return up === 0 ? `∞ · 0/${total}` : `${costText(link.cost)} · ${up}/${total}`
 }
 
 export default {
@@ -362,6 +362,22 @@ export default {
     }
 
     this.graph.addCell(cells)
+  },
+
+  // costs move every snapshot and with the chosen class, so the label text is
+  // refreshed on every paint rather than only when the mesh is laid out
+  relabel(label, link) {
+    const text = labelText(link)
+    if (label.attr("label/text") === text) return
+
+    const p = this.positions.get(link.a)
+    const q = this.positions.get(link.b)
+    if (!p || !q) return
+
+    const width = text.length * 7 + 18
+    label.resize(width, 22)
+    label.position((p.x + q.x) / 2 - width / 2, (p.y + q.y) / 2 - 11)
+    label.attr({body: {width, height: 22}, label: {x: width / 2, text}})
   },
 
   draw(payload) {
@@ -507,7 +523,7 @@ export default {
         const onPath = tracing && hops.has(pairKey(link.a, link.b))
         const dim = tracing && !onPath
         const up = link.members.filter(m => m.up).length
-        const ratio = link.latency == null ? 0 : link.latency / ceiling
+        const ratio = link.cost == null ? 0 : link.cost / ceiling
 
         for (const member of link.members) {
           const edge = this.graph.getCellById(`m:${member.id}`)
@@ -542,6 +558,8 @@ export default {
 
         const label = this.graph.getCellById(`l:${link.id}`)
         if (!label) continue
+
+        this.relabel(label, link)
 
         let tone = colors.muted
         if (up === 0) tone = colors.bad

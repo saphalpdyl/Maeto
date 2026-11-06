@@ -287,12 +287,11 @@ defmodule MaetoPane.Pane.PathsTest do
       assert %{cpe: "cC", status: :up, tunnel_if: 3} = Enum.find(sites, &(&1.cpe == "cC"))
     end
 
-    test "an unreported portal counts registered but not up" do
+    test "a site with a tunnel is up even though its portal reports nothing" do
       intents = %{"cpe.aa400723fee3" => %{"intent" => %{"tunnel_interface_id" => 3}}}
       sites = Paths.sites(snapshot(intents: intents))
 
-      assert %{status: :no_report} = Enum.find(sites, &(&1.cpe == "cC"))
-      assert Paths.site_counts(sites) == %{total: 2, up: 0}
+      assert %{status: :up} = Enum.find(sites, &(&1.cpe == "cC"))
     end
   end
 
