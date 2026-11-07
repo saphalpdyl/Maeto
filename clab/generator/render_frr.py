@@ -27,6 +27,8 @@ def render_frr(pop_plan):
             f" ipv6 address {i.address}",
             f" ipv6 router isis {ISIS_INSTANCE}",
             " isis network point-to-point",
+            " isis bfd",
+            " isis bfd profile maeto-core",
             "!",
         ]
 
@@ -51,6 +53,16 @@ def render_frr(pop_plan):
         # never anything learned from or about a tenant
         " segment-routing srv6",
         "  locator CORE",
+        " !",
+        "!",
+    ]
+
+    lines += [
+        "bfd",
+        " profile maeto-core",
+        "  transmit-interval 50",
+        "  receive-interval 50",
+        "  detect-multiplier 6",
         " !",
         "!",
     ]

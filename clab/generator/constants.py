@@ -85,6 +85,7 @@ DEFAULT_START_JITTER = 0.0
 FRR_DAEMONS = """zebra=yes
 isisd=yes
 staticd=yes
+bfdd=yes
 
 bgpd=no
 ospfd=no
@@ -99,7 +100,6 @@ eigrpd=no
 babeld=no
 sharpd=no
 pbrd=no
-bfdd=no
 fabricd=no
 vrrpd=no
 pathd=no
@@ -107,6 +107,7 @@ pathd=no
 vtysh_enable=yes
 zebra_options="  -A 127.0.0.1 -s 90000000"
 isisd_options="  -A 127.0.0.1"
+bfdd_options="  -A 127.0.0.1 --dplaneaddr ipv4c:127.0.0.1:50700"
 pathd_options="  -A 127.0.0.1"
 staticd_options="-A 127.0.0.1"
 """

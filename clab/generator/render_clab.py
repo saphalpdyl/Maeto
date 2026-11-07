@@ -132,6 +132,8 @@ def render_clab(topo, plan):
             "sysctl -w net.ipv6.seg6_flowlabel=1",
             "ip link add sr0 type dummy",
             "ip link set sr0 up",
+            # bfdd connects to the xdp-bfd data plane at startup. it has to start first https://github.com/w453y/xdp-bfd
+            "sh -c 'for i in $(seq 25); do supervisorctl -c /etc/supervisor/conf.d/supervisord.conf start xdp-bfd && break; sleep 0.2; done'",
             "sh -c '/usr/lib/frr/docker-start &'"
         ]
         access = plan.pops[pop.id].access

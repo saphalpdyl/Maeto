@@ -297,6 +297,7 @@ Done/In-progress:
 - Loss and jitter are NOT seeded values anymore. 
 
 Not yet:
+- BFD-based link-down interface-up events + Netlink-based link-down interface-down events
 - BGP-LS defined topology instead of statically generated topology
 - Link and Node Utilization in Cost  Graph as logical links.
 - Flexible Bandwidth Reservation: CIR, PIR and best-effort traffic allocation

@@ -2,3 +2,6 @@
   path = third_party/nftables
   url = https://github.com/saphalpdyl/nftables.git
   branch = feat/add-bitshift-support-to-bitwise
+[submodule "third_party/xdp-bfd"]
+	path = third_party/xdp-bfd
+	url = https://github.com/saphalpdyl/xdp-bfd.git

@@ -23,10 +23,16 @@ RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache
       CGO_ENABLED=0 go build -o /bin/maeto-agent ./services/maeto-agent/cmd; \
     fi
 
+FROM alpine:3.22.3 AS xdp-bfd-build
+RUN apk add --no-cache build-base clang20 llvm20 libbpf-dev linux-headers
+WORKDIR /src
+COPY third_party/xdp-bfd/ .
+RUN make bfd_xdp.o bfd_tx
+
 # PoP node: FRR for IS-IS + SRv6, strongSwan for customer IPsec termination.
 FROM quay.io/frrouting/frr:10.6.0
 
-RUN apk add --no-cache strongswan nftables supervisor tcpdump mandoc man-pages
+RUN apk add --no-cache strongswan nftables supervisor tcpdump mandoc man-pages libbpf
 
 RUN mkdir -p /var/log/supervisor
 RUN mkdir -p /var/log/maeto
@@ -38,6 +44,9 @@ COPY docker/conf/shared/charon-maeto.conf /etc/strongswan.d/maeto.conf
 
 COPY --from=build /bin/maeto-agent /usr/local/bin/maeto-agent
 COPY --from=build /out/ /usr/local/bin/
+COPY --from=xdp-bfd-build /src/bfd_tx /usr/local/sbin/xdp-bfd
+COPY --from=xdp-bfd-build /src/bfd_xdp.o /usr/local/sbin/bfd_xdp.o
+
 COPY docker/scripts/maeto-launch.sh /usr/local/bin/maeto-launch
 COPY docker/scripts/maeto-monitor.sh /usr/local/bin/maeto-monitor
 

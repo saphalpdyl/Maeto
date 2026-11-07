@@ -7,7 +7,8 @@
     "\\.mk$",
     "\\.ipynb$",
     "services/maeto-agent/bpf/headers/",
-    "^services/maeto-pane/assets/.*\\.js$"
+    "^services/maeto-pane/assets/.*\\.js$",
+    ".gitmodules"
   ],
   "Disable": {
     "IndentSize": true
