@@ -1,0 +1,5 @@
+*.so
+*.o
+.frr-stage/
+compile_commands.json
+.idea/

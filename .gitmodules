@@ -5,3 +5,7 @@
 [submodule "third_party/xdp-bfd"]
 	path = third_party/xdp-bfd
 	url = https://github.com/saphalpdyl/xdp-bfd.git
+[submodule "third_party/maeto-frr"]
+	path = third_party/maeto-frr
+	url = https://github.com/saphalpdyl/maeto-frr.git
+	branch = feat/bfdd-yang-notifications
