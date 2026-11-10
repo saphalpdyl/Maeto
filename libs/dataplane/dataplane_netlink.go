@@ -285,7 +285,14 @@ func linkNames() (map[int]string, error) {
 	return out, nil
 }
 
-func maetoRule(priority int, src *netip.Prefix, tableID int, mark int, iifName string) *netlink.Rule {
+func maetoRule(
+	priority int,
+	src *netip.Prefix,
+	tableID int,
+	mark int,
+	iifName string,
+	dst *netip.Prefix,
+) *netlink.Rule {
 	rule := netlink.NewRule()
 	rule.Family = netlink.FAMILY_V6
 	rule.Priority = priority
@@ -298,13 +305,17 @@ func maetoRule(priority int, src *netip.Prefix, tableID int, mark int, iifName s
 		rule.Src = prefixToIPNet(*src)
 	}
 
+	if dst != nil {
+		rule.Dst = prefixToIPNet(*dst)
+	}
+
 	return rule
 }
 
 // UpsertRule installs a policy rule. RuleAdd is not idempotent -- a second
 // identical add returns EEXIST rather than succeeding.
-func (l *LinuxNetlink) UpsertRule(priority int, src *netip.Prefix, tableID int, mark int, iifName string) error {
-	if err := netlink.RuleAdd(maetoRule(priority, src, tableID, mark, iifName)); err != nil {
+func (l *LinuxNetlink) UpsertRule(priority int, src *netip.Prefix, tableID int, mark int, iifName string, dst *netip.Prefix) error {
+	if err := netlink.RuleAdd(maetoRule(priority, src, tableID, mark, iifName, dst)); err != nil {
 		if errors.Is(err, unix.EEXIST) {
 			return nil // already there, and every field is part of its identity
 		}
@@ -317,8 +328,8 @@ func (l *LinuxNetlink) UpsertRule(priority int, src *netip.Prefix, tableID int, 
 
 // RemoveRule deletes a policy rule. Unlike routes, a missing rule reports
 // ENOENT rather than ESRCH.
-func (l *LinuxNetlink) RemoveRule(priority int, src *netip.Prefix, tableID int, mark int, iifName string) error {
-	if err := netlink.RuleDel(maetoRule(priority, src, tableID, mark, iifName)); err != nil {
+func (l *LinuxNetlink) RemoveRule(priority int, src *netip.Prefix, tableID int, mark int, iifName string, dst *netip.Prefix) error {
+	if err := netlink.RuleDel(maetoRule(priority, src, tableID, mark, iifName, dst)); err != nil {
 		if errors.Is(err, unix.ENOENT) {
 			return nil // already gone
 		}

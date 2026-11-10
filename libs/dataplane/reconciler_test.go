@@ -51,6 +51,16 @@ func TestLiveDataplaneRead(t *testing.T) {
 type TestDefaultRouteOnlyDataplane struct {
 }
 
+// RemoveRule implements [dataplane.Dataplane].
+func (t *TestDefaultRouteOnlyDataplane) RemoveRule(priority int, src *netip.Prefix, tableID int, mark int, iifName string, dst *netip.Prefix) error {
+	panic("unimplemented")
+}
+
+// UpsertRule implements [dataplane.Dataplane].
+func (t *TestDefaultRouteOnlyDataplane) UpsertRule(priority int, src *netip.Prefix, tableID int, mark int, iifName string, dst *netip.Prefix) error {
+	panic("unimplemented")
+}
+
 func (t *TestDefaultRouteOnlyDataplane) EnsureClassificationBase() error {
 	//TODO implement me
 	panic("implement me")
@@ -143,14 +153,6 @@ func (t *TestDefaultRouteOnlyDataplane) UpsertPolicy(nhid string, dtsid string, 
 }
 
 func (t *TestDefaultRouteOnlyDataplane) UpsertRouteToPolicy(dest string, vrfTableId string, nhid string) error {
-	panic("unimplemented")
-}
-
-func (t *TestDefaultRouteOnlyDataplane) UpsertRule(priority int, src *netip.Prefix, tableID int, mark int, iifName string) error {
-	panic("unimplemented")
-}
-
-func (t *TestDefaultRouteOnlyDataplane) RemoveRule(priority int, src *netip.Prefix, tableID int, mark int, iifName string) error {
 	panic("unimplemented")
 }
 

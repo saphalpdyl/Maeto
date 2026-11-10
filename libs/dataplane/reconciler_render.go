@@ -8,6 +8,7 @@ import (
 	"slices"
 
 	"github.com/saphalpdyl/maeto/libs/nodesync"
+	"golang.org/x/sys/unix"
 )
 
 // Rendering is the process of converting high-level intent or low-level dataplane state
@@ -51,6 +52,17 @@ func (r *Reconciler) RenderCPEIntent(ctx context.Context, cpe *nodesync.CPEInten
 		Src:      &cpe.SitePrefix,
 		Table:    CPETunnelTable,
 	}
+
+	// Traffic from CPE addressed to its LAN (the site) was being bounced back and forth
+	// in the tunnel because the rule above kept sending LAN traffic towards the tunnel
+	// and the pop sent back the packet towards the CPE
+	siteDstRule := &Rule{
+		Priority: CPESiteRulePriority,
+		Dst:      &cpe.SitePrefix,
+		Table:    unix.RT_TABLE_MAIN,
+	}
+
+	resources[siteDstRule.ID().Key] = siteDstRule
 	resources[siteRule.ID().Key] = siteRule
 
 	return resources, nil

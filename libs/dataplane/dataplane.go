@@ -70,6 +70,7 @@ type DataplaneSID struct {
 type DataplaneRule struct {
 	Priority int
 	Src      *netip.Prefix
+	Dst      *netip.Prefix
 	Table    int
 	Mark     int
 	Iif      string
@@ -142,8 +143,8 @@ type Dataplane interface {
 	RemoveXFRMInterface(linkIndex int) error
 
 	// tableID names the table directly; unix.RT_TABLE_MAIN on a cpe
-	UpsertRule(priority int, src *netip.Prefix, tableID int, mark int, iifName string) error
-	RemoveRule(priority int, src *netip.Prefix, tableID int, mark int, iifName string) error
+	UpsertRule(priority int, src *netip.Prefix, tableID int, mark int, iifName string, dst *netip.Prefix) error
+	RemoveRule(priority int, src *netip.Prefix, tableID int, mark int, iifName string, dst *netip.Prefix) error
 	GetRules() ([]DataplaneRule, error)
 
 	// TODO: Rename tunnelIface to just dev

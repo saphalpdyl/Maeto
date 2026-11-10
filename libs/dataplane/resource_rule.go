@@ -9,20 +9,27 @@ import (
 type Rule struct {
 	Priority int           `rc:"id"`
 	Src      *netip.Prefix `rc:"id"`
-	Table    int           `rc:"id"`
-	Mark     int           `rc:"mark"`
-	Iif      string        `rc:"iifName"`
+	Dst      *netip.Prefix
+	Table    int    `rc:"id"`
+	Mark     int    `rc:"mark"`
+	Iif      string `rc:"iifName"`
 }
 
 func (r *Rule) ID() ID {
 	src := ""
+	dst := ""
+
 	if r.Src != nil {
 		src = r.Src.String()
 	}
 
+	if r.Dst != nil {
+		dst = r.Dst.String()
+	}
+
 	return ID{
 		Kind: KindRule,
-		Key:  fmt.Sprintf("%s:%d.%s.%d.%d", KindRule, r.Priority, src, r.Table, r.Mark),
+		Key:  fmt.Sprintf("%s:%d.%s.%s.%d.%d.%s", KindRule, r.Priority, src, dst, r.Table, r.Mark, r.Iif),
 	}
 }
 
