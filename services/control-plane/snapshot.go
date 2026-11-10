@@ -473,6 +473,7 @@ func SnapshotPaths(paths PathSet) []PathSnapshot {
 type SnapshotPublisher struct {
 	publisher *nodesync.Publisher
 	interval  time.Duration
+	refresh   <-chan struct{}
 	logger    *slog.Logger
 
 	graph     *Graph
@@ -489,6 +490,7 @@ type SnapshotPublisher struct {
 func NewSnapshotPublisher(
 	publisher *nodesync.Publisher,
 	interval time.Duration,
+	refresh <-chan struct{},
 	logger *slog.Logger,
 	graph *Graph,
 	domain SRv6DomainMetadata,
@@ -503,6 +505,7 @@ func NewSnapshotPublisher(
 	return &SnapshotPublisher{
 		publisher: publisher,
 		interval:  interval,
+		refresh:   refresh,
 		logger:    logger,
 		graph:     graph,
 		domain:    domain,
@@ -547,6 +550,8 @@ func (s *SnapshotPublisher) Run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+			s.publish(ctx)
+		case <-s.refresh:
 			s.publish(ctx)
 		}
 	}

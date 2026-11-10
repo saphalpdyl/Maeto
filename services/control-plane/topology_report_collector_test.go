@@ -62,7 +62,7 @@ func Test_SetEndXSIDsClearsInterfacesMissingFromTheReport(t *testing.T) {
 
 func Test_StaleTopologyReportClearsEndXSIDs(t *testing.T) {
 	topology := newEndXFixture()
-	collector := NewTopologyReportCollector(nil, slog.New(slog.DiscardHandler), topology)
+	collector := NewTopologyReportCollector(nil, slog.New(slog.DiscardHandler), make(chan struct{}), topology)
 
 	collector.apply(context.Background(), nodesync.TopologyReport{
 		NodeID:     "A",
@@ -80,5 +80,35 @@ func Test_StaleTopologyReportClearsEndXSIDs(t *testing.T) {
 
 	if topology.graph.edges["A:eth2-B:eth2"].EndX.IsValid() {
 		t.Errorf("stale report should have cleared the SID")
+	}
+}
+
+func Test_SetLinkStatesSetsOnlyTheReportingNodesEdges(t *testing.T) {
+	topology := newEndXFixture()
+	for _, edge := range topology.graph.edges {
+		edge.Up = true
+	}
+
+	changed := topology.SetLinkStates("A", map[string]nodesync.LinkState{
+		"eth2": nodesync.LinkStateDown,
+		"eth3": nodesync.LinkStateUnknown,
+	})
+
+	if len(changed) != 1 || changed[0] != "A:eth2-B:eth2" {
+		t.Fatalf("expected only A:eth2-B:eth2 to change, got %v", changed)
+	}
+	if topology.graph.edges["A:eth2-B:eth2"].Up {
+		t.Errorf("A:eth2 reported DOWN")
+	}
+	if !topology.graph.edges["A:eth3-B:eth3"].Up {
+		t.Errorf("UNKNOWN must keep the current state")
+	}
+	if !topology.graph.edges["B:eth2-A:eth2"].Up {
+		t.Errorf("A's report must not touch B's edges")
+	}
+
+	changed = topology.SetLinkStates("A", map[string]nodesync.LinkState{"eth2": nodesync.LinkStateUp})
+	if len(changed) != 1 || !topology.graph.edges["A:eth2-B:eth2"].Up {
+		t.Errorf("A:eth2 should be back up, changed %v", changed)
 	}
 }

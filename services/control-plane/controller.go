@@ -36,6 +36,8 @@ type Controller struct {
 	bootMode BootMode
 
 	pceUpdates chan PathSet
+
+	snapshotRefresh chan struct{}
 }
 
 func NewController(
@@ -123,6 +125,8 @@ func NewController(
 	}
 
 	pceUpdatesChan := make(chan PathSet, 32)
+	pceImmediateRecomputeChan := make(chan struct{}, 1)
+	snapshotRefreshChan := make(chan struct{}, 1)
 
 	return &Controller{
 		config: config,
@@ -137,6 +141,7 @@ func NewController(
 		topologyReports: NewTopologyReportCollector(
 			js,
 			logger.With(log.Domain(log.DomainControlPlaneLifecycle)),
+			pceImmediateRecomputeChan,
 			topology,
 		),
 		nodeReports: NewNodeReportRecorder(
@@ -153,10 +158,13 @@ func NewController(
 				HoldDownDuration: 30 * time.Second,
 				PCETickDuration:  10 * time.Second,
 			},
+			pceImmediateRecomputeChan,
+			snapshotRefreshChan,
 			logger.With(log.Domain(log.DomainPCE)),
 		),
-		pceUpdates: pceUpdatesChan,
-		db:         db,
+		pceUpdates:      pceUpdatesChan,
+		snapshotRefresh: snapshotRefreshChan,
+		db:              db,
 
 		ready:    false,
 		bootMode: bootMode,
@@ -266,6 +274,7 @@ func (c *Controller) startSnapshotPublisher(ctx context.Context) error {
 	snapshots := NewSnapshotPublisher(
 		publisher,
 		c.config.SnapshotInterval,
+		c.snapshotRefresh,
 		c.logger.With(log.Domain(log.DomainControlPlaneLifecycle)),
 		c.topology.Graph(),
 		c.topology.GetDomainMetadata(),

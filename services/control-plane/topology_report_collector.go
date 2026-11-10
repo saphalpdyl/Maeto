@@ -27,14 +27,22 @@ type TopologyReportCollector struct {
 	topology *ClabTopologyManager
 
 	reportedAt map[NodeID]time.Time
+
+	pceImmediateRecomputeChan chan struct{}
 }
 
-func NewTopologyReportCollector(js jetstream.JetStream, logger *slog.Logger, topology *ClabTopologyManager) *TopologyReportCollector {
+func NewTopologyReportCollector(
+	js jetstream.JetStream,
+	logger *slog.Logger,
+	pceImmediateRecomputeChan chan struct{},
+	topology *ClabTopologyManager,
+) *TopologyReportCollector {
 	return &TopologyReportCollector{
-		js:         js,
-		logger:     logger,
-		topology:   topology,
-		reportedAt: make(map[NodeID]time.Time),
+		js:                        js,
+		logger:                    logger,
+		topology:                  topology,
+		reportedAt:                make(map[NodeID]time.Time),
+		pceImmediateRecomputeChan: pceImmediateRecomputeChan,
 	}
 }
 
@@ -87,6 +95,26 @@ func (t *TopologyReportCollector) apply(ctx context.Context, report nodesync.Top
 		t.logger.InfoContext(ctx, "End.X SIDs changed",
 			log.NodeID(string(nodeID)),
 			slog.Any("edges", changed))
+	}
+
+	changed = t.topology.SetLinkStates(nodeID, report.Links)
+	if len(changed) > 0 {
+		t.logger.InfoContext(ctx, "link states changed",
+			log.NodeID(string(nodeID)),
+			slog.Any("edges", changed),
+			slog.Any("links", report.Links))
+	}
+
+	for _, s := range report.Links {
+		if s == nodesync.LinkStateDown {
+			select {
+			case t.pceImmediateRecomputeChan <- struct{}{}:
+			default:
+			}
+
+			// One down is enough since its just a retick.
+			break
+		}
 	}
 
 	t.reportedAt[nodeID] = report.ReportedAt

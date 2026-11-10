@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+
+	"github.com/saphalpdyl/maeto/libs/nodesync"
 )
 
 type ContainerlabTopologyState struct {
@@ -296,6 +298,38 @@ func (c *ClabTopologyManager) GetNodeByID(nodeID NodeID) (*Node, bool) {
 
 func (c *ClabTopologyManager) GetDomainMetadata() SRv6DomainMetadata {
 	return c.domainMetadata
+}
+
+// Interfaces missing from states, or UNKNOWN, keep their current state.
+func (c *ClabTopologyManager) SetLinkStates(node NodeID, states map[string]nodesync.LinkState) []EdgeID {
+	c.graph.mu.Lock()
+	defer c.graph.mu.Unlock()
+
+	changed := make([]EdgeID, 0)
+	for _, edge := range c.graph.edges {
+		if edge.Local != node {
+			continue
+		}
+
+		var up bool
+		switch states[edge.LocalIface] {
+		case nodesync.LinkStateUp:
+			up = true
+		case nodesync.LinkStateDown:
+			up = false
+		default:
+			continue
+		}
+
+		if up == edge.Up {
+			continue
+		}
+
+		edge.Up = up
+		changed = append(changed, edge.ID)
+	}
+
+	return changed
 }
 
 func (c *ClabTopologyManager) SetEndXSIDs(node NodeID, sidsByIface map[string]netip.Addr) []EdgeID {

@@ -28,6 +28,7 @@ It's a hobby project that runs Docker containers w/ network namespaces to emulat
   - [Bandwidth Reservation](#bandwidth-reservation)
   - [Path Computation](#path-computation)
   - [Active telemetry through STAMP](#active-telemetry-through-stamp)
+  - [BFD Link-down detection through XDP](#bfd-link-down-detection-through-xdp)
   - [Realistic traffic with tfsim](#realistic-traffic-with-tfsim)
   - [Breaking the testbed on purpose with maeto-sim](#breaking-the-testbed-on-purpose-with-maeto-sim)
 - [Running it](#running-it)
@@ -140,6 +141,13 @@ with Segment Routing Extension [RFC 9503](https://www.rfc-editor.org/info/rfc950
 The reflector in each PoP collects the telemetry data from its peers, reads the TelemetryKey inside Maeto-Container TLV and forwards to NATS based on the key. 
 The controller collects these telemetry, and regroups them based on the source. Then after, jitter and packet loss are derived from the latency and sequence number of the STAMP packet. 
 
+### BFD Link-down detection through XDP
+Bidirectional Forwarding Detection [[RFC 5880](https://www.rfc-editor.org/info/rfc5880/)] is a protocol intended to detect faults in the bidirectional path between two forwarding engines. Maeto uses BFD through FRR's `bffd` with dataplane offload to XDP through a fork of [xdp-bfd](https://github.com/w453y/xdp-bfd). Maeto also has its own fork of FRR called `maeto-frr` with a patched `bffd` to allow FRR modules to receive BFD notification through FRR's YANG northbound and relay it to external application. 
+
+`frr-modules/` contains `Maeto` FRR plugin/module that starts up with `bffd` which is the relay to `maeto-agent`. The messages are exchanged with IPC using unix sockets.
+
+#### WHY XDP FOR AN EMULATION ?
+Maeto runs in a VM, and its demo will run in a resource-constrained Hetzner box. Under load, userspace BFD will miss deadlines and create false-positives. XDP keeps BFD's timer independent of userspace scheduling.
 
 ### Realistic traffic with tfsim
 A control plane that reroutes on measured cost needs traffic worth reacting to. `clab/tfsim` drives the lab with iperf3 sessions

@@ -11,7 +11,17 @@ type TopologyReport struct {
 	NodeID      string            `json:"node_id"`
 	ReportedAt  time.Time         `json:"reported_at"`
 	Adjacencies []AdjacencyReport `json:"adjacencies"`
+	// Separate from Adjacencies: a down link loses its adjacency and End.X.
+	Links map[string]LinkState `json:"links,omitempty"`
 }
+
+type LinkState string
+
+const (
+	LinkStateUnknown LinkState = "UNKNOWN"
+	LinkStateUp      LinkState = "UP"
+	LinkStateDown    LinkState = "DOWN"
+)
 
 type AdjacencyReport struct {
 	Interface string     `json:"interface"`

@@ -103,14 +103,24 @@ func (a *Agent) Run(ctx context.Context) {
 			nodeID:    a.node.ID,
 		})
 
+		linkUpdates := make(chan map[string]nodesync.LinkState)
+
 		topology := &topologyReporter{
-			publisher: publisher,
-			key:       nodesync.Key(nodesync.PrefixPE, a.node.ID, nodesync.LaneTopology),
-			nodeID:    a.node.ID,
-			dp:        a.dp,
-			logger:    a.logger.With(log.Domain(log.DomainControlPlane)),
+			publisher:   publisher,
+			key:         nodesync.Key(nodesync.PrefixPE, a.node.ID, nodesync.LaneTopology),
+			nodeID:      a.node.ID,
+			dp:          a.dp,
+			logger:      a.logger.With(log.Domain(log.DomainControlPlane)),
+			linkUpdates: linkUpdates,
 		}
 		go topology.Run(ctx)
+
+		health := NewHealthMonitor(linkUpdates, a.logger.With(log.Domain(log.DomainControlPlane)))
+		go func() {
+			if err := health.Start(ctx); err != nil && ctx.Err() == nil {
+				a.logger.ErrorContext(ctx, "health monitor stopped", log.Err(err))
+			}
+		}()
 	}
 
 	go func() {

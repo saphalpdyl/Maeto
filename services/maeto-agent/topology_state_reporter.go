@@ -16,7 +16,10 @@ import (
 	"github.com/saphalpdyl/maeto/services/maeto-agent/log"
 )
 
-const topologyReportInterval = 10 * time.Second
+const (
+	topologyReportInterval      = 10 * time.Second
+	topologyReportRetryInterval = time.Second
+)
 
 type topologyReporter struct {
 	publisher *nodesync.Publisher
@@ -24,6 +27,9 @@ type topologyReporter struct {
 	nodeID    string
 	dp        dataplane.Dataplane
 	logger    *slog.Logger
+
+	linkUpdates <-chan map[string]nodesync.LinkState
+	links       map[string]nodesync.LinkState
 }
 
 func (t *topologyReporter) Run(ctx context.Context) {
@@ -31,26 +37,36 @@ func (t *topologyReporter) Run(ctx context.Context) {
 	defer ticker.Stop()
 
 	for {
-		t.reportOnce(ctx)
+		// Retries rebuild the report, so the latest state is what gets stored.
+		var retry <-chan time.Time
+		if !t.reportOnce(ctx) {
+			retry = time.After(topologyReportRetryInterval)
+		}
 
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+		case <-retry:
+		case t.links = <-t.linkUpdates:
 		}
 	}
 }
 
-func (t *topologyReporter) reportOnce(ctx context.Context) {
+// reportOnce reports whether the report was stored (acked by JetStream).
+func (t *topologyReporter) reportOnce(ctx context.Context) bool {
 	report, err := t.collect()
 	if err != nil {
 		t.logger.ErrorContext(ctx, "failed to collect topology report", log.Err(err))
-		return
+		return false
 	}
 
 	if _, err := t.publisher.Publish(ctx, t.key, report); err != nil {
 		t.logger.ErrorContext(ctx, "failed to publish topology report", log.Err(err))
+		return false
 	}
+
+	return true
 }
 
 // End.X SIDs are allocated and installed by the IGP, so they are read from the
@@ -68,6 +84,7 @@ func (t *topologyReporter) collect() (*nodesync.TopologyReport, error) {
 		NodeID:      t.nodeID,
 		ReportedAt:  time.Now(),
 		Adjacencies: make([]nodesync.AdjacencyReport, 0, len(sids)),
+		Links:       t.links,
 	}
 
 	for _, sid := range sids {
