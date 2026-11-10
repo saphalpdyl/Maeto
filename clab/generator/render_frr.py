@@ -8,7 +8,7 @@ def render_frr(pop_plan):
         "frr defaults traditional",
         f"hostname {p.pop.node_name}",
         "log stdout",
-        "log file /tmp/frr.log debugging",
+        "log file /var/log/frr/frr.log debugging",
         "service integrated-vtysh-config",
         "!",
         "interface lo",

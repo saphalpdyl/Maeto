@@ -107,7 +107,7 @@ pathd=no
 vtysh_enable=yes
 zebra_options="  -A 127.0.0.1 -s 90000000"
 isisd_options="  -A 127.0.0.1"
-bfdd_options="  -A 127.0.0.1 --dplaneaddr ipv4c:127.0.0.1:50700"
+bfdd_options="  -A 127.0.0.1 --dplaneaddr ipv4c:127.0.0.1:50700 -M maeto"
 pathd_options="  -A 127.0.0.1"
 staticd_options="-A 127.0.0.1"
 """

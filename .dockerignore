@@ -7,3 +7,11 @@ refs/**
 services/maeto-pane/deps/**
 services/maeto-pane/_build/**
 services/maeto-pane/.elixir_ls/**
+
+# Host build outputs; the images build FRR and its modules from source.
+third_party/maeto-frr/build/**
+frr-modules/.frr-stage/**
+frr-modules/*.so
+frr-modules/*.o
+frr-modules/compile_commands.json
+frr-modules/.idea/**

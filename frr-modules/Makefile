@@ -7,10 +7,14 @@
 
 FRR_BUILD ?= ../third_party/maeto-frr/build
 FRR_STAGE ?= $(CURDIR)/.frr-stage
+# --prefix FRR was configured with: /usr/local for the dev build, /usr in
+# docker/maeto-pop.Dockerfile.
+FRR_PREFIX ?= /usr/local
+FRR_PC_DIR = $(FRR_STAGE)$(FRR_PREFIX)/lib/pkgconfig
 
 SYS_PATH := /usr/bin:/bin:$(PATH)
 
-PKG_CONFIG_ENV := PKG_CONFIG_PATH=$(FRR_STAGE)/usr/local/lib/pkgconfig \
+PKG_CONFIG_ENV := PKG_CONFIG_PATH=$(FRR_PC_DIR) \
 		  PKG_CONFIG_SYSROOT_DIR=$(FRR_STAGE)
 
 FRR_CFLAGS = $(shell $(PKG_CONFIG_ENV) pkg-config --cflags frr)
@@ -32,7 +36,7 @@ bfdd_maeto.so: maeto_bfd_notif_sender.c | check-stage
 	$(CC) $(FRR_CFLAGS) $(CFLAGS) $(LDFLAGS) -o $@ $<
 
 check-stage:
-	@test -f $(FRR_STAGE)/usr/local/lib/pkgconfig/frr.pc || \
+	@test -f $(FRR_PC_DIR)/frr.pc || \
 		{ echo "No staged FRR in $(FRR_STAGE); run 'make stage' first." >&2; exit 1; }
 
 #   make stage   stage-install the FRR fork into $(FRR_STAGE)

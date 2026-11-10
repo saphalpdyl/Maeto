@@ -62,6 +62,26 @@
         dest: /etc/modules-load.d/maeto.conf
         mode: "0644"
 
+    # Maeto bfdd module (frr-modules/) AppArmor profile for sockets.
+    - name: Check for the AppArmor bfdd profile
+      ansible.builtin.stat:
+        path: /etc/apparmor.d/bfdd
+      register: apparmor_bfdd
+
+    - name: Allow bfdd to send to the Maeto agent socket
+      ansible.builtin.copy:
+        content: |
+          # Managed by Maeto (playbook.yml): frr-modules/bfdd_maeto.so
+          @{run}/maeto/frr.bfd.sock rw,
+        dest: /etc/apparmor.d/local/bfdd
+        mode: "0644"
+      when: apparmor_bfdd.stat.exists
+      register: apparmor_bfdd_local
+
+    - name: Reload the AppArmor bfdd profile
+      ansible.builtin.command: apparmor_parser -r /etc/apparmor.d/bfdd
+      when: apparmor_bfdd_local is changed
+
     - name: Install containerlab
       ansible.builtin.shell: >-
         bash -c "$(curl -sL https://get.containerlab.dev)" --
