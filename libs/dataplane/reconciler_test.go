@@ -165,3 +165,15 @@ func (t *TestDefaultRouteOnlyDataplane) UpsertVRF(tableName string, tableID int)
 }
 
 var _ dataplane.Dataplane = (*TestDefaultRouteOnlyDataplane)(nil)
+
+func (t *TestDefaultRouteOnlyDataplane) InsertLimit(iifname string, mark *uint32, exceptMarks []uint32, rateBytes uint64, burstBytes uint32) error {
+	panic("unimplemented")
+}
+
+func (t *TestDefaultRouteOnlyDataplane) GetLimits() ([]dataplane.DataplaneLimit, error) {
+	panic("unimplemented")
+}
+
+func (t *TestDefaultRouteOnlyDataplane) RemoveLimit(handle uint64) error {
+	panic("unimplemented")
+}

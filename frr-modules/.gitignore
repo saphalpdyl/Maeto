@@ -3,3 +3,4 @@
 .frr-stage/
 compile_commands.json
 .idea/
+.cache/

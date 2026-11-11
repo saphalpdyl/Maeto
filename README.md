@@ -29,8 +29,7 @@ It's a hobby project that runs Docker containers w/ network namespaces to emulat
   - [Path Computation](#path-computation)
   - [Active telemetry through STAMP](#active-telemetry-through-stamp)
   - [BFD Link-down detection through XDP](#bfd-link-down-detection-through-xdp)
-  - [Realistic traffic with tfsim](#realistic-traffic-with-tfsim)
-  - [Breaking the testbed on purpose with maeto-sim](#breaking-the-testbed-on-purpose-with-maeto-sim)
+  - [Traffic simulation](#traffic-simulation)
 - [Running it](#running-it)
   - [Custom topology](#custom-topology)
 - [Layout](#layout)
@@ -149,38 +148,16 @@ Bidirectional Forwarding Detection [[RFC 5880](https://www.rfc-editor.org/info/r
 #### WHY XDP FOR AN EMULATION ?
 Maeto runs in a VM, and its demo will run in a resource-constrained Hetzner box. Under load, userspace BFD will miss deadlines and create false-positives. XDP keeps BFD's timer independent of userspace scheduling.
 
-### Realistic traffic with tfsim
-A control plane that reroutes on measured cost needs traffic worth reacting to. `clab/tfsim` drives the lab with iperf3 sessions
-shaped like real customers. Sessions arrive as a Poisson process whose rate follows a business day, quiet overnight and busiest
-mid-morning and mid-afternoon, with a slow log-normal drift on top that produces busy and quiet spells lasting about a minute.
+### Traffic simulation
+`clab/tfsim` and `maeto-sim` are the traffic simulation components of Maeto that generate something similar to realistic customer traffic. They make use `iperf3` sessions to emulate data transfer. The transfer sizers are log-normal (Pareto), and so are the call-lengths (voice sessions). This makes it so that most of the traffic is small transfer size (DNS query, web search etc), while a few of them are big long-running elephant flows (backup, OS updates, whatever bulky).
 
-Transfer sizes are Pareto or log-normal and call lengths are log-normal, so a handful of elephant flows carry most of the bytes.
-Over a long run the top 10% of sessions carry roughly 70% of them. Each session is one of web, bulk, backup, video streaming,
-conference or voice, with its own size, rate, protocol and DSCP marking, which gives the traffic classes something real to steer.
-A tenant's largest site acts as its data centre, so content flows out to the branches, backups flow back in and calls run both
-ways at different rates. When the flow table is full, new sessions are turned away the way a busy trunk drops a call.
+`tfsim` is the core of traffic simulation. It parses scenarios (.yml files), and drives the sessions. `maeto-sim` builds an application layer on top of it. For the demo, all simulation are restricted to a max time and max faults at once (2). For an actual endless loop locally, you can run:
 
-```shell
-make tfsim-random # Runs random traffic forever
-make tfsim # Runs scene1.yml 
+```
+make tfsim-random
 ```
 
-### Breaking the testbed on purpose with maeto-sim
-The demo is about watching the control plane react, so visitors can break the network themselves from the pane's Simulator page.
-`services/maeto-sim` receives their commands over NATS, applies them inside the PoP containers and publishes its state to a KV
-bucket that the pane renders.
-
-A visitor can add delay, jitter, loss or a rate cap to a core link in either direction, or take the link down like a fiber cut.
-The generator already shapes every link at deploy time with `netem` delay feeding a `tbf` rate limit, and maeto-sim rebuilds that
-same chain with the fault added on top, so the base propagation delay and capacity return exactly when the fault clears. The page
-also offers one-click stories that each show one behaviour: a latency brownout on SEA–SFO, a fiber cut on LAX–DEN, a lossy span
-that only the loss measurement can catch, a flapping link that exercises the hold-down timer, and a rush hour that squeezes a
-corridor under customer traffic. Traffic scenarios can be started from the same page.
-
-Because the demo is public, every fault is bounded and temporary. Faults revert on their own after two minutes by default and ten
-at most, the size of each impairment is capped, only a few links can be faulted at once and no cut is allowed to isolate a PoP.
-One traffic scenario runs at a time and endless ones stop after 15 minutes. maeto-sim also resets the testbed whenever it starts,
-so a crash never leaves a fault behind.
+*While the scenario DSL and general design was designed by me, tfsim and maeto-sim are AI-generated. Controller and dataplane are more fun to mess around with.*
 
 ## Running it
 VM-based local deployment requires [Vagrant](https://developer.hashicorp.com/vagrant) to be installed with the `libvirt` provider. Highly recommend running inside a VM due to strict dependencies and to prevent stale network namespaces/configuration ending up on the host.
@@ -193,7 +170,7 @@ vagrant ssh
 make setup   # venvs + git hooks
 make pki     # one-time CA, the generator signs PoP and CPE certs off it
 make ap      # generate the topology, build the images, deploy the lab
-# IMPORTANT: Wait for ap to complete fully
+# IMPORTANT: Wait for ap to complete fully (takes a good chunk of time on first build)
 
 # Run in parallel
 make dev     # start the controller
@@ -294,7 +271,7 @@ Things I hit along the way, mostly SRv6 and FRR: [blogs.saphal.me/tags/maeto](ht
 ## Status
 Done/In-progress:
 - SRv6 dataplane over Netlink. VRFs, xfrm interfaces, seg6/seg6local SIDs and ip rules, reconciled against a desired state
-- Eight-pop IS-IS + SRv6 uSID fabric, generated from one topology file along with addressing, FRR config and link shaping
+- IS-IS + SRv6 fabric, generated from one topology file along with addressing, FRR config and link shaping
 - Intent distributed to agents over NATS KV
 - IKEv2/X.509 tunnels out to the CPEs
 - Per-link one-way STAMP probing (RFC 8762). The reflector exports its own receive timestamps instead of reflecting
@@ -303,6 +280,7 @@ Done/In-progress:
 - Bandwidth-aware hose-modeled path computation
 - Passive telemetry collection
 - Loss and jitter are NOT seeded values anymore. 
+- Provider Edge rate limiting (policing)
 
 Not yet:
 - BFD-based link-down interface-up events + Netlink-based link-down interface-down events

@@ -2,6 +2,7 @@ package dataplane
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 
 	"github.com/saphalpdyl/maeto/libs/dataplane/log"
@@ -16,7 +17,7 @@ func (r *Reconciler) Apply(ctx context.Context, diff DiffResult) error {
 	// First of all, we remove shit
 	// We remove from bottom up i.e route -> xfrm -> vrf
 	// TODO: Later group by kind in a map so that we don't traverse everything everytime
-	for _, kind := range []Kind{KindClassification, KindRule, KindSRRoute, KindSID, KindRoute, KindXFRM, KindVRF} {
+	for _, kind := range []Kind{KindLimit, KindClassification, KindRule, KindSRRoute, KindSID, KindRoute, KindXFRM, KindVRF} {
 		for _, resource := range diff.Remove {
 			if resource.ID().Kind != kind {
 				continue
@@ -61,13 +62,18 @@ func (r *Reconciler) Apply(ctx context.Context, diff DiffResult) error {
 					r.logger.ErrorContext(ctx, "failed to remove classifier", log.Err(err))
 					break
 				}
+			case *Limit:
+				if err := r.dp.RemoveLimit(res.Handle); err != nil {
+					r.logger.ErrorContext(ctx, "failed to remove limit", log.Err(err))
+					break
+				}
 			}
 
 		}
 	}
 
 	// Addition
-	for _, kind := range []Kind{KindVRF, KindXFRM, KindRoute, KindSID, KindSRRoute, KindRule, KindClassification} {
+	for _, kind := range []Kind{KindVRF, KindXFRM, KindRoute, KindSID, KindSRRoute, KindRule, KindClassification, KindLimit} {
 		for _, resource := range diff.Add {
 			if resource.ID().Kind != kind {
 				continue
@@ -120,6 +126,11 @@ func (r *Reconciler) Apply(ctx context.Context, diff DiffResult) error {
 			case *Classification:
 				if err := r.dp.InsertClassification(res.Classifier, res.Mark); err != nil {
 					r.logger.ErrorContext(ctx, "failed to insert Classification", log.Err(err))
+				}
+			case *Limit:
+				if err := r.dp.InsertLimit(res.Iifname, res.Mark, res.ExceptMarks, res.RateBytes, res.BurstBytes); err != nil {
+					r.logger.ErrorContext(ctx, "failed to insert Limit", log.Err(err))
+					r.logger.ErrorContext(ctx, fmt.Sprintf("failed to insert Limit: %v", *res))
 				}
 			}
 

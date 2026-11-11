@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"maps"
 	"time"
 
 	"github.com/nats-io/nats.go"
@@ -227,11 +228,15 @@ func (c *Controller) handlePETunnelUpdate(ctx context.Context, data []byte) erro
 		return fmt.Errorf("attach node not found in topology")
 	}
 
+	reservationBandwidth := make(map[uint64]float64)
+	maps.Copy(reservationBandwidth, site.ClassMbps)
+
 	portalIntent := &nodesync.PE_PortalIntent{
 		HostFacingInterface: "eth1",
 		TunnelInterfaceID:   req.IfID,
 		SitePrefix:          site.Prefix,
 		TenantPrefix:        tenant.Allocation,
+		ReservedBandwidth:   reservationBandwidth,
 	}
 
 	tx := c.serviceRegistry.BeginTx()

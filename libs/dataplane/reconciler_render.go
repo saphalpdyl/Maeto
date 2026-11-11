@@ -167,6 +167,10 @@ func (r *Reconciler) RenderPEIntent(
 			}
 
 			resources[route.ID().Key] = route
+
+			for _, limit := range portalLimits(xfrmName, portalIntent.ReservedBandwidth) {
+				resources[limit.ID().Key] = limit
+			}
 		}
 
 		// SRv6 Routes
@@ -220,6 +224,42 @@ func (r *Reconciler) RenderPEIntent(
 	return resources, nil
 }
 
+// Burst of 100ms worth of the rate. Smaller bursts make TCP collapse well under the rate.
+const limitBurstSeconds = 0.1
+
+// One limit per reserved class on the portal. The default class (label 0) takes
+// everything else, including classes this site has no reservation for.
+func portalLimits(iifname string, reserved map[uint64]float64) []*Limit {
+	classMarks := make([]uint32, 0, len(reserved))
+	for label := range reserved {
+		if label != 0 {
+			classMarks = append(classMarks, uint32(label))
+		}
+	}
+
+	limits := make([]*Limit, 0, len(reserved))
+	for label, mbps := range reserved {
+		rateBytes := uint64(mbps * 125_000)
+
+		limit := &Limit{
+			Iifname:    iifname,
+			RateBytes:  rateBytes,
+			BurstBytes: uint32(float64(rateBytes) * limitBurstSeconds),
+		}
+
+		if label == 0 {
+			limit.ExceptMarks = classMarks
+		} else {
+			mark := uint32(label)
+			limit.Mark = &mark
+		}
+
+		limits = append(limits, limit)
+	}
+
+	return limits
+}
+
 func (r *Reconciler) RenderFIB(
 	ctx context.Context,
 	vrfLinks []*DataplaneVRF,
@@ -229,8 +269,22 @@ func (r *Reconciler) RenderFIB(
 	rules []DataplaneRule,
 	srRoutes []DataplaneSRRoute,
 	classifications []DataplaneClassification,
+	limits []DataplaneLimit,
 ) (map[string]Resource, error) {
 	resources := make(map[string]Resource)
+
+	for _, l := range limits {
+		limit := &Limit{
+			Iifname:     l.Iifname,
+			Mark:        l.Mark,
+			ExceptMarks: l.ExceptMarks,
+			RateBytes:   l.RateBytes,
+			BurstBytes:  l.BurstBytes,
+			Handle:      l.Handle,
+		}
+
+		resources[limit.ID().Key] = limit
+	}
 
 	for _, c := range classifications {
 		classification := &Classification{

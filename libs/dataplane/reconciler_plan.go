@@ -86,6 +86,11 @@ func (r *Reconciler) Plan(ctx context.Context, desired *nodesync.NodeIntent) (ma
 		return nil, nil, fmt.Errorf("dataplane failure: couldn't retrieve classifications: %w", err)
 	}
 
+	limits, err := r.dp.GetLimits()
+	if err != nil {
+		return nil, nil, fmt.Errorf("dataplane failure: couldn't retrieve limits: %w", err)
+	}
+
 	currentResources, err := r.RenderFIB(
 		ctx,
 		vrfLinks,
@@ -95,6 +100,7 @@ func (r *Reconciler) Plan(ctx context.Context, desired *nodesync.NodeIntent) (ma
 		rules,
 		srRoutes,
 		classifications,
+		limits,
 	)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to render FIB state: %w", err)

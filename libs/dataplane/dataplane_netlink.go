@@ -1,6 +1,7 @@
 package dataplane
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -42,6 +43,7 @@ const (
 	NftablesClassificationTable = "maeto_class"
 	NftablesClassificationChain = "classification"
 	NftablesDSCPMarkMap         = "dscpmark"
+	NftablesLimitChain          = "police"
 )
 
 type LinuxNetlink struct {
@@ -876,6 +878,15 @@ func (l *LinuxNetlink) EnsureClassificationBase() error {
 		Type:     nftables.ChainTypeFilter,
 	})
 
+	// Runs after classification so the mark is set. Never flushed here: it holds the limits.
+	l.nft.AddChain(&nftables.Chain{
+		Name:     NftablesLimitChain,
+		Table:    table,
+		Hooknum:  nftables.ChainHookPrerouting,
+		Priority: nftables.ChainPriorityFilter,
+		Type:     nftables.ChainTypeFilter,
+	})
+
 	mappingSet := &nftables.Set{
 		Table:    table,
 		Name:     NftablesDSCPMarkMap,
@@ -1055,4 +1066,226 @@ func (l *LinuxNetlink) GetClassifications() ([]DataplaneClassification, error) {
 	}
 
 	return classifications, nil
+}
+
+func (l *LinuxNetlink) limitChain() (*nftables.Table, *nftables.Chain, error) {
+	table, err := l.nft.ListTableOfFamily(NftablesClassificationTable, nftables.TableFamilyINet)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	chain, err := l.nft.ListChain(table, NftablesLimitChain)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return table, chain, nil
+}
+
+func ifnameBytes(n string) []byte {
+	b := make([]byte, 16)
+	copy(b, []byte(n+"\x00"))
+	return b
+}
+
+func markBytes(mark uint32) []byte {
+	b := make([]byte, 4)
+	binary.NativeEndian.PutUint32(b, mark)
+	return b
+}
+
+// InsertLimit
+//
+// iifname "<iifname>" meta mark <mark> limit rate over <rate> bytes/second burst <burst> bytes drop
+// iifname "<iifname>" meta mark != <except>... limit rate over <rate> bytes/second burst <burst> bytes drop
+//
+// nft -c --debug=netlink 'add rule inet test input iifname "maeto-tun-273-1" meta mark != {2,3,10} limit rate over 10 mbytes
+// /second burst 5 bytes drop'
+// __set%d test 3
+// __set%d test 0
+// element 00000002  : 0 [end]     element 00000003  : 0 [end]     element 0000000a  : 0 [end]
+// inet test input
+// [ meta load iifname => reg 1 ]
+// [ cmp eq reg 1 0x7465616d 0x75742d6f 0x37322d6e 0x00312d33 ]
+// [ meta load mark => reg 1 ]
+// [ lookup reg 1 set __set%d 0x1 ]
+// [ limit rate 10485760/second burst 5 type bytes flags 0x1 ]
+// [ immediate reg 0 drop ]
+//
+// nft -c --debug=netlink 'add rule inet test input iifname "maeto-tun-273-1" meta mark 12
+// limit rate over 10 mbytes/second burst 5 bytes drop'
+//
+//	[ meta load iifname => reg 1 ]
+//	[ cmp eq reg 1 0x7465616d 0x75742d6f 0x37322d6e 0x00312d33 ]
+//	[ meta load mark => reg 1 ]
+//	[ cmp eq reg 1 0x0000000c ]
+//	[ limit rate 10485760/second burst 5 type bytes flags 0x1 ]
+//	[ immediate reg 0 drop ]
+func (l *LinuxNetlink) InsertLimit(iifname string, mark *uint32, exceptMarks []uint32, rateBytes uint64, burstBytes uint32) error {
+	table, chain, err := l.limitChain()
+	if err != nil {
+		return err
+	}
+
+	exprs := []expr.Any{
+		// [ meta load iifname => reg 1 ]
+		&expr.Meta{Key: expr.MetaKeyIIFNAME, Register: 1},
+
+		// [ cmp eq reg 1 0x7465616d 0x75742d6f 0x37322d6e 0x00312d33 ]
+		&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: ifnameBytes(iifname)},
+	}
+
+	if mark != nil && len(exceptMarks) > 0 {
+		return fmt.Errorf("dataplane_netlink: limit does not support both mark and exceptMarks for a given limit")
+	}
+
+	if mark != nil || len(exceptMarks) > 0 {
+		// [ meta load mark => reg 1 ]
+		exprs = append(exprs, &expr.Meta{Key: expr.MetaKeyMARK, Register: 1})
+	}
+
+	if mark != nil {
+		// [ meta load mark => reg 1 ]
+		exprs = append(exprs, &expr.Cmp{
+			Op:       expr.CmpOpEq,
+			Register: 1,
+			Data:     markBytes(*mark),
+		})
+	} else if len(exceptMarks) > 0 {
+		// __set%d test 3
+		// __set%d test 0
+		// element 00000002  : 0 [end]     element 00000003  : 0 [end]     element 0000000a  : 0 [end]
+		set := &nftables.Set{
+			Anonymous: true,
+			Constant:  true,
+			Table:     table,
+			KeyType:   nftables.TypeMark,
+		}
+
+		setElements := make([]nftables.SetElement, len(exceptMarks))
+
+		for i, e := range exceptMarks {
+			setElements[i] = nftables.SetElement{
+				Key: markBytes(e),
+			}
+		}
+
+		if err := l.nft.AddSet(set, setElements); err != nil {
+			return err
+		}
+
+		// [ lookup reg 1 set __set%d 0x1 ]
+		exprs = append(exprs, &expr.Lookup{
+			SourceRegister: 1,
+			IsDestRegSet:   false,
+			SetID:          set.ID,
+			SetName:        set.Name,
+			Invert:         true,
+		})
+	} else {
+		return fmt.Errorf("mark is not set; []exceptMarks is empty")
+	}
+
+	// [ limit rate 10485760/second burst 5 type bytes flags 0x1 ]
+	exprs = append(exprs, &expr.Limit{
+		Type:  expr.LimitTypePktBytes,
+		Rate:  rateBytes,
+		Over:  true,
+		Unit:  expr.LimitTimeSecond,
+		Burst: burstBytes,
+	})
+
+	// [ immediate reg 0 drop ]
+	exprs = append(exprs, &expr.Verdict{
+		Kind: expr.VerdictDrop,
+	})
+
+	l.nft.AddRule(&nftables.Rule{
+		Table: table,
+		Chain: chain,
+		Exprs: exprs,
+	})
+
+	return l.nft.Flush()
+}
+
+func (l *LinuxNetlink) GetLimits() ([]DataplaneLimit, error) {
+	table, chain, err := l.limitChain()
+	if err != nil {
+		return nil, err
+	}
+
+	rules, err := l.nft.GetRules(table, chain)
+	if err != nil {
+		return nil, err
+	}
+
+	limits := make([]DataplaneLimit, 0, len(rules))
+	for _, rule := range rules {
+		limit := DataplaneLimit{Handle: rule.Handle}
+		var loaded expr.MetaKey
+
+		for _, e := range rule.Exprs {
+			switch e := e.(type) {
+			case *expr.Meta:
+				loaded = e.Key
+
+			case *expr.Cmp:
+				switch {
+				case loaded == expr.MetaKeyIIFNAME:
+					limit.Iifname = string(bytes.TrimRight(e.Data, "\x00"))
+				case loaded == expr.MetaKeyMARK && e.Op == expr.CmpOpEq:
+					mark := binary.NativeEndian.Uint32(e.Data)
+					limit.Mark = &mark
+				case loaded == expr.MetaKeyMARK && e.Op == expr.CmpOpNeq:
+					limit.ExceptMarks = append(limit.ExceptMarks, binary.NativeEndian.Uint32(e.Data))
+				}
+
+			case *expr.Limit:
+				limit.RateBytes = e.Rate
+				limit.BurstBytes = e.Burst
+
+			case *expr.Lookup:
+				set, err := l.nft.GetSetByName(table, e.SetName)
+				if err != nil {
+					return nil, err
+				}
+
+				elements, err := l.nft.GetSetElements(set)
+				if err != nil {
+					return nil, err
+				}
+
+				exceptMarks := make([]uint32, 0, len(elements))
+				for _, element := range elements {
+					mark := binary.NativeEndian.Uint32(element.Key)
+					exceptMarks = append(exceptMarks, mark)
+				}
+
+				limit.ExceptMarks = exceptMarks
+			}
+		}
+
+		limits = append(limits, limit)
+	}
+
+	return limits, nil
+}
+
+func (l *LinuxNetlink) RemoveLimit(handle uint64) error {
+	table, chain, err := l.limitChain()
+	if err != nil {
+		return err
+	}
+
+	err = l.nft.DelRule(&nftables.Rule{
+		Table:  table,
+		Chain:  chain,
+		Handle: handle,
+	})
+	if err != nil {
+		return err
+	}
+
+	return l.nft.Flush()
 }

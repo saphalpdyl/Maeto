@@ -13,6 +13,8 @@ type PE_PortalIntent struct {
 
 	SitePrefix   netip.Prefix `json:"site_prefix"`
 	TenantPrefix netip.Prefix `json:"tenant_prefix"`
+
+	ReservedBandwidth map[uint64]float64 `json:"reserved_bandwidth"`
 }
 
 type PEIntent struct {
@@ -54,8 +56,7 @@ type TenantIntent struct {
 	PortalIntents map[string]PE_PortalIntent `json:"portals"`
 
 	// End.DT46 decapsulates and looks the inner packet up in the tenant's vrf,
-	// so the SID identifies the vrf, not the site. One per tenant per node --
-	// every portal below shares it.
+	// so the SID identifies the vrf, not the site. One per tenant per node
 	DT46SID netip.Addr `json:"dt46_sid"`
 
 	// SID paths to install for a given prefix
@@ -69,8 +70,7 @@ type PESIDInstallIntent struct {
 	// TODO: In the future, there will be multiple subnets that will consume this
 	PrefixRoutes []netip.Prefix `json:"prefix_route"`
 	Segments     []netip.Addr   `json:"segments"`
-	// TODO: SRv6 SR-Policy metric; will be used in the future
-	Color uint64 `json:"color"`
+	Color        uint64         `json:"color"`
 }
 
 func (*PEIntent) isIntent() {}
@@ -109,7 +109,20 @@ func (i *PEIntent) Clone() Intent {
 		}
 
 		// PE_PortalIntent is all value types
-		maps.Copy(copied.PortalIntents, tenant.PortalIntents)
+		//maps.Copy(copied.PortalIntents, tenant.PortalIntents)
+		for portalID, portalIntent := range tenant.PortalIntents {
+			copiedReservedBandwidth := make(map[uint64]float64)
+
+			maps.Copy(copiedReservedBandwidth, portalIntent.ReservedBandwidth)
+
+			copied.PortalIntents[portalID] = PE_PortalIntent{
+				HostFacingInterface: portalIntent.HostFacingInterface,
+				TunnelInterfaceID:   portalIntent.TunnelInterfaceID,
+				SitePrefix:          portalIntent.SitePrefix,
+				TenantPrefix:        portalIntent.TenantPrefix,
+				ReservedBandwidth:   copiedReservedBandwidth,
+			}
+		}
 
 		if tenant.InstallPaths != nil {
 			copied.InstallPaths = make([]PESIDInstallIntent, len(tenant.InstallPaths))

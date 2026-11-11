@@ -81,6 +81,15 @@ type DataplaneClassification struct {
 	Mark       uint32
 }
 
+type DataplaneLimit struct {
+	Iifname     string
+	Mark        *uint32
+	ExceptMarks []uint32
+	RateBytes   uint64
+	BurstBytes  uint32
+	Handle      uint64
+}
+
 // Links represents VRF tables and XFRM interfaces for current implementation
 type DataplaneLink interface {
 	Type() string
@@ -174,4 +183,8 @@ type Dataplane interface {
 	RemoveClassification(
 		classifier uint32,
 	) error
+
+	InsertLimit(iifname string, mark *uint32, exceptMarks []uint32, rateBytes uint64, burstBytes uint32) error
+	GetLimits() ([]DataplaneLimit, error)
+	RemoveLimit(handle uint64) error
 }

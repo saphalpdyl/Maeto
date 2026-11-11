@@ -9,6 +9,7 @@ type Resource interface {
 	Type() string
 }
 
+// TODO: Make use of CompareTo() for more advanced (and efficient) resource allocation
 type Action string
 
 const (
@@ -29,6 +30,7 @@ const (
 	KindSID            Kind = "sid"
 	KindSRRoute        Kind = "sr_route"
 	KindClassification Kind = "classification"
+	KindLimit          Kind = "limit"
 )
 
 type ID struct {
