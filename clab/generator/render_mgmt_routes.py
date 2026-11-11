@@ -1,12 +1,8 @@
-from .constants import TRANSIT_MGMT_BASE
-
-
-def transit_mgmt_address(index):
-    return f"{TRANSIT_MGMT_BASE}{index:02x}"
+from .constants import INTERNET_MGMT_ADDRESS
 
 
 def render_mgmt_routes(topo, plan):
-    # the cpes reach nats through their transit router, but the management
+    # the cpes reach nats through the internet router, but the management
     # bridge only knows its own /64, so replies are dropped on the way back.
     # run on the container host, where the bridge gateway lives.
     lines = [
@@ -16,14 +12,9 @@ def render_mgmt_routes(topo, plan):
         "",
     ]
 
-    for t in plan.transits.values():
-        access = plan.pops[t.id].access
-        if access is None:
-            continue
-
-        index = topo.pop_by_id(t.id).index
+    if plan.transit is not None:
         lines.append(
-            f"ip -6 route replace {access.aggregate} via {transit_mgmt_address(index)}"
+            f"ip -6 route replace {topo.defaults.edge_prefix} via {INTERNET_MGMT_ADDRESS}"
         )
 
     return "\n".join(lines) + "\n"

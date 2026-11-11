@@ -1,7 +1,6 @@
 import os
 import yaml
 
-from .render_mgmt_routes import transit_mgmt_address
 from .constants import (
     CA_CERT_BIND,
     CA_CERT_CONTAINER_PATH,
@@ -17,6 +16,7 @@ from .constants import (
     NODE_CONTAINER_PATH,
     NODE_FILENAME,
     DLV_LISTEN,
+    INTERNET_MGMT_ADDRESS,
     OTEL_ENDPOINT,
     OTEL_SINK,
     POP_IMAGE,
@@ -158,23 +158,22 @@ def render_clab(topo, plan):
             "labels": {"clab_label": pop.clab_label},
         }
 
-    for transit in plan.transits.values():
+    transit = plan.transit
+    if transit is not None:
         cmds = [
             "sysctl -w net.ipv4.ip_forward=1",
             "sysctl -w net.ipv6.conf.all.forwarding=1",
         ]
+        # every pop edge address and every cpe subnet is connected here, so the
+        # router needs no routes of its own. docker's default over the
+        # management eth0 stays, which is how the cpes reach nats.
         for i in transit.interfaces:
             cmds.append(f"ip link set dev {i.name} up")
             cmds.append(f"ip -6 addr replace {i.address} dev {i.name}")
-        # the transit router keeps its management eth0, so docker has already
-        # installed a v6 default there; replace it or the lab default never takes
-        # effect. the management subnet stays reachable over eth0 as a connected
-        # route.
-        cmds.append(f"ip -6 route replace default via {transit.gateway}")
         nodes[transit.node_name] = {
             "kind": "linux",
             "image": TRANSIT_IMAGE,
-            "mgmt-ipv6": transit_mgmt_address(topo.pop_by_id(transit.id).index),
+            "mgmt-ipv6": INTERNET_MGMT_ADDRESS,
             "exec": cmds,
             "labels": {"clab_label": transit.clab_label},
         }
@@ -185,7 +184,7 @@ def render_clab(topo, plan):
             "kind": "linux",
             "image": CPE_IMAGE,
             # no management eth0: a cpe is a tenant endpoint and must reach
-            # everything through its transit router, never out of band via docker
+            # everything through the internet router, never out of band via docker
             "network-mode": "none",
             "binds": [
                 f"{CA_CERT_BIND}:{CA_CERT_CONTAINER_PATH}",

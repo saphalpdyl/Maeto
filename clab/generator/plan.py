@@ -6,9 +6,12 @@ from .constants import (
     CPE_IFACE,
     CPE_LAN_IFACE,
     HOST_IFACE,
+    IFNAMSIZ_MAX,
+    INTERNET_LABEL,
+    INTERNET_NODE,
     POP_TRANSIT_IFACE,
-    TRANSIT_UPLINK_IFACE,
 )
+from .errors import TopologyError
 
 
 @dataclass
@@ -89,12 +92,11 @@ class TransitIface:
 
 @dataclass
 class TransitPlan:
-    id: str             # id of the pop this transit router fronts
-    node_name: str      # TransitA
+    # one shared router standing in for the internet: every pop with cpes and
+    # every cpe plugs into it once, so any cpe can reach any pop's edge address
+    node_name: str      # Internet
     clab_label: str
-    pop_node: str
-    gateway: str        # pop's eth1 address, the transit router's default route
-    interfaces: list    # [TransitIface], uplink first then one per cpe
+    interfaces: list    # [TransitIface], one per pop uplink and one per cpe
 
 
 @dataclass
@@ -129,7 +131,7 @@ class HostPlan:
 @dataclass
 class Plan:
     pops: dict          # pop id -> PopPlan
-    transits: dict      # pop id -> TransitPlan, only for pops that have cpes
+    transit: object     # TransitPlan, or None when no pop has cpes
     cpes: dict          # cpe id -> CpePlan
     hosts: dict         # cpe id -> HostPlan, one lan host each
     links: list         # [PlannedLink], core first then transit then cpe then lan
@@ -187,43 +189,41 @@ def build_plan(topo):
             ),
         ))
 
-    transits = {}
     cpes = {}
     hosts = {}
+    transit_ifaces = []
+    cpe_links = []      # kept separate so every cpe link sorts after every uplink
     lan_links = []      # kept separate so every lan link sorts after every cpe link
     for pop in topo.pops:
-        # every cpe on a pop shares that pop's transit router; a second cpe
-        # attaching to the same pop hangs off the transit router, it does not
-        # take another pop interface
+        # addresses still come from the pop's slice of the edge prefix, only the
+        # router on the other end is shared now
         attached_here = attached.get(pop.id)
         if not attached_here:
             continue
 
-        transit_node = _transit_node_name(pop)
         uplink = addressing.edge_subnet_index(pop.index, 0)
-        subnet, pop_addr, transit_addr, pop_gw, _ = addressing.edge_addrs(d.edge_prefix, uplink)
-        transit_ifaces = [TransitIface(TRANSIT_UPLINK_IFACE, "uplink", pop.node_name, transit_addr)]
+        subnet, pop_addr, transit_addr, _, _ = addressing.edge_addrs(d.edge_prefix, uplink)
+        uplink_iface = _transit_iface(pop.node_name)
+        transit_ifaces.append(TransitIface(uplink_iface, "uplink", pop.node_name, transit_addr))
         links.append(PlannedLink(
             uplink, "transit", 0, subnet,
             Endpoint("pop", pop.id, pop.node_name, POP_TRANSIT_IFACE, pop_addr),
-            Endpoint("transit", pop.id, transit_node, TRANSIT_UPLINK_IFACE, transit_addr),
+            Endpoint("transit", INTERNET_NODE, INTERNET_NODE, uplink_iface, transit_addr),
         ))
 
-        n = 1
         for cpe in attached_here:
-            n += 1
-            iface = f"eth{n}"
+            iface = _transit_iface(cpe.node_name)
             idx = addressing.edge_subnet_index(pop.index, cinst[cpe.id])
             subnet, transit_side, cpe_addr, gw, _ = addressing.edge_addrs(d.edge_prefix, idx)
             transit_ifaces.append(TransitIface(iface, "cpe", cpe.node_name, transit_side))
 
             lan_subnet, lan_gw_addr, host_addr, lan_gw = addressing.lan_addrs(cpe.prefix, cpe.id)
-            cpes[cpe.id] = CpePlan(cpe, pop.node_name, transit_node, cinst[cpe.id],
+            cpes[cpe.id] = CpePlan(cpe, pop.node_name, INTERNET_NODE, cinst[cpe.id],
                                    subnet, cpe_addr, gw, CPE_IFACE, iface,
                                    CPE_LAN_IFACE, lan_gw_addr)
-            links.append(PlannedLink(
+            cpe_links.append(PlannedLink(
                 idx, "cpe", cinst[cpe.id], subnet,
-                Endpoint("transit", pop.id, transit_node, iface, transit_side),
+                Endpoint("transit", INTERNET_NODE, INTERNET_NODE, iface, transit_side),
                 Endpoint("cpe", cpe.id, cpe.node_name, CPE_IFACE, cpe_addr),
             ))
 
@@ -236,18 +236,23 @@ def build_plan(topo):
                 Endpoint("host", cpe.id, host_node, HOST_IFACE, host_addr),
             ))
 
-        transits[pop.id] = TransitPlan(pop.id, transit_node, f"Transit {pop.id}",
-                                       pop.node_name, pop_gw, transit_ifaces)
+    transit = None
+    if transit_ifaces:
+        transit = TransitPlan(INTERNET_NODE, INTERNET_LABEL, transit_ifaces)
 
-    return Plan(pops, transits, cpes, hosts, links + lan_links)
+    return Plan(pops, transit, cpes, hosts, links + cpe_links + lan_links)
 
 
 def _peer(pop_id, link):
     return link.b if pop_id == link.a else link.a
 
 
-def _transit_node_name(pop):
-    return f"Transit{pop.id}"
+def _transit_iface(peer_node):
+    # named after the node on the far end, so adding a pop or a cpe never
+    # renumbers anyone else's port on the shared router
+    if len(peer_node) > IFNAMSIZ_MAX:
+        raise TopologyError(f"node name {peer_node} is too long for an interface name")
+    return peer_node
 
 
 def _host_node_name(cpe):

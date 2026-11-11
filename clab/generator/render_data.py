@@ -18,7 +18,7 @@ def render_data(topo, plan, digest):
             "edge_prefix": topo.defaults.edge_prefix,
         },
         "pops": [_pop(topo.pop_by_id(p.id), plan.pops[p.id]) for p in topo.pops],
-        "transits": [_transit(plan.transits[p.id]) for p in topo.pops if p.id in plan.transits],
+        "transit": _transit(plan.transit),
         "cpes": [_cpe(c, plan.cpes[c.id]) for c in topo.cpes],
         "hosts": [_host(plan.hosts[c.id]) for c in topo.cpes],
         "links": [_link(l) for l in plan.links],
@@ -73,13 +73,11 @@ def _access(a):
 
 
 def _transit(tp):
+    if tp is None:
+        return None
     return {
-        "id": tp.id,
         "name": tp.node_name,
         "clab_label": tp.clab_label,
-        "pop": tp.id,
-        "pop_node": tp.pop_node,
-        "gateway": tp.gateway,
         "interfaces": [
             {
                 "name": i.name,

@@ -1,12 +1,17 @@
 # static values shared across the generator
 
-GENERATOR_VERSION = "2.2.0"
+GENERATOR_VERSION = "2.3.0"
 
 POP_IMAGE = "maeto-pop:latest"
 FRR_VERSION = "10.6.0"
 CPE_IMAGE = "maeto-portal:latest"
 # transit models the unmanaged internet: not ours, so stock upstream
 TRANSIT_IMAGE = "nicolaka/netshoot:latest"
+# one shared transit router for every pop and cpe, standing in for the internet
+INTERNET_NODE = "Internet"
+INTERNET_LABEL = "Internet"
+# linux interface names are at most 15 bytes plus the terminating nul
+IFNAMSIZ_MAX = 15
 # one lan host per cpe, standing in for the tenant's own kit
 HOST_IMAGE = "nicolaka/netshoot:latest"
 
@@ -32,9 +37,8 @@ MAX_CPES_PER_POP = (1 << CPE_INSTANCE_BITS) - 1
 # eth1 is reserved on every pop for the link down to its transit router, whether
 # or not the pop has cpes; core links are numbered from eth2 up
 POP_TRANSIT_IFACE = "eth1"
-TRANSIT_UPLINK_IFACE = "eth1"
 CPE_IFACE = "eth1"
-# eth1 on a cpe faces the transit router, so the tenant lan lands on eth2
+# eth1 on a cpe faces the internet router, so the tenant lan lands on eth2
 CPE_LAN_IFACE = "eth2"
 HOST_IFACE = "eth1"
 
@@ -127,10 +131,10 @@ KEY_CONTAINER_PATH = "/etc/swanctl/private/key.pem"
 NATS_NODE_NAME = "nats"
 NATS_CLIENT_PORT = 4222
 
-# nats and the transit routers sit on the docker management bridge with pinned
+# nats and the internet router sit on the docker management bridge with pinned
 # addresses, so the cpe env and the return routes are derived, not discovered
 NATS_MGMT_ADDRESS = "3fff:172:20:20::800:11"
-TRANSIT_MGMT_BASE = "3fff:172:20:20::800:2"
+INTERNET_MGMT_ADDRESS = "3fff:172:20:20::800:20"
 
 # the bridge has no path back to the cpe prefixes; without these the cpe reaches
 # nats but nats cannot answer
