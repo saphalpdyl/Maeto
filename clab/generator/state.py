@@ -4,6 +4,7 @@ import os
 from datetime import datetime, timezone
 
 from .constants import (
+    BOOT_FILENAME,
     FRR_DAEMONS,
     GENERATOR_VERSION,
     HASH_DIR_LEN,
@@ -11,6 +12,7 @@ from .constants import (
     NFT_FILENAME,
     NODE_FILENAME,
 )
+from .render_boot import render_boot
 from .render_clab import render_clab
 from .render_data import render_data, render_node
 from .render_frr import render_frr
@@ -64,6 +66,7 @@ def write_output(topo, plan, digest, build_dir):
         pp = plan.pops[pop.id]
         _write(os.path.join(out, "conf", pop.node_name, "frr.conf"), render_frr(pp))
         _write(os.path.join(out, "conf", pop.node_name, NODE_FILENAME), render_node(pop, pp))
+        _write(os.path.join(out, "conf", pop.node_name, BOOT_FILENAME), render_boot(plan, pop.id))
         # only pops with cpes have an access side to isolate
         if pp.access is not None:
             _write(os.path.join(out, "conf", pop.node_name, NFT_FILENAME), render_nft(pp.access))

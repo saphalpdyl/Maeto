@@ -1,5 +1,6 @@
 # Reads the generated build: which core links exist, which interface each end
 # sits on, and the tc chain the generator shaped each interface with at deploy
+# (a pop's setup lives in conf/<node>/boot.sh, other nodes keep it in exec)
 
 import json
 import re
@@ -69,10 +70,18 @@ def find_build(root: Path) -> Path:
     return root / state["output"]
 
 
-def shapes(topology: dict) -> Dict[tuple, Shape]:
+def setup_lines(build: Path, node: str, spec: dict) -> List[str]:
+    lines = list(spec.get("exec") or [])
+    boot = build / "conf" / node / "boot.sh"
+    if boot.exists():
+        lines += boot.read_text().splitlines()
+    return lines
+
+
+def shapes(build: Path, topology: dict) -> Dict[tuple, Shape]:
     found = {}
     for node, spec in topology["topology"]["nodes"].items():
-        for line in spec.get("exec") or []:
+        for line in setup_lines(build, node, spec):
             if not line.startswith("tc qdisc add dev "):
                 continue
 
@@ -95,7 +104,7 @@ def load(root: Path) -> Lab:
     build = find_build(root)
     data = json.loads((build / "topology.data.json").read_text())
     topology = yaml.safe_load((build / "topology.yml").read_text())
-    shaped = shapes(topology)
+    shaped = shapes(build, topology)
 
     def end(spec: dict) -> End:
         return End(

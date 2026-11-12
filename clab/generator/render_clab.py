@@ -2,6 +2,9 @@ import os
 import yaml
 
 from .constants import (
+    BOOT_CONTAINER_PATH,
+    BOOT_FILENAME,
+    BOOT_LOG,
     CA_CERT_BIND,
     CA_CERT_CONTAINER_PATH,
     CERT_CONTAINER_PATH,
@@ -122,23 +125,27 @@ def _portal_env(cpe):
     }
 
 
+def pop_boot_commands(plan, pop_id):
+    cmds = [
+        "sysctl -w net.ipv6.conf.all.forwarding=1",
+        "sysctl -w net.ipv6.conf.all.seg6_enabled=1",
+        "sysctl -w net.ipv6.seg6_flowlabel=1",
+        "ip link add sr0 type dummy",
+        "ip link set sr0 up",
+        # bfdd connects to the xdp-bfd data plane at startup. it has to start first https://github.com/w453y/xdp-bfd
+        "sh -c 'for i in $(seq 25); do supervisorctl -c /etc/supervisor/conf.d/supervisord.conf start xdp-bfd && break; sleep 0.2; done'",
+        "sh -c '/usr/lib/frr/docker-start &'"
+    ]
+    cmds += _access_setup(plan.pops[pop_id].access)
+    cmds += _shape_setup(plan, pop_id)
+    return cmds
+
+
 def render_clab(topo, plan):
     nats_url = _nats_url(topo)
     nodes = {}
     for pop in topo.pops:
-        cmds = [
-            "sysctl -w net.ipv6.conf.all.forwarding=1",
-            "sysctl -w net.ipv6.conf.all.seg6_enabled=1",
-            "sysctl -w net.ipv6.seg6_flowlabel=1",
-            "ip link add sr0 type dummy",
-            "ip link set sr0 up",
-            # bfdd connects to the xdp-bfd data plane at startup. it has to start first https://github.com/w453y/xdp-bfd
-            "sh -c 'for i in $(seq 25); do supervisorctl -c /etc/supervisor/conf.d/supervisord.conf start xdp-bfd && break; sleep 0.2; done'",
-            "sh -c '/usr/lib/frr/docker-start &'"
-        ]
         access = plan.pops[pop.id].access
-        cmds += _access_setup(access)
-        cmds += _shape_setup(plan, pop.id)
         binds = [
             "conf/shared/frr_daemons:/etc/frr/daemons",
             f"conf/{pop.node_name}/frr.conf:/etc/frr/frr.conf",
@@ -146,6 +153,7 @@ def render_clab(topo, plan):
             f"{CA_CERT_BIND}:{CA_CERT_CONTAINER_PATH}",
             f"conf/{pop.node_name}/cert.pem:{CERT_CONTAINER_PATH}",
             f"conf/{pop.node_name}/key.pem:{KEY_CONTAINER_PATH}",
+            f"conf/{pop.node_name}/{BOOT_FILENAME}:{BOOT_CONTAINER_PATH}",
         ]
         if access is not None:
             binds.append(f"conf/{pop.node_name}/{NFT_FILENAME}:{NFT_CONTAINER_PATH}")
@@ -154,7 +162,9 @@ def render_clab(topo, plan):
             "image": POP_IMAGE,
             "binds": binds,
             "env": _agent_env(nats_url),
-            "exec": cmds,
+            # backgrounded so a pop rebuilt by pop-boot can get its links moved
+            # in after the container exists; boot.sh waits for them itself
+            "exec": [f"sh -c 'nohup sh {BOOT_CONTAINER_PATH} > {BOOT_LOG} 2>&1 &'"],
             "labels": {"clab_label": pop.clab_label},
         }
 

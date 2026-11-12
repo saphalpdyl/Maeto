@@ -52,6 +52,14 @@ LAN_HOST_BITS = 32
 NFT_FILENAME = "maeto.nft"
 NFT_CONTAINER_PATH = "/etc/nftables.d/maeto.nft"
 
+# a pop's setup lives in a rendered script rather than in clab exec strings, so
+# pop-boot can run the same setup on a rebuilt container
+BOOT_FILENAME = "boot.sh"
+BOOT_CONTAINER_PATH = "/etc/maeto/boot.sh"
+BOOT_LOG = "/var/log/maeto-boot.log"
+# how long boot.sh waits for its data interfaces to appear, in 0.2s steps
+BOOT_WAIT_STEPS = 600
+
 NODE_FILENAME = "node.json"
 NODE_CONTAINER_PATH = "/etc/maeto/node.json"
 
