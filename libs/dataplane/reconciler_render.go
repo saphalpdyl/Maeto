@@ -118,6 +118,8 @@ func (r *Reconciler) RenderPEIntent(
 	// ip -6 route add <End.X towards PopA> table 950 encap seg6.... <PEB Mirror SID> dev sr0
 	// ip -6 route add <DT6 prefix of PopA> table 950 encap seg6.. <PEB Mirror SID> dev sr0
 
+	mirrorTableID := StringToID("mirror")
+
 	for _, tIntent := range pe.TrafficClassIntent {
 		for _, dscp := range tIntent.DSCP {
 			if dscp >= 255 {
@@ -136,22 +138,33 @@ func (r *Reconciler) RenderPEIntent(
 	for tenantID, t := range pe.Tenants {
 		vrfTableName := fmt.Sprintf("maeto-vrf-%s", tenantID)
 		tableID := StringToID(tenantID)
-		mirrorTableID := StringToID(fmt.Sprintf("local:%s", tenantID))
+
+		// Tables that hold the protected pop's tables
+		// The mirror table contains replicated End.DT46 SIDs of the protected PE
+		// Each End.DT46 decaps to one of the standby table
+		standbyVRFTableName := fmt.Sprintf("standby-%s", tenantID)
+		standbyVRFTableID := StringToID(standbyVRFTableName)
 
 		vrf := &VRF{
 			Name:    vrfTableName,
 			TableID: tableID,
-			Index:   0,
 		}
 
 		resources[vrf.ID().Key] = vrf
 
+		standbyVRF := &VRF{
+			Name:    standbyVRFTableName,
+			TableID: standbyVRFTableID,
+		}
+
+		resources[standbyVRF.ID().Key] = standbyVRF
+
 		if t.DT46SID.IsValid() {
 			dt46SID := &SID{
-				SIDType: SIDDT46,
-				SID:     t.DT46SID,
-				TableID: int(tableID),
-				Metric:  0,
+				SIDType:    SIDDT46,
+				SID:        t.DT46SID,
+				VrfTableID: int(tableID),
+				Metric:     0,
 			}
 
 			resources[dt46SID.ID().Key] = dt46SID
@@ -172,7 +185,7 @@ func (r *Reconciler) RenderPEIntent(
 
 			routeTableID := int(tableID)
 			if portalIntent.Role != nodesync.PERolePrimary {
-				routeTableID = int(mirrorTableID)
+				routeTableID = int(standbyVRFTableID)
 			}
 
 			route := &Route{
@@ -187,6 +200,17 @@ func (r *Reconciler) RenderPEIntent(
 
 			for _, limit := range portalLimits(xfrmName, portalIntent.ReservedBandwidth) {
 				resources[limit.ID().Key] = limit
+			}
+
+			if portalIntent.Role == nodesync.PERoleStandby && portalIntent.ProtectedInfo.DT46SID.IsValid() {
+				protectedDT46SID := &SID{
+					SIDType:    SIDDT46,
+					SID:        portalIntent.ProtectedInfo.DT46SID,
+					TableID:    int(mirrorTableID),
+					VrfTableID: int(standbyVRFTableID),
+				}
+
+				resources[protectedDT46SID.ID().Key] = protectedDT46SID
 			}
 		}
 
@@ -371,10 +395,10 @@ func (r *Reconciler) RenderFIB(
 		ip, _ := netip.AddrFromSlice(s.Dst.IP)
 
 		sid := &SID{
-			SIDType: SIDType(s.EncapType),
-			SID:     ip,
-			TableID: s.VrfTableID,
-			Metric:  0,
+			SIDType:    SIDType(s.EncapType),
+			SID:        ip,
+			TableID:    s.Table,
+			VrfTableID: s.VrfTableID,
 		}
 
 		resources[sid.ID().Key] = sid

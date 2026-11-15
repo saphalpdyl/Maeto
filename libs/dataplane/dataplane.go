@@ -168,8 +168,8 @@ type Dataplane interface {
 	UpsertPolicy(nhid, dtsid, vrfTableId, vrfTableName string, sids []string) error
 	UpsertRouteToPolicy(dest, vrfTableId, nhid string) error
 
-	UpsertDT46SID(sid netip.Addr, vrfTableID int) error
-	RemoveSID(sid netip.Addr) error
+	UpsertDT46SID(sid netip.Addr, vrfTableID int, tableID int) error
+	RemoveSID(sid netip.Addr, tableID int) error
 	GetSIDs(FilterBy *EncapType, GroupingKey *int) ([]DataplaneSID, error)
 
 	GetDefaultRouteAndDev() (string, string, error)

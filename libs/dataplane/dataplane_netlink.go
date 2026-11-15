@@ -631,7 +631,7 @@ func (l *LinuxNetlink) UpsertRouteToPolicy(dest string, vrfTableId string, nhid 
 	return nil
 }
 
-func (l *LinuxNetlink) UpsertDT46SID(sid netip.Addr, vrfTableID int) error {
+func (l *LinuxNetlink) UpsertDT46SID(sid netip.Addr, vrfTableID int, tableID int) error {
 	vrf, err := vrfByTable(vrfTableID)
 	if err != nil {
 		return fmt.Errorf("lookup vrf by table %d: %w", vrfTableID, err)
@@ -645,12 +645,17 @@ func (l *LinuxNetlink) UpsertDT46SID(sid netip.Addr, vrfTableID int) error {
 	}
 	encap.Flags[nl.SEG6_LOCAL_VRFTABLE] = true
 
+	table := unix.RT_TABLE_MAIN
+	if tableID > 0 {
+		table = tableID
+	}
+
 	route := &netlink.Route{
 		Dst: &net.IPNet{
 			IP:   net.IP(sid.AsSlice()),
 			Mask: net.CIDRMask(128, 128),
 		},
-		Table:     unix.RT_TABLE_MAIN,
+		Table:     table,
 		Family:    netlink.FAMILY_V6,
 		Protocol:  MaetoSIDProto,
 		LinkIndex: vrf.Attrs().Index,
@@ -665,22 +670,29 @@ func (l *LinuxNetlink) UpsertDT46SID(sid netip.Addr, vrfTableID int) error {
 	return nil
 }
 
-func (l *LinuxNetlink) RemoveSID(sid netip.Addr) error {
-	// convert netip.Addr to net.IPNet
-	parsedIPNet := &net.IPNet{
-		IP:   net.IP(sid.AsSlice()),
-		Mask: net.CIDRMask(128, 128),
+// RemoveSID deletes sid from tableID, 0 meaning main. Mirror entries live in
+// the mirror table, so the table has to be named for them to ever go away.
+func (l *LinuxNetlink) RemoveSID(sid netip.Addr, tableID int) error {
+	table := unix.RT_TABLE_MAIN
+	if tableID > 0 {
+		table = tableID
 	}
 
 	err := netlink.RouteDel(&netlink.Route{
-		Dst:      parsedIPNet,
-		Table:    unix.RT_TABLE_MAIN,
+		Dst: &net.IPNet{
+			IP:   net.IP(sid.AsSlice()),
+			Mask: net.CIDRMask(128, 128),
+		},
+		Table:    table,
 		Family:   netlink.FAMILY_V6,
 		Protocol: MaetoSIDProto,
 	})
-
 	if err != nil {
-		return fmt.Errorf("remove sid %s: %w", sid, err)
+		if errors.Is(err, unix.ESRCH) {
+			return nil // already gone
+		}
+
+		return fmt.Errorf("remove sid %s from table %d: %w", sid, table, err)
 	}
 
 	return nil

@@ -12,6 +12,7 @@ import (
 
 	"github.com/nats-io/nats.go"
 	"github.com/saphalpdyl/maeto/libs/controlapi"
+	"github.com/saphalpdyl/maeto/libs/dataplane"
 	"github.com/saphalpdyl/maeto/libs/nodesync"
 	"github.com/saphalpdyl/maeto/services/control-plane/log"
 )
@@ -288,6 +289,7 @@ func (c *Controller) handlePETunnelUpdate(ctx context.Context, data []byte) erro
 		return fmt.Errorf("attach node not found in topology")
 	}
 
+	// Primary node
 	attachNode, exists := c.topology.GetNodeByID(NodeID(site.AttachNodeID))
 	if !exists {
 		return fmt.Errorf("site attach node %s not found in topology", site.AttachNodeID)
@@ -298,8 +300,25 @@ func (c *Controller) handlePETunnelUpdate(ctx context.Context, data []byte) erro
 	}
 
 	role := nodesync.PERoleStandby
+	protectedInfo := nodesync.ProtectedInfo{}
+
 	if attachNode.ID == topologyNode.ID {
 		role = nodesync.PERolePrimary
+	} else {
+		var err error
+		protectedInfo.DT46SID, err = c.serviceRegistry.GetOrGenerateSID(
+			ctx,
+			attachNode.Locator,
+			fmt.Sprintf("%d", site.TenantID),
+			dataplane.EncapTypeDT46,
+		)
+
+		if err != nil {
+			c.logger.ErrorContext(ctx, "failed to get or generate SID for tenant during replication", log.Err(err))
+			return fmt.Errorf("failed to get or generate SID for tenant during replication: %v", err)
+		}
+
+		protectedInfo.PrimaryNodeID = site.AttachNodeID
 	}
 
 	reservationBandwidth := make(map[uint64]float64)
@@ -312,6 +331,7 @@ func (c *Controller) handlePETunnelUpdate(ctx context.Context, data []byte) erro
 		TenantPrefix:        tenant.Allocation,
 		ReservedBandwidth:   reservationBandwidth,
 		Role:                role,
+		ProtectedInfo:       protectedInfo,
 	}
 
 	tx := c.serviceRegistry.BeginTx()

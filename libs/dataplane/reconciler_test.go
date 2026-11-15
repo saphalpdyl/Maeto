@@ -107,12 +107,12 @@ func (t *TestDefaultRouteOnlyDataplane) GetSIDs(filterBy *dataplane.EncapType, g
 }
 
 // RemoveSID implements [dataplane.Dataplane].
-func (t *TestDefaultRouteOnlyDataplane) RemoveSID(sid netip.Addr) error {
+func (t *TestDefaultRouteOnlyDataplane) RemoveSID(sid netip.Addr, tableID int) error {
 	panic("unimplemented")
 }
 
 // UpsertDT46SID implements [dataplane.Dataplane].
-func (t *TestDefaultRouteOnlyDataplane) UpsertDT46SID(sid netip.Addr, vrfTableID int) error {
+func (t *TestDefaultRouteOnlyDataplane) UpsertDT46SID(sid netip.Addr, vrfTableID int, tableID int) error {
 	panic("unimplemented")
 }
 

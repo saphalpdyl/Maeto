@@ -48,7 +48,7 @@ func (r *Reconciler) Apply(ctx context.Context, diff DiffResult) error {
 					break
 				}
 			case *SID:
-				if err := r.dp.RemoveSID(res.SID); err != nil {
+				if err := r.dp.RemoveSID(res.SID, res.TableID); err != nil {
 					r.logger.ErrorContext(ctx, "failed to remove sid", log.Err(err))
 					break
 				}
@@ -120,7 +120,7 @@ func (r *Reconciler) Apply(ctx context.Context, diff DiffResult) error {
 					r.logger.WarnContext(ctx, "SID Type is not supported", slog.String("sid_type", string(res.SIDType)))
 				}
 
-				if err := r.dp.UpsertDT46SID(res.SID, res.TableID); err != nil {
+				if err := r.dp.UpsertDT46SID(res.SID, res.VrfTableID, res.TableID); err != nil {
 					r.logger.ErrorContext(ctx, "failed to upsert DT46 SID", log.Err(err))
 				}
 			case *Classification:

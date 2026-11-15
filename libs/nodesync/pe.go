@@ -23,6 +23,13 @@ type PE_PortalIntent struct {
 
 	ReservedBandwidth map[uint64]float64 `json:"reserved_bandwidth"`
 	Role              PERole             `json:"role"`
+
+	ProtectedInfo ProtectedInfo `json:"protected_info"`
+}
+
+type ProtectedInfo struct {
+	DT46SID       netip.Addr `json:"dt46_side"`
+	PrimaryNodeID string     `json:"primary_node_id"`
 }
 
 type PEIntent struct {
@@ -133,6 +140,7 @@ func (i *PEIntent) Clone() Intent {
 				TenantPrefix:        portalIntent.TenantPrefix,
 				ReservedBandwidth:   copiedReservedBandwidth,
 				Role:                portalIntent.Role,
+				ProtectedInfo:       portalIntent.ProtectedInfo,
 			}
 		}
 
