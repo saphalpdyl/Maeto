@@ -31,7 +31,7 @@ class AccessPlan:
     # forwarded anywhere at all
     iface: str
     address: str        # ::1/64 on the transit link
-    aggregate: str      # /56 covering the uplink and every cpe behind the transit
+    aggregate: str      # the whole edge prefix: every cpe sits behind the shared transit
     nexthop: str        # transit router's ::2
 
 
@@ -152,12 +152,12 @@ def build_plan(topo):
         if attached.get(pop.id):
             uplink = addressing.edge_subnet_index(pop.index, 0)
             _, pop_addr, _, _, transit_addr = addressing.edge_addrs(d.edge_prefix, uplink)
-            # the cpes sit a hop further out, so the pop reaches them through one
-            # aggregate handed to the transit router. it is never redistributed --
-            # only this pop needs it, and advertising it would hand the whole
+            # the cpes sit a hop further out behind the shared internet router,
+            # and any of them may dial any pop -- a standby tunnel lands on a pop
+            # the cpe is not homed to -- so the whole edge prefix goes there. it
+            # is never redistributed: advertising it would hand the whole
             # backbone a route back into tenant space
-            access = AccessPlan(POP_TRANSIT_IFACE, pop_addr,
-                                addressing.edge_aggregate(d.edge_prefix, pop.index), transit_addr)
+            access = AccessPlan(POP_TRANSIT_IFACE, pop_addr, d.edge_prefix, transit_addr)
 
         # eth1 belongs to the transit link on every pop, cpes or not, so core
         # links always start at eth2 and never shift when cpes are added

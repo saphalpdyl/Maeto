@@ -28,7 +28,7 @@ const vrfStrictModePath = "/proc/sys/net/vrf/strict_mode"
 const (
 	MaetoLinkGroup        uint32                = 211
 	MaetoRouteProto       netlink.RouteProtocol = 211
-	MaetoMirrorRouteProto netlink.RouteProtocol = 212
+	MaetoMirrorRouteProto netlink.RouteProtocol = 214
 	// SIDs are basically Routes so we don't want them to get fetch during route fetch
 	MaetoSIDProto netlink.RouteProtocol = 212
 	// For encap seg6 routes; MaetoSIDProto is for seg6local routes
@@ -372,6 +372,17 @@ func (l *LinuxNetlink) GetRules() ([]DataplaneRule, error) {
 			ones, _ := rule.Src.Mask.Size()
 			srcPrefix := netip.PrefixFrom(src, ones)
 			dpRule.Src = &srcPrefix
+		}
+
+		if rule.Dst != nil {
+			dst, ok := netip.AddrFromSlice(rule.Dst.IP)
+			if !ok {
+				continue
+			}
+
+			ones, _ := rule.Dst.Mask.Size()
+			dstPrefix := netip.PrefixFrom(dst, ones)
+			dpRule.Dst = &dstPrefix
 		}
 
 		out = append(out, dpRule)

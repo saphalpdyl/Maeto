@@ -57,7 +57,7 @@ func (c *Controller) startPCEUpdatesDispatcher(ctx context.Context) {
 				// In the future, based on user input, a site prefix can be divided
 				// into subnets with different policies
 				for _, remoteSite := range tenant.Sites {
-					if NodeID(remoteSite.Attach) != key.To {
+					if NodeID(remoteSite.AttachNodeID) != key.To {
 						continue
 					}
 
@@ -82,7 +82,7 @@ func (c *Controller) startPCEUpdatesDispatcher(ctx context.Context) {
 
 					for _, route := range routes {
 
-						remoteNode, exists := c.topology.GetNodeByID(NodeID(route.Remote.Attach))
+						remoteNode, exists := c.topology.GetNodeByID(NodeID(route.Remote.AttachNodeID))
 						if !exists {
 							c.logger.ErrorContext(ctx, "failed to get Node entry", log.NodeID(string(nodeID)))
 							continue

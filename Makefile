@@ -119,6 +119,8 @@ apd:
 	$(MAKE) generate
 	$(MAKE) DEBUG=1 apply
 
+apdev: ap dev
+
 ## Generators
 sqlc-gen:
 	UID=$(shell id -u) GID=$(shell id -g) docker compose -f docker-compose.dev.yml run --rm sqlc

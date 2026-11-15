@@ -50,15 +50,15 @@ type Tenant struct {
 }
 
 type Site struct {
-	TenantID   TenantID
-	CPE        string
-	PortalID   string
-	Node       string
-	Prefix     netip.Prefix
-	Attach     string
-	AttachNode string
-	IfID       uint32
-	Identity   string
+	TenantID     TenantID
+	CPE          string
+	PortalID     string
+	Node         string
+	Prefix       netip.Prefix
+	AttachNodeID string
+	AttachNode   string
+	IfID         uint32
+	Identity     string
 	// ReservationMbps is the bandwidth this site has reserved.
 	ReservationMbps float64
 	ClassMbps       map[uint64]float64
@@ -229,7 +229,7 @@ func (r *JSONTenantRepository) Load(_ context.Context) error {
 				PortalID:        rs.PortalID,
 				Node:            rs.Node,
 				Prefix:          prefix,
-				Attach:          rs.Attach,
+				AttachNodeID:    rs.Attach,
 				AttachNode:      rs.AttachNode,
 				IfID:            rs.IfID,
 				Identity:        rs.Identity,

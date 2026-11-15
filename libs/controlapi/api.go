@@ -12,11 +12,16 @@ type PortalAuthEndpointRequest struct {
 }
 
 type PortalAuthEndpointResponse struct {
-	LocalSwanIdentity  string `json:"local_swan_identity"`
+	LocalSwanIdentity string                  `json:"local_swan_identity"`
+	Prefix            string                  `json:"prefix"`
+	Attachments       map[string]PEAttachment `json:"attachments"`
+}
+
+// PEAttachment provides the portal with the info necessary to initiate a IPSec tunnel multiple PEs
+type PEAttachment struct {
+	NodeID             string `json:"node_id"`
+	AttachAddr         string `json:"attach_addr"`
 	RemoteSwanIdentity string `json:"remote_swan_identity"`
-	AttachNode         string `json:"attach_node"`
-	Prefix             string `json:"prefix"`
-	AttachNodeAddr     string `json:"attach_node_addr"`
 }
 
 type PETunnelUpdateRequest struct {
@@ -26,8 +31,8 @@ type PETunnelUpdateRequest struct {
 }
 
 type CPETunnelUpdateRequest struct {
-	PortalID string `json:"portal_id"`
-	IfID     uint32 `json:"if_id"`
+	PortalID string            `json:"portal_id"`
+	IfIds    map[string]uint32 `json:"if_ids"`
 }
 
 type TunnelUpdateResponse struct {

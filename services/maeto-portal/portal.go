@@ -80,35 +80,18 @@ func (p *Portal) Run(ctx context.Context) error {
 			case <-ctx.Done():
 				return
 			case e := <-eventChan:
-				if len(e.IKE.ChildSAs) != 1 {
-					p.logger.WarnContext(ctx, fmt.Sprintf("child-updown: expected 1 child SA, got %d", len(e.IKE.ChildSAs)))
-					continue
+				// treat even as trigger and send all the tunnels we have
+				var down uint32
+				if !e.Up {
+					down = e.IKE.UniqueID
 				}
 
-				var childSA swan.ChildSA
-				for _, v := range e.IKE.ChildSAs {
-					childSA = v
-				}
-
-				if e.IKE.State != "ESTABLISHED" || childSA.State != "INSTALLED" {
-					p.logger.ErrorContext(ctx, "child-updown: invalid state", log.PortalID(p.config.PortalID))
-				}
-
-				ifID, err := childSA.IfID()
-				if err != nil {
-					p.logger.ErrorContext(ctx, "failed to parse IfID into uint32", log.Err(err))
-					continue
-				}
-
-				if err := p.sendCPETunnelUpdate(ifID, ctx); err != nil {
+				if err := p.sendAllTunnels(ctx, down); err != nil {
 					p.logger.ErrorContext(ctx, "failed to send CPETunnelUpdate", log.Err(err))
 					continue
 				}
 
-				p.logger.InfoContext(ctx, "cpe tunnel update successful",
-					log.PortalID(p.config.PortalID),
-					slog.Int("if_id", int(ifID)),
-				)
+				p.logger.InfoContext(ctx, "cpe tunnel update successful", log.PortalID(p.config.PortalID))
 			}
 		}
 	}()
@@ -143,13 +126,23 @@ func (p *Portal) Run(ctx context.Context) error {
 		return err
 	}
 
-	if err := p.loadConnection(ctx, swanConnOptsResp.AttachNodeAddr,
-		swanConnOptsResp.LocalSwanIdentity, swanConnOptsResp.RemoteSwanIdentity); err != nil {
-		return err
-	}
+	for nodeID, attach := range swanConnOptsResp.Attachments {
+		confName := fmt.Sprintf("pop%s", attach.NodeID)
 
-	if err := p.swanClient.InitiateTunnel(ctx, "pop"); err != nil {
-		return err
+		if err := p.loadConnection(
+			ctx,
+			attach.AttachAddr,
+			swanConnOptsResp.LocalSwanIdentity,
+			attach.RemoteSwanIdentity,
+			confName,
+		); err != nil {
+			p.logger.ErrorContext(ctx, fmt.Sprintf("failed to load connection for %s", nodeID), log.Err(err))
+			continue
+		}
+
+		if err := p.swanClient.InitiateTunnel(ctx, confName); err != nil {
+			p.logger.ErrorContext(ctx, fmt.Sprintf("failed to initiate tunnel for %s", nodeID), log.Err(err))
+		}
 	}
 
 	// Handles the RESYNC event when the controller restarts
@@ -187,41 +180,10 @@ func (p *Portal) Run(ctx context.Context) error {
 
 func (p *Portal) setupResyncWatch(ctx context.Context) {
 	_, _ = p.js.Conn().Subscribe(controlapi.SubjectControllerCPETunnelResync, func(msg *nats.Msg) {
-		sas, err := p.swanClient.GetSAs(ctx)
-		if err != nil {
-			p.logger.ErrorContext(ctx, "failed to get SAS info", log.Err(err))
+		if err := p.sendAllTunnels(ctx, 0); err != nil {
+			p.logger.ErrorContext(ctx, "failed to send CPETunnelUpdate", log.Err(err))
 		}
 
-		// Loop through the list of IKE_SA ( for portal it's supposed to be one)
-		for _, ikeSA := range sas {
-			var ifID uint32
-
-			for _, childSA := range ikeSA.ChildSAs {
-				if ikeSA.State != "ESTABLISHED" || childSA.State != "INSTALLED" {
-					p.logger.ErrorContext(ctx, "child-updown: invalid state", log.PortalID(p.config.PortalID))
-					continue
-				}
-
-				childIfID, err := childSA.IfID()
-				if err != nil {
-					p.logger.ErrorContext(ctx, "failed to parse IfID into uint32", log.Err(err))
-					continue
-				}
-
-				ifID = childIfID
-			}
-
-			if ifID == 0 {
-				continue
-			}
-
-			err := p.sendCPETunnelUpdate(ifID, ctx)
-			if err != nil {
-				p.logger.ErrorContext(ctx, "failed to send CPETunnelUpdate", log.Err(err))
-				continue
-			}
-
-		}
 		if err := msg.Ack(); err != nil {
 			p.logger.ErrorContext(ctx, "failed to ack message", log.Err(err))
 		}
@@ -230,10 +192,40 @@ func (p *Portal) setupResyncWatch(ctx context.Context) {
 	<-ctx.Done()
 }
 
-func (p *Portal) sendCPETunnelUpdate(ifID uint32, ctx context.Context) error {
+func (p *Portal) sendAllTunnels(ctx context.Context, down uint32) error {
+	sas, err := p.swanClient.GetSAs(ctx)
+	if err != nil {
+		return fmt.Errorf("list SAs: %w", err)
+	}
+
+	ifIDs := make(map[string]uint32)
+	for _, ikeSA := range sas {
+		if ikeSA.State != "ESTABLISHED" || (down != 0 && ikeSA.UniqueID == down) {
+			continue
+		}
+
+		for _, childSA := range ikeSA.ChildSAs {
+			if childSA.State != "INSTALLED" {
+				continue
+			}
+
+			ifID, err := childSA.IfID()
+			if err != nil {
+				p.logger.ErrorContext(ctx, "failed to parse IfID into uint32", log.Err(err))
+				continue
+			}
+
+			ifIDs[ikeSA.RemoteID] = ifID
+		}
+	}
+
+	return p.sendCPETunnelUpdate(ifIDs, ctx)
+}
+
+func (p *Portal) sendCPETunnelUpdate(ifIDs map[string]uint32, ctx context.Context) error {
 	req := controlapi.CPETunnelUpdateRequest{
 		PortalID: p.config.PortalID,
-		IfID:     ifID,
+		IfIds:    ifIDs,
 	}
 
 	data, err := json.Marshal(req)
@@ -251,7 +243,7 @@ func (p *Portal) sendCPETunnelUpdate(ifID uint32, ctx context.Context) error {
 
 	p.logger.InfoContext(ctx, "cpe tunnel update request published",
 		log.PortalID(p.config.PortalID),
-		slog.Int("if_id", int(ifID)),
+		slog.Int("tunnels", len(ifIDs)),
 	)
 
 	var resp controlapi.TunnelUpdateResponse

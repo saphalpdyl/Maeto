@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/saphalpdyl/maeto/libs/swan/log"
@@ -32,6 +33,12 @@ const (
 type Client struct {
 	s      *vici.Session
 	logger *slog.Logger
+
+	// govici's CallStreaming only holds the session lock while it builds the
+	// iterator; the request and its replies run later, unlocked, and interleave
+	// with any concurrent Call. Every exchange goes through mu instead, held
+	// until a stream is fully drained.
+	mu sync.Mutex
 }
 
 func NewClient(logger *slog.Logger) (*Client, error) {
@@ -58,7 +65,10 @@ func (c *Client) WatchIKEUpdownEvents(ctx context.Context) (<-chan *UpDownEvent,
 	c.s.NotifyEvents(ec)
 
 	outChan := make(chan *UpDownEvent, 16)
-	if err := c.s.Subscribe("child-updown"); err != nil {
+	c.mu.Lock()
+	err := c.s.Subscribe("child-updown")
+	c.mu.Unlock()
+	if err != nil {
 		c.logger.ErrorContext(ctx, "ike-updown EVENT failed to subscribe", log.Err(err))
 		return nil, err
 	}
@@ -106,7 +116,9 @@ func (c *Client) InitiateTunnel(
 	backoff := initiateBackoffMin
 
 	for attempt := 1; ; attempt++ {
+		c.mu.Lock()
 		res, err := c.s.Call(ctx, string(ViciCommandInitiate), msg)
+		c.mu.Unlock()
 		if err == nil {
 			err = res.Err()
 		}
@@ -180,7 +192,9 @@ func (c *Client) LoadConnection(
 		return err
 	}
 
+	c.mu.Lock()
 	res, err := c.s.Call(ctx, string(ViciCommandLoadConnection), msg)
+	c.mu.Unlock()
 	if err != nil {
 		c.logger.ErrorContext(ctx, "failed to load connection", log.Err(err))
 		return err
@@ -197,6 +211,9 @@ func (c *Client) LoadConnection(
 }
 
 func (c *Client) GetSAs(ctx context.Context) ([]IKESA, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	result := c.s.CallStreaming(ctx, string(ViciCommandListSAs), "list-sa", nil)
 
 	sas := make([]IKESA, 0)
@@ -236,7 +253,9 @@ func (c *Client) LoadKey(ctx context.Context, privateKey []byte) error {
 		return err
 	}
 
+	c.mu.Lock()
 	res, err := c.s.Call(ctx, string(ViciCommandLoadKey), msg)
+	c.mu.Unlock()
 	if err != nil {
 		c.logger.ErrorContext(ctx, "failed to load key", log.Err(err))
 		return err

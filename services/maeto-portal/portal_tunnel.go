@@ -12,6 +12,7 @@ func (p *Portal) loadConnection(
 	remoteAddr string,
 	localID string,
 	remoteID string,
+	childID string,
 ) error {
 	certData, err := os.ReadFile("/etc/swanctl/x509/cert.pem")
 	if err != nil {
@@ -31,8 +32,8 @@ func (p *Portal) loadConnection(
 		[]string{remoteAddr},
 		localID,
 		remoteID,
-		"pop",
-		"pop",
+		childID,
+		childID,
 		certData,
 		caCertData,
 	)

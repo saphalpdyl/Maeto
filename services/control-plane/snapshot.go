@@ -399,7 +399,7 @@ func SnapshotTenants(tenants TenantRepository) []TenantSnapshot {
 				PortalID:   site.PortalID,
 				Node:       site.Node,
 				Prefix:     site.Prefix.String(),
-				Attach:     site.Attach,
+				Attach:     site.AttachNodeID,
 				AttachNode: site.AttachNode,
 				IfID:       site.IfID,
 				Identity:   site.Identity,

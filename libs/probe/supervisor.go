@@ -185,7 +185,7 @@ func (s *Supervisor) Start(ctx context.Context) error {
 					netstatConfig.Devs = append(netstatConfig.Devs, vrfTableName)
 
 					for _, portalIntent := range tenant.PortalIntents {
-						xfrmName := fmt.Sprintf("maeto-tun-%s-%d", tenantID, portalIntent.TunnelInterfaceID)
+						xfrmName := fmt.Sprintf("mto-tun-%s-%d", tenantID, portalIntent.TunnelInterfaceID)
 
 						netstatConfig.Devs = append(netstatConfig.Devs, xfrmName)
 

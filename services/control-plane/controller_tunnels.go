@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/nats-io/nats.go"
@@ -28,23 +30,52 @@ func (c *Controller) setupPortalAuthEndpoint(ctx context.Context) error {
 			return
 		}
 
-		attachNode, exists := c.inventory.Node(NodeID(site.Attach))
+		attachNode, exists := c.inventory.Node(NodeID(site.AttachNodeID))
 		if !exists {
-			c.logger.ErrorContext(ctx, "attach node not found in inventory", log.NodeID(site.Attach))
+			c.logger.ErrorContext(ctx, "attach node not found in inventory", log.NodeID(site.AttachNodeID))
 			return
 		}
 
 		if !attachNode.HasAccessSide() {
-			c.logger.ErrorContext(ctx, "attach node has no access side", log.NodeID(site.Attach))
+			c.logger.ErrorContext(ctx, "attach node has no access side", log.NodeID(site.AttachNodeID))
 			return
 		}
 
-		data, err := json.Marshal(controlapi.PortalAuthEndpointResponse{
-			LocalSwanIdentity:  site.Identity,
+		attachments := make(map[string]controlapi.PEAttachment)
+		attachments[string(attachNode.ID)] = controlapi.PEAttachment{
+			NodeID:             string(attachNode.ID),
+			AttachAddr:         attachNode.Access.Address.Addr().String(),
 			RemoteSwanIdentity: fmt.Sprintf("%s.maeto.net", attachNode.Name),
-			AttachNode:         site.AttachNode,
-			Prefix:             site.Prefix.String(),
-			AttachNodeAddr:     attachNode.Access.Address.Addr().String(),
+		}
+
+		node, exists := c.topology.GetNodeByID(NodeID(site.AttachNodeID))
+		if !exists {
+			c.logger.ErrorContext(ctx, "attach node not found in topology", log.NodeID(site.AttachNodeID))
+			return
+		}
+
+		for _, n := range node.ProtectedBy {
+			attachNode, exists = c.inventory.Node(n)
+			if !exists {
+				continue
+			}
+
+			if !attachNode.HasAccessSide() {
+				c.logger.WarnContext(ctx, "protector node has no access side, cannot be a protector without access", log.NodeID(site.AttachNodeID))
+				continue
+			}
+
+			attachments[string(attachNode.ID)] = controlapi.PEAttachment{
+				NodeID:             string(attachNode.ID),
+				AttachAddr:         attachNode.Access.Address.Addr().String(),
+				RemoteSwanIdentity: fmt.Sprintf("%s.maeto.net", attachNode.Name),
+			}
+		}
+
+		data, err := json.Marshal(controlapi.PortalAuthEndpointResponse{
+			LocalSwanIdentity: site.Identity,
+			Prefix:            site.Prefix.String(),
+			Attachments:       attachments,
 		})
 		if err != nil {
 			c.logger.ErrorContext(ctx, "failed to marshal response", log.Err(err))
@@ -67,12 +98,10 @@ func (c *Controller) setupPortalAuthEndpoint(ctx context.Context) error {
 		_, exists = c.serviceRegistry.registry[req.PortalID]
 		if !exists {
 			cpeIntent := nodesync.CPEIntent{
-				TunnelInterfaceID:    0, // empty intent, 0 means no tunnel yet
-				TunnelPE:             site.AttachNode,
-				TunnelPEEndpointAddr: attachNode.Access.Address.Addr(),
-				TenantID:             fmt.Sprintf("%d", site.TenantID),
-				TenantPrefix:         tenant.Allocation,
-				SitePrefix:           site.Prefix,
+				Tunnels:      make([]nodesync.CPETunnelIntent, 0), // Node tunnels
+				TenantID:     fmt.Sprintf("%d", site.TenantID),
+				TenantPrefix: tenant.Allocation,
+				SitePrefix:   site.Prefix,
 			}
 
 			c.serviceRegistry.registry[req.PortalID] = &nodesync.NodeIntent{
@@ -145,19 +174,50 @@ func (c *Controller) handleCPETunnelUpdate(ctx context.Context, data []byte) err
 		return fmt.Errorf("tenant identity not found")
 	}
 
-	attachNode, exists := c.inventory.Node(NodeID(site.Attach))
+	attachNode, exists := c.topology.GetNodeByID(NodeID(site.AttachNodeID))
 	if !exists {
-		return fmt.Errorf("attach node not found in inventory")
+		return fmt.Errorf("attach node not found in topology")
+	}
+
+	tunnels := make([]nodesync.CPETunnelIntent, 0)
+	for remoteID, ifID := range req.IfIds {
+		// Derive the node from remoteID
+		nodeName, found := strings.CutSuffix(remoteID, ".maeto.net")
+		if !found {
+			c.logger.WarnContext(ctx, "invalid attach node name")
+			continue
+		}
+
+		node, exists := c.inventory.NodeByName(nodeName)
+		if !exists {
+			c.logger.WarnContext(ctx, "invalid attach node name")
+			continue
+		}
+
+		if attachNode.ID != node.ID && !slices.Contains(attachNode.ProtectedBy, node.ID) {
+			c.logger.WarnContext(ctx, "node not allowed to create tunnels for this cpe", log.NodeID(string(node.ID)), "portal_id", req.PortalID)
+			continue
+		}
+
+		role := nodesync.TunnelRoleStandby
+		if site.AttachNodeID == string(node.ID) {
+			role = nodesync.TunnelRolePrimary
+		}
+
+		tunnels = append(tunnels, nodesync.CPETunnelIntent{
+			TunnelInterfaceID:    ifID,
+			TunnelPE:             string(node.ID),
+			TunnelPEEndpointAddr: node.Access.Address.Addr(),
+			Role:                 role,
+		})
 	}
 
 	cpeIntent := nodesync.CPEIntent{
-		TunnelInterfaceID:    req.IfID,
-		TunnelPE:             site.AttachNode,
-		TunnelPEEndpointAddr: attachNode.Access.Address.Addr(),
-		TenantID:             fmt.Sprintf("%d", site.TenantID),
-		TenantPrefix:         tenant.Allocation,
-		SitePrefix:           site.Prefix,
-		PortalID:             req.PortalID,
+		TenantID:     fmt.Sprintf("%d", site.TenantID),
+		TenantPrefix: tenant.Allocation,
+		SitePrefix:   site.Prefix,
+		PortalID:     req.PortalID,
+		Tunnels:      tunnels,
 	}
 
 	err := c.serviceRegistry.UpsertCPEIntentForSite(
@@ -218,14 +278,28 @@ func (c *Controller) handlePETunnelUpdate(ctx context.Context, data []byte) erro
 		return fmt.Errorf("tenant not found")
 	}
 
-	node, exists := c.inventory.Node(NodeID(site.Attach))
+	node, exists := c.inventory.Node(NodeID(req.NodeID))
 	if !exists {
 		return fmt.Errorf("attach node not found in inventory")
 	}
 
-	topologyNode, exists := c.topology.GetNodeByID(NodeID(site.Attach))
+	topologyNode, exists := c.topology.GetNodeByID(NodeID(req.NodeID))
 	if !exists {
 		return fmt.Errorf("attach node not found in topology")
+	}
+
+	attachNode, exists := c.topology.GetNodeByID(NodeID(site.AttachNodeID))
+	if !exists {
+		return fmt.Errorf("site attach node %s not found in topology", site.AttachNodeID)
+	}
+
+	if attachNode.ID != topologyNode.ID && !slices.Contains(attachNode.ProtectedBy, topologyNode.ID) {
+		return fmt.Errorf("node %s is neither the attach node nor a protector for portal %s", req.NodeID, req.PortalID)
+	}
+
+	role := nodesync.PERoleStandby
+	if attachNode.ID == topologyNode.ID {
+		role = nodesync.PERolePrimary
 	}
 
 	reservationBandwidth := make(map[uint64]float64)
@@ -237,6 +311,7 @@ func (c *Controller) handlePETunnelUpdate(ctx context.Context, data []byte) erro
 		SitePrefix:          site.Prefix,
 		TenantPrefix:        tenant.Allocation,
 		ReservedBandwidth:   reservationBandwidth,
+		Role:                role,
 	}
 
 	tx := c.serviceRegistry.BeginTx()

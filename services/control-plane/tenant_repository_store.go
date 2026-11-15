@@ -70,7 +70,7 @@ func (r *JSONTenantRepository) SaveTo(ctx context.Context, q *store.Queries) err
 				Cpe:             site.CPE,
 				Node:            site.Node,
 				Prefix:          site.Prefix,
-				Attach:          site.Attach,
+				Attach:          site.AttachNodeID,
 				AttachNode:      site.AttachNode,
 				IfID:            int64(site.IfID),
 				Identity:        site.Identity,
@@ -149,7 +149,7 @@ func (r *JSONTenantRepository) LoadFrom(ctx context.Context, q *store.Queries) e
 			PortalID:        row.PortalID,
 			Node:            row.Node,
 			Prefix:          row.Prefix,
-			Attach:          row.Attach,
+			AttachNodeID:    row.Attach,
 			AttachNode:      row.AttachNode,
 			IfID:            uint32(row.IfID),
 			Identity:        row.Identity,
@@ -159,7 +159,7 @@ func (r *JSONTenantRepository) LoadFrom(ctx context.Context, q *store.Queries) e
 
 		byIdentity[site.Identity] = site
 		byPortalID[site.PortalID] = site
-		byPop[site.Attach] = append(byPop[site.Attach], site)
+		byPop[site.AttachNodeID] = append(byPop[site.AttachNodeID], site)
 		tenant.Sites = append(tenant.Sites, site)
 	}
 

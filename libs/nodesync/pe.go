@@ -6,6 +6,13 @@ import (
 	"slices"
 )
 
+type PERole string
+
+const (
+	PERolePrimary PERole = "primary"
+	PERoleStandby PERole = "standby"
+)
+
 // Bad naming convention: Portal-specific configuration done on PE's dataplane
 type PE_PortalIntent struct {
 	HostFacingInterface string `json:"host_facing_interface"`
@@ -15,6 +22,7 @@ type PE_PortalIntent struct {
 	TenantPrefix netip.Prefix `json:"tenant_prefix"`
 
 	ReservedBandwidth map[uint64]float64 `json:"reserved_bandwidth"`
+	Role              PERole             `json:"role"`
 }
 
 type PEIntent struct {
@@ -32,6 +40,8 @@ type PEIntent struct {
 
 	// DSCP -> Color marking
 	TrafficClassIntent []PETrafficClassIntent `json:"traffic_class_intent"`
+
+	Protected []string `json:"protected"`
 }
 
 type PETrafficClassIntent struct {
@@ -122,6 +132,7 @@ func (i *PEIntent) Clone() Intent {
 				SitePrefix:          portalIntent.SitePrefix,
 				TenantPrefix:        portalIntent.TenantPrefix,
 				ReservedBandwidth:   copiedReservedBandwidth,
+				Role:                portalIntent.Role,
 			}
 		}
 
@@ -136,6 +147,8 @@ func (i *PEIntent) Clone() Intent {
 
 		out.Tenants[tenantID] = copied
 	}
+
+	out.Protected = slices.Clone(i.Protected)
 
 	if i.Peers != nil {
 		out.Peers = make(map[string]PeerIntent, len(i.Peers))

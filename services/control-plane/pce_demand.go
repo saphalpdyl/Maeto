@@ -48,7 +48,7 @@ func BuildDemands(tenantRepo TenantRepository) []Demand {
 		// 		PopA-tenant-273[voice] = voice(site1) + voice(site2) // mbps
 		// 		PopA-tenant-273[streaming] = streaming(site1) + streaming(site2) // mbps
 		for _, site := range tenant.Sites {
-			popID := NodeID(site.Attach)
+			popID := NodeID(site.AttachNodeID)
 			if popsWithLabels[popID] == nil {
 				popsWithLabels[popID] = make(map[uint64]float64)
 			}

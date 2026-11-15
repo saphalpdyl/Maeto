@@ -40,9 +40,18 @@ func (r *Rule) CompareTo(actual Resource) Action {
 	if !ok {
 		return ActionReplace
 	}
-	if r.Priority != a.Priority || r.Src != a.Src || r.Table != a.Table {
+	if r.Priority != a.Priority || r.Table != a.Table || r.Mark != a.Mark || r.Iif != a.Iif ||
+		!samePrefix(r.Src, a.Src) || !samePrefix(r.Dst, a.Dst) {
 		return ActionReplace
 	}
 
 	return ActionNone
+}
+
+func samePrefix(a, b *netip.Prefix) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+
+	return *a == *b
 }

@@ -11,6 +11,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+// RENDERING
 // Rendering is the process of converting high-level intent or low-level dataplane state
 // into domain-specific canonical structure so the two can be diffed directly.
 
@@ -19,8 +20,9 @@ import (
 func (r *Reconciler) RenderCPEIntent(ctx context.Context, cpe *nodesync.CPEIntent) (map[string]Resource, error) {
 	resources := make(map[string]Resource)
 
-	if cpe.TunnelInterfaceID == 0 {
-		r.logger.WarnContext(ctx, "tunnel iface id == 0: intent is not ready to be installed")
+	if len(cpe.Tunnels) == 0 {
+		// No tunnels
+		r.logger.WarnContext(ctx, "len(tunnels) == 0: intent is not ready to be installed")
 		return resources, nil
 	}
 
@@ -28,29 +30,37 @@ func (r *Reconciler) RenderCPEIntent(ctx context.Context, cpe *nodesync.CPEInten
 		return nil, fmt.Errorf("cpe intent has no site prefix, nothing could select the tunnel")
 	}
 
-	xfrmTunnelName := fmt.Sprintf("xfrm-tenant-%s", cpe.TenantID)
-	xfrm := &XFRM{
-		Name:      xfrmTunnelName,
-		IfID:      cpe.TunnelInterfaceID,
-		Parent:    "lo",
-		MasterVRF: "", // no VRF for CPE
-		Index:     0,  // observed kernel-assigned value
-	}
-	resources[xfrm.ID().Key] = xfrm
+	for _, tunnel := range cpe.Tunnels {
+		xfrmTunnelName := fmt.Sprintf("mto-tun-%s-%d", cpe.TenantID, tunnel.TunnelInterfaceID)
+		xfrm := &XFRM{
+			Name:      xfrmTunnelName,
+			IfID:      tunnel.TunnelInterfaceID,
+			Parent:    "lo",
+			MasterVRF: "", // no VRF for CPE
+			Index:     0,  // observed kernel-assigned value
+		}
+		resources[xfrm.ID().Key] = xfrm
 
-	tunnelDefault := &Route{
-		Table:  CPETunnelTable,
-		Dst:    netip.PrefixFrom(netip.IPv6Unspecified(), 0), // ::/0
-		Dev:    xfrmTunnelName,
-		Via:    netip.Addr{}, // device route: an xfrm interface is NOARP
-		Metric: 0,
-	}
-	resources[tunnelDefault.ID().Key] = tunnelDefault
+		tableID := StringToID(xfrmTunnelName)
 
-	siteRule := &Rule{
-		Priority: CPERulePriority,
-		Src:      &cpe.SitePrefix,
-		Table:    CPETunnelTable,
+		tunnelDefault := &Route{
+			Table:  int(tableID),
+			Dst:    netip.PrefixFrom(netip.IPv6Unspecified(), 0), // ::/0
+			Dev:    xfrmTunnelName,
+			Via:    netip.Addr{}, // device route: an xfrm interface is NOARP
+			Metric: 0,
+		}
+		resources[tunnelDefault.ID().Key] = tunnelDefault
+
+		if tunnel.Role == nodesync.TunnelRolePrimary {
+			siteRule := &Rule{
+				Priority: CPERulePriority,
+				Src:      &cpe.SitePrefix,
+				Table:    int(tableID),
+			}
+
+			resources[siteRule.ID().Key] = siteRule
+		}
 	}
 
 	// Traffic from CPE addressed to its LAN (the site) was being bounced back and forth
@@ -61,9 +71,7 @@ func (r *Reconciler) RenderCPEIntent(ctx context.Context, cpe *nodesync.CPEInten
 		Dst:      &cpe.SitePrefix,
 		Table:    unix.RT_TABLE_MAIN,
 	}
-
 	resources[siteDstRule.ID().Key] = siteDstRule
-	resources[siteRule.ID().Key] = siteRule
 
 	return resources, nil
 }
@@ -128,6 +136,7 @@ func (r *Reconciler) RenderPEIntent(
 	for tenantID, t := range pe.Tenants {
 		vrfTableName := fmt.Sprintf("maeto-vrf-%s", tenantID)
 		tableID := StringToID(tenantID)
+		mirrorTableID := StringToID(fmt.Sprintf("local:%s", tenantID))
 
 		vrf := &VRF{
 			Name:    vrfTableName,
@@ -149,7 +158,7 @@ func (r *Reconciler) RenderPEIntent(
 		}
 
 		for _, portalIntent := range t.PortalIntents {
-			xfrmName := fmt.Sprintf("maeto-tun-%s-%d", tenantID, portalIntent.TunnelInterfaceID)
+			xfrmName := fmt.Sprintf("mto-tun-%s-%d", tenantID, portalIntent.TunnelInterfaceID)
 
 			xfrm := &XFRM{
 				Name:      xfrmName,
@@ -161,8 +170,13 @@ func (r *Reconciler) RenderPEIntent(
 
 			resources[xfrm.ID().Key] = xfrm
 
+			routeTableID := int(tableID)
+			if portalIntent.Role != nodesync.PERolePrimary {
+				routeTableID = int(mirrorTableID)
+			}
+
 			route := &Route{
-				Table:  int(tableID),
+				Table:  routeTableID,
 				Dst:    portalIntent.SitePrefix,
 				Dev:    xfrmName,
 				Via:    netip.Addr{},
@@ -345,6 +359,9 @@ func (r *Reconciler) RenderFIB(
 		}
 		if r.Src != nil {
 			rule.Src = r.Src
+		}
+		if r.Dst != nil {
+			rule.Dst = r.Dst
 		}
 
 		resources[rule.ID().Key] = rule

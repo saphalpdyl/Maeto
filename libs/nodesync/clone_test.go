@@ -119,17 +119,18 @@ func TestNodeIntentCloneIsDeep(t *testing.T) {
 
 func TestCPEIntentClone(t *testing.T) {
 	orig := &nodesync.CPEIntent{
-		TunnelInterfaceID: 1,
-		TunnelPE:          "PopA",
-		SitePrefix:        netip.MustParsePrefix("fd7a:3921:111:1::/64"),
+		SitePrefix: netip.MustParsePrefix("fd7a:3921:111:1::/64"),
+		Tunnels: []nodesync.CPETunnelIntent{
+			{TunnelInterfaceID: 1, TunnelPE: "A", Role: nodesync.TunnelRolePrimary},
+		},
 	}
 
 	clone := orig.Clone().(*nodesync.CPEIntent) // nolint:errcheck
-	orig.TunnelInterfaceID = 9
-	orig.TunnelPE = "PopC"
+	orig.Tunnels[0].TunnelInterfaceID = 9
+	orig.Tunnels[0].TunnelPE = "C"
 
-	if clone.TunnelInterfaceID != 1 || clone.TunnelPE != "PopA" {
-		t.Errorf("clone changed with the original: %+v", clone)
+	if clone.Tunnels[0].TunnelInterfaceID != 1 || clone.Tunnels[0].TunnelPE != "A" {
+		t.Errorf("clone shares the tunnel slice with the original: %+v", clone.Tunnels)
 	}
 }
 
