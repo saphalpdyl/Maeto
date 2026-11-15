@@ -61,6 +61,9 @@ func (h *HealthMonitor) Start(ctx context.Context) error {
 				state := nodesync.LinkStateUnknown
 				if sess.State == BFDStateAdminDown || sess.State == BFDStateDown {
 					state = nodesync.LinkStateDown
+
+					// Handle mirror SID override for End and End.X
+
 				} else if sess.State == BFDStateInit {
 					// skip
 					continue

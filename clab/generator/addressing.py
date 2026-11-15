@@ -38,10 +38,10 @@ def _host(net, offset):
     return ipaddress.IPv6Address(int(net.network_address) + offset)
 
 
-def locator(prefix, idx):
+def locator(prefix, idx, loopback_CIDR: str = "128"):
     # returns (locator /48, loopback ::1/128) for the pop
     net = _nth_subnet(prefix, 48, idx)
-    return str(net), f"{_host(net, 1)}/128"
+    return str(net), f"{_host(net, 1)}/{loopback_CIDR}"
 
 
 def link_addrs(prefix, idx):

@@ -6,6 +6,7 @@ class Defaults:
     locator_prefix: str
     link_prefix: str
     edge_prefix: str
+    mirror_prefix: str
 
 
 @dataclass
@@ -15,6 +16,8 @@ class Pop:
     node_name: str      # PopA
     clab_label: str
     data: dict = field(default_factory=dict)
+    protected_by: list = field(default_factory=list)   # [pop id] that stand in when this pop fails
+    protector_of: list = field(default_factory=list)   # [pop id], derived from the others' protected_by
 
 
 @dataclass

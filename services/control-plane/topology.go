@@ -19,6 +19,9 @@ type Node struct {
 	Loopback netip.Prefix
 	Locator  netip.Prefix
 	Attrs    map[string]string
+
+	ProtectedBy []NodeID
+	ProtectorOf []NodeID
 }
 
 type Edge struct {
@@ -77,6 +80,8 @@ func (g *Graph) Clone() *Graph {
 	for id, node := range g.nodes {
 		nodeCopy := *node
 		nodeCopy.Attrs = maps.Clone(node.Attrs)
+		nodeCopy.ProtectedBy = slices.Clone(node.ProtectedBy)
+		nodeCopy.ProtectorOf = slices.Clone(node.ProtectorOf)
 		newGraph.nodes[id] = &nodeCopy
 	}
 

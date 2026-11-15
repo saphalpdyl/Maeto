@@ -57,6 +57,8 @@ def _pop(pop, pp):
             for i in pp.interfaces
         ],
         "access": _access(pp.access),
+        "protected_by": pop.protected_by,
+        "protector_of": pop.protector_of,
         "data": pop.data,
     }
 

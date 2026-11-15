@@ -73,6 +73,12 @@ dev:
 fe:
 	docker compose up --build --force-recreate maeto-pane
 
+fe-release:
+	docker rm -f maeto-pane-prod 2>/dev/null || true
+	docker compose run -d --service-ports --name maeto-pane-prod \
+		-e MIX_ENV=prod -e PHX_HOST=$(PHX_HOST) -e SECRET_KEY_BASE="$$(openssl rand -base64 48)" \
+		maeto-pane sh -c "mix deps.get --only prod && mix assets.setup && mix compile && mix assets.deploy && mix phx.server"
+
 sim:
 	docker compose up --build --force-recreate maeto-sim
 

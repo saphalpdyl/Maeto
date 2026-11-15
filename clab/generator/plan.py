@@ -80,6 +80,8 @@ class PopPlan:
     loopback: str       # ::1/128
     interfaces: list    # [Interface], core links only -- what frr owns
     access: object      # AccessPlan, or None on a pop with no cpes
+    mirror_prefix: str
+    mirror_loopback_prefix: str
 
 
 @dataclass
@@ -172,7 +174,15 @@ def build_plan(topo):
             iface_by_key[(pop.id, ("core", link.index))] = name
 
         locator_prefix, loopback = addressing.locator(d.locator_prefix, pop.index)
-        pops[pop.id] = PopPlan(pop, addressing.isis_net(pop.index), locator_prefix, loopback, ifaces, access)
+        mirror_prefix, mirror_loopback = addressing.locator(d.mirror_prefix, pop.index, "48")
+        pops[pop.id] = PopPlan(pop,
+                               addressing.isis_net(pop.index),
+                               locator_prefix,
+                               loopback,
+                               ifaces,
+                               access,
+                               mirror_prefix,
+                               mirror_loopback)
 
     links = []
     for link in sorted(topo.links, key=lambda l: l.index):

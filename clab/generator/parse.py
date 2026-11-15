@@ -74,7 +74,7 @@ def _parse_defaults(root):
     _check_prefix("link_prefix", d["link_prefix"], 64)
     # each pop gets a whole aggregate out of the edge prefix, not a single /64
     _check_prefix("edge_prefix", d["edge_prefix"], EDGE_AGGREGATE_PREFIXLEN)
-    return Defaults(d["locator_prefix"], d["link_prefix"], d["edge_prefix"])
+    return Defaults(d["locator_prefix"], d["link_prefix"], d["edge_prefix"], d["mirror_prefix"])
 
 
 def _check_prefix(name, value, carve):
@@ -114,8 +114,35 @@ def _parse_pops(root):
             node_name=node_name,
             clab_label=_clab_label(raw, node_name, f"pops[{i}]"),
             data=_data(raw, f"pops[{i}]"),
+            protected_by=_protected_by(raw, pid, f"pops[{i}]"),
         ))
+    _link_protectors(pops)
     return pops
+
+
+def _protected_by(raw, pid, where):
+    items = raw.get("protected_by") or []
+    if not isinstance(items, list):
+        raise TopologyError(f"{where}.protected_by must be a list of pop ids")
+    out = []
+    for p in items:
+        if not isinstance(p, str) or not p:
+            raise TopologyError(f"{where}.protected_by entries must be non-empty pop ids")
+        if p == pid:
+            raise TopologyError(f"{where}.protected_by: pop {pid} cannot protect itself")
+        if p in out:
+            raise TopologyError(f"{where}.protected_by lists {p} twice")
+        out.append(p)
+    return out
+
+
+def _link_protectors(pops):
+    by_id = {p.id: p for p in pops}
+    for pop in pops:
+        for protector in pop.protected_by:
+            if protector not in by_id:
+                raise TopologyError(f"pop {pop.id} protected_by references unknown pop: {protector}")
+            by_id[protector].protector_of.append(pop.id)
 
 
 def _pop_index(raw, i, where):

@@ -48,6 +48,8 @@ type RawTopologyData struct {
 			Aggregate string `json:"aggregate"`
 			Nexthop   string `json:"nexthop"`
 		} `json:"access"`
+		ProtectedBy []string `json:"protected_by"`
+		ProtectorOf []string `json:"protector_of"`
 	} `json:"pops"`
 	Cpes []struct {
 		ID              string  `json:"id"`
@@ -176,6 +178,9 @@ func generateGraphFromRawTopology(rawTopoData *RawTopologyData) (*Graph, error) 
 			Loopback: loopback,
 			Locator:  locator,
 			Attrs:    map[string]string{},
+
+			ProtectedBy: toNodeIDs(p.ProtectedBy),
+			ProtectorOf: toNodeIDs(p.ProtectorOf),
 		}
 	}
 
@@ -225,6 +230,15 @@ func generateGraphFromRawTopology(rawTopoData *RawTopologyData) (*Graph, error) 
 	}
 
 	return g, nil
+}
+
+func toNodeIDs(ids []string) []NodeID {
+	out := make([]NodeID, 0, len(ids))
+	for _, id := range ids {
+		out = append(out, NodeID(id))
+	}
+
+	return out
 }
 
 func (c *ClabTopologyManager) LoadTopology() error {

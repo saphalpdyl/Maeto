@@ -107,6 +107,9 @@ func (r *Reconciler) RenderPEIntent(
 	routeTableCollisionMap := make(map[int]string) // tableID -> tenantID
 	resources := make(map[string]Resource)
 
+	// ip -6 route add <End.X towards PopA> table 950 encap seg6.... <PEB Mirror SID> dev sr0
+	// ip -6 route add <DT6 prefix of PopA> table 950 encap seg6.. <PEB Mirror SID> dev sr0
+
 	for _, tIntent := range pe.TrafficClassIntent {
 		for _, dscp := range tIntent.DSCP {
 			if dscp >= 255 {

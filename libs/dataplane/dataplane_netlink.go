@@ -26,8 +26,9 @@ const vrfStrictModePath = "/proc/sys/net/vrf/strict_mode"
 // every link and route maeto installs carries these, so a reconcile can list
 // exactly what it owns and leave everything else alone
 const (
-	MaetoLinkGroup  uint32                = 211
-	MaetoRouteProto netlink.RouteProtocol = 211
+	MaetoLinkGroup        uint32                = 211
+	MaetoRouteProto       netlink.RouteProtocol = 211
+	MaetoMirrorRouteProto netlink.RouteProtocol = 212
 	// SIDs are basically Routes so we don't want them to get fetch during route fetch
 	MaetoSIDProto netlink.RouteProtocol = 212
 	// For encap seg6 routes; MaetoSIDProto is for seg6local routes

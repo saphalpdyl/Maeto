@@ -1,6 +1,6 @@
 # static values shared across the generator
 
-GENERATOR_VERSION = "2.3.0"
+GENERATOR_VERSION = "2.4.0"
 
 POP_IMAGE = "maeto-pop:latest"
 FRR_VERSION = "10.6.0"
@@ -67,8 +67,8 @@ NODE_CONTAINER_PATH = "/etc/maeto/node.json"
 OVERRIDE_KEYS = {"clab_label"}
 
 TOP_LEVEL_KEYS = {"name", "defaults", "classes", "tiers", "pops", "tenants", "cpes", "links"}
-DEFAULT_KEYS = {"locator_prefix", "link_prefix", "edge_prefix"}
-POP_KEYS = {"id", "index", "data", "override"}
+DEFAULT_KEYS = {"locator_prefix", "link_prefix", "edge_prefix", "mirror_prefix"}
+POP_KEYS = {"id", "index", "protected_by", "data", "override"}
 CPE_KEYS = {"id", "attach", "tenant", "prefix", "portal_id", "reservation_bandwidth", "classes", "data", "override"}
 TENANT_KEYS = {"id", "allocation", "tier", "data"}
 LINK_KEYS = {"a", "b", "parallel"}

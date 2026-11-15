@@ -27,6 +27,7 @@ type PEIntent struct {
 	Tenants map[string]*TenantIntent `json:"tenants"`
 
 	// Peers mainly used for establishing STAMP sessions between adjs
+	// Also used to install mirror SIDs
 	Peers map[string]PeerIntent `json:"peers"`
 
 	// DSCP -> Color marking

@@ -2,26 +2,35 @@ name: eight-pop
 
 defaults:
   locator_prefix: fc00:0::/32
+  mirror_prefix: fc00:f::/32
   link_prefix: fc00:1::/32
   edge_prefix: fd00::/48
 
 pops:
   - id: SEA # Seattle
     index: 1
+    protected_by: [SFO]
   - id: SFO # San Francisco
     index: 2
+    protected_by: [LAX]
   - id: LAX # Los Angeles
     index: 3
+    protected_by: [SFO]
   - id: SLC # Salt Lake City
     index: 4
+    protected_by: [DEN]
   - id: DEN # Denver
     index: 5
+    protected_by: [SLC]
   - id: ORD # Chicago
     index: 6
+    protected_by: [IAD]
   - id: NYC # New York
     index: 7
+    protected_by: [IAD]
   - id: IAD # Ashburn
     index: 8
+    protected_by: [NYC]
 
 # label: 0 is the default/bulk low-priority class
 classes:

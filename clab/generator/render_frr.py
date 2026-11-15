@@ -16,6 +16,11 @@ def render_frr(pop_plan):
         f" ipv6 router isis {ISIS_INSTANCE}",
         " isis passive",
         "!",
+        "interface sr0",
+        f" ipv6 address {p.mirror_loopback_prefix}",
+        f" ipv6 router isis {ISIS_INSTANCE}",
+        " isis passive",
+        "!",
     ]
     # only core links reach frr. the tenant-facing interface is deliberately
     # absent: it lives in the access vrf, configured by iproute2, so there is no
@@ -38,6 +43,9 @@ def render_frr(pop_plan):
         "  locators",
         "   locator CORE",
        f"    prefix {p.locator_prefix} block-len 32 node-len 16 func-bits 16", # bbbb:bbbb:nnnn:ffff::
+        "   !",
+        "   locator MIRROR",
+       f"    prefix {p.mirror_prefix} block-len 32 node-len 16 func-bits 16", # bbbb:bbbb:nnnn:ffff::
         "   !",
         "  !",
         " !",
