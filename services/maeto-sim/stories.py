@@ -73,8 +73,11 @@ def parse(name: str, spec: dict, lab: Lab, scenarios: set) -> Story:
     )
 
 
-def load(directory: Path, lab: Lab, scenarios: set) -> Dict[str, Story]:
+def load(directory: Path, lab: Lab, scenarios: set, traffic: bool) -> Dict[str, Story]:
     stories = {}
     for path in sorted(directory.glob("*.yml")):
-        stories[path.stem] = parse(path.stem, yaml.safe_load(path.read_text()), lab, scenarios)
+        spec = yaml.safe_load(path.read_text())
+        if not traffic and any("traffic" in step for step in spec.get("steps") or []):
+            continue
+        stories[path.stem] = parse(path.stem, spec, lab, scenarios)
     return stories

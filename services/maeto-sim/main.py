@@ -31,6 +31,7 @@ ROOT = Path(os.environ.get("MAETO_ROOT", "/app"))
 TFSIM = Path(os.environ.get("TFSIM_DIR", ROOT / "clab/tfsim"))
 STORIES = Path(__file__).resolve().parent / "stories"
 NATS_URL = os.environ.get("NATS_CONNECT_URL", "nats://127.0.0.1:4222")
+TRAFFIC = os.environ.get("MAETO_SIM_TRAFFIC", "").lower() in ("1", "true")
 
 SUBJECT = "maeto.sim.cmd"
 BUCKET = "maeto-sim"
@@ -43,7 +44,7 @@ class Sim:
         self.shaper = shaper
         self.lock = asyncio.Lock()
         self.faults: Dict[str, Fault] = {}
-        self.traffic = scenarios.Traffic(TFSIM, ROOT, self.changed)
+        self.traffic = scenarios.Traffic(TFSIM, ROOT, self.changed, TRAFFIC)
         self.dirty = asyncio.Event()
 
         self.lab: Optional[lablib.Lab] = None
@@ -59,7 +60,7 @@ class Sim:
     def load_lab(self):
         try:
             self.lab = lablib.load(ROOT)
-            self.stories = storylib.load(STORIES, self.lab, self.traffic.names)
+            self.stories = storylib.load(STORIES, self.lab, self.traffic.names, TRAFFIC)
             self.error = None
         except (OSError, KeyError, ValueError, storylib.StoryError) as e:
             log.error("cannot load the lab: %s", e)
@@ -294,7 +295,7 @@ class Sim:
             "limits": LIMITS,
             "links": links,
             "faults": [fault.view() for fault in self.faults.values()],
-            "scenarios": scenarios.catalog(TFSIM / "scenarios"),
+            "scenarios": scenarios.catalog(TFSIM / "scenarios") if TRAFFIC else [],
             "scenario": self.traffic.view(),
             "last_scenario": self.traffic.last,
             "stories": [story.view() for story in self.stories.values()],
