@@ -16,11 +16,8 @@ def server_cmd(flow: Flow) -> List[str]:
 
 
 def client_cmd(flow: Flow) -> List[str]:
-    cmd = []
-
-    # a transfer sized in bytes has no end of its own if the path stalls
-    if flow.size:
-        cmd += ["timeout", str(transfer_deadline(flow))]
+    # a client on a stalled path can wait for the end-of-test exchange forever
+    cmd = ["timeout", "-s", "KILL", str(transfer_deadline(flow))]
 
     cmd += [
         "iperf3", "-6",
@@ -54,8 +51,10 @@ def client_cmd(flow: Flow) -> List[str]:
 
 
 def transfer_deadline(flow: Flow) -> int:
-    seconds = flow.size * 8 / max(flow.rate_bps, 1)
-    return int(seconds * 3) + 10
+    if flow.size:
+        seconds = flow.size * 8 / max(flow.rate_bps, 1)
+        return int(seconds * 3) + 10
+    return flow.duration + 30
 
 
 def start_server(flow: Flow, container: Container):
