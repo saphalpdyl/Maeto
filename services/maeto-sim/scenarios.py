@@ -33,11 +33,12 @@ def catalog(directory: Path) -> List[dict]:
 
 
 class Traffic:
-    def __init__(self, tfsim: Path, root: Path, changed: Callable[[], None]):
+    def __init__(self, tfsim: Path, root: Path, changed: Callable[[], None], enabled: bool):
         self.tfsim = tfsim
         self.root = root
         self.changed = changed
-        self.names = {entry["name"] for entry in catalog(tfsim / "scenarios")}
+        self.enabled = enabled
+        self.names = {entry["name"] for entry in catalog(tfsim / "scenarios")} if enabled else set()
 
         self.process: Optional[asyncio.subprocess.Process] = None
         self.name: Optional[str] = None
@@ -52,6 +53,8 @@ class Traffic:
         return self.process is not None and self.process.returncode is None
 
     async def start(self, name: str, max_s: float, owner: str = "manual"):
+        if not self.enabled:
+            raise ValueError("traffic scenarios are disabled")
         if name not in self.names:
             raise ValueError(f"unknown scenario {name!r}")
         if self.running:
