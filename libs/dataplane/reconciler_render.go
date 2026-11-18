@@ -183,17 +183,26 @@ func (r *Reconciler) RenderPEIntent(
 
 			resources[xfrm.ID().Key] = xfrm
 
+			// vrf owns the XFRM interfaces, not the standby VRF
+			// the dataplane checks whether the device is owned by the vrf
+			// to not leak routes pointing to ifaces not belonging to the vrf
+			// in this case, we WANT that exception to happen i.e leak the route to
+			// VRF's device.
 			routeTableID := int(tableID)
+			allowLeak := false
+
 			if portalIntent.Role != nodesync.PERolePrimary {
 				routeTableID = int(standbyVRFTableID)
+				allowLeak = true
 			}
 
 			route := &Route{
-				Table:  routeTableID,
-				Dst:    portalIntent.SitePrefix,
-				Dev:    xfrmName,
-				Via:    netip.Addr{},
-				Metric: 0,
+				Table:     routeTableID,
+				Dst:       portalIntent.SitePrefix,
+				Dev:       xfrmName,
+				Via:       netip.Addr{},
+				Metric:    0,
+				AllowLeak: allowLeak,
 			}
 
 			resources[route.ID().Key] = route

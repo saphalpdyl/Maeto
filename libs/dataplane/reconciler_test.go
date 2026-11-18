@@ -128,7 +128,7 @@ func (t *TestDefaultRouteOnlyDataplane) GetPrefixRoutes() ([]dataplane.Dataplane
 	panic("unimplemented")
 }
 
-func (t *TestDefaultRouteOnlyDataplane) InsertPrefixRoute(tunnelIface string, tableID int, prefix netip.Prefix, via netip.Addr) error {
+func (t *TestDefaultRouteOnlyDataplane) InsertPrefixRoute(tunnelIface string, tableID int, prefix netip.Prefix, via netip.Addr, allowLeak bool) error {
 	panic("unimplemented")
 }
 
