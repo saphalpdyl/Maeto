@@ -111,3 +111,14 @@ func (r *ServiceRegistry) StageTrafficClassMappingForPE(
 		return nil
 	})
 }
+
+func (r *ServiceRegistry) StageRepairIntentForPE(
+	tx *RegistryTx,
+	nodeID NodeID,
+	repairList []nodesync.LFARepairIntent,
+) {
+	tx.MutatePE(nodeID, func(intent *nodesync.PEIntent) error {
+		intent.LFARepairIntent = repairList
+		return nil
+	})
+}

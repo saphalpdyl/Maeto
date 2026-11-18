@@ -35,7 +35,7 @@ type Controller struct {
 	ready    bool
 	bootMode BootMode
 
-	pceUpdates chan PathSet
+	pceUpdates chan PCEUpdate
 
 	snapshotRefresh chan struct{}
 }
@@ -124,7 +124,7 @@ func NewController(
 		return nil, fmt.Errorf("failed to load previous service registry state: %w", err)
 	}
 
-	pceUpdatesChan := make(chan PathSet, 32)
+	pceUpdatesChan := make(chan PCEUpdate, 32)
 	pceImmediateRecomputeChan := make(chan struct{}, 1)
 	snapshotRefreshChan := make(chan struct{}, 1)
 

@@ -48,7 +48,8 @@ type PEIntent struct {
 	// DSCP -> Color marking
 	TrafficClassIntent []PETrafficClassIntent `json:"traffic_class_intent"`
 
-	Protected []string `json:"protected"`
+	Protected       []string          `json:"protected"`
+	LFARepairIntent []LFARepairIntent `json:"lfa_repair_list_intent"`
 }
 
 type PETrafficClassIntent struct {
@@ -89,6 +90,27 @@ type PESIDInstallIntent struct {
 	PrefixRoutes []netip.Prefix `json:"prefix_route"`
 	Segments     []netip.Addr   `json:"segments"`
 	Color        uint64         `json:"color"`
+}
+
+// NodeID refers to the PLR not the protector or the protectee
+type LFATriggerSIDKind string
+
+const (
+	LFATriggerSIDPrefixService LFATriggerSIDKind = "service"
+	LFATriggerSIDPrefixEndX    LFATriggerSIDKind = "end_x"
+)
+
+type LFATrigger struct {
+	SIDPrefix netip.Prefix      `json:"sid"`
+	Kind      LFATriggerSIDKind `json:"kind"`
+}
+
+type LFARepairIntent struct {
+	Protector      string       `json:"protector"`  // Where the list routes towards
+	Protecting     string       `json:"protecting"` // For whom this node is the PLR for
+	Triggers       []LFATrigger `json:"triggers"`   // What triggers the override
+	Segments       []netip.Addr `json:"segments"`
+	IsPLRProtector bool         `json:"is_plr_protector"`
 }
 
 func (*PEIntent) isIntent() {}

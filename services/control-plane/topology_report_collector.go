@@ -105,15 +105,10 @@ func (t *TopologyReportCollector) apply(ctx context.Context, report nodesync.Top
 			slog.Any("links", report.Links))
 	}
 
-	for _, s := range report.Links {
-		if s == nodesync.LinkStateDown {
-			select {
-			case t.pceImmediateRecomputeChan <- struct{}{}:
-			default:
-			}
-
-			// One down is enough since its just a retick.
-			break
+	if len(changed) > 0 {
+		select {
+		case t.pceImmediateRecomputeChan <- struct{}{}:
+		default:
 		}
 	}
 

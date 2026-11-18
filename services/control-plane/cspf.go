@@ -121,23 +121,9 @@ func WeightedCost(weights map[CostDimension]float64) Objective {
 	}
 }
 
-// Static meaning reserved bandwidth instead of probed utilization
-func StaticBandwidthUtilization(reserved map[PCEEdgeID]float64) Objective {
-	return func(e *PCEEdge, c *Cost) float64 {
-		capacity := e.Capacity() * (1 - capacityHeadroom)
-		if capacity <= 0 {
-			return math.Inf(1)
-		}
-
-		frac := reserved[e.ID] / capacity
-		if frac >= 1 {
-			return math.Inf(1)
-		}
-
-		// Convex function because bulk traffic prioritizes less loaded paths
-		// 	without it, cspf chooses the heavy link even because the sum of
-		// 	the light n links otherwise have a greater cost.
-		return frac / (1 - frac)
+func WeightByHop() Objective {
+	return func(_ *PCEEdge, _ *Cost) float64 {
+		return 1
 	}
 }
 

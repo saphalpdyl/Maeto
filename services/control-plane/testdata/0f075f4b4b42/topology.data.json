@@ -16,6 +16,7 @@
       "index": 1,
       "isis_net": "49.0000.0000.0000.0001.00",
       "locator": "fc00:0:1::/48",
+      "mirror_locator": "fc00:f:1::/48",
       "loopback": "fc00:0:1::1/128",
       "interfaces": [
         {
@@ -58,6 +59,7 @@
       "index": 2,
       "isis_net": "49.0000.0000.0000.0002.00",
       "locator": "fc00:0:2::/48",
+      "mirror_locator": "fc00:f:2::/48",
       "loopback": "fc00:0:2::1/128",
       "interfaces": [
         {
@@ -100,6 +102,7 @@
       "index": 3,
       "isis_net": "49.0000.0000.0000.0003.00",
       "locator": "fc00:0:3::/48",
+      "mirror_locator": "fc00:f:3::/48",
       "loopback": "fc00:0:3::1/128",
       "interfaces": [
         {
@@ -160,6 +163,7 @@
       "index": 4,
       "isis_net": "49.0000.0000.0000.0004.00",
       "locator": "fc00:0:4::/48",
+      "mirror_locator": "fc00:f:4::/48",
       "loopback": "fc00:0:4::1/128",
       "interfaces": [
         {
@@ -196,6 +200,7 @@
       "index": 5,
       "isis_net": "49.0000.0000.0000.0005.00",
       "locator": "fc00:0:5::/48",
+      "mirror_locator": "fc00:f:5::/48",
       "loopback": "fc00:0:5::1/128",
       "interfaces": [
         {
@@ -238,6 +243,7 @@
       "index": 6,
       "isis_net": "49.0000.0000.0000.0006.00",
       "locator": "fc00:0:6::/48",
+      "mirror_locator": "fc00:f:6::/48",
       "loopback": "fc00:0:6::1/128",
       "interfaces": [
         {
@@ -286,6 +292,7 @@
       "index": 7,
       "isis_net": "49.0000.0000.0000.0007.00",
       "locator": "fc00:0:7::/48",
+      "mirror_locator": "fc00:f:7::/48",
       "loopback": "fc00:0:7::1/128",
       "interfaces": [
         {
@@ -316,6 +323,7 @@
       "index": 8,
       "isis_net": "49.0000.0000.0000.0008.00",
       "locator": "fc00:0:8::/48",
+      "mirror_locator": "fc00:f:8::/48",
       "loopback": "fc00:0:8::1/128",
       "interfaces": [
         {

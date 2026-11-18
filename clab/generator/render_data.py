@@ -46,6 +46,7 @@ def _pop(pop, pp):
         "index": pop.index,
         "isis_net": pp.isis_net,
         "locator": pp.locator_prefix,
+        "mirror_locator": pp.mirror_prefix,
         "loopback": pp.loopback,
         "interfaces": [
             {

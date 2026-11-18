@@ -494,7 +494,7 @@ func (l *LinuxNetlink) GetLinksByType(ifaceType string) ([]DataplaneLink, error)
 // the gateway is not on-link for is rejected outright. An invalid via makes it
 // a device route out tunnelIface, which is what a NOARP xfrm interface needs.
 // tableID unix.RT_TABLE_MAIN (or 0) is the main table, the cpe case.
-func (l *LinuxNetlink) InsertPrefixRoute(tunnelIface string, tableID int, prefix netip.Prefix, via netip.Addr) error {
+func (l *LinuxNetlink) InsertPrefixRoute(tunnelIface string, tableID int, prefix netip.Prefix, via netip.Addr, allowLeak bool) error {
 	route := &netlink.Route{
 		Table:    tableID,
 		Family:   netlink.FAMILY_V6,
@@ -516,10 +516,12 @@ func (l *LinuxNetlink) InsertPrefixRoute(tunnelIface string, tableID int, prefix
 		// would install cleanly and blackhole, so check enslavement -- but only
 		// when a vrf actually owns the table. A cpe's tunnel table is a plain
 		// policy routing table with no vrf behind it.
-		if vrf := vrfByTableOrNil(tableID); vrf != nil {
-			if iface.Attrs().MasterIndex != vrf.Attrs().Index {
-				return fmt.Errorf("%s is not enslaved to %s (table %d)",
-					tunnelIface, vrf.Attrs().Name, tableID)
+		if !allowLeak {
+			if vrf := vrfByTableOrNil(tableID); vrf != nil {
+				if iface.Attrs().MasterIndex != vrf.Attrs().Index {
+					return fmt.Errorf("%s is not enslaved to %s (table %d)",
+						tunnelIface, vrf.Attrs().Name, tableID)
+				}
 			}
 		}
 

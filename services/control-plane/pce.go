@@ -21,7 +21,7 @@ type PCE struct {
 	tenants                 TenantRepository
 	bandwidthReservationReg BandwidthReservationRegistry
 
-	reportChan chan<- PathSet
+	reportChan chan<- PCEUpdate
 	logger     *slog.Logger
 	PathStore  *PathStore
 	Changes    *PathChangeStore
@@ -41,7 +41,7 @@ type PCE struct {
 func NewPCE(
 	costGraph *CostGraph,
 	tenants TenantRepository,
-	reportChan chan<- PathSet,
+	reportChan chan<- PCEUpdate,
 	config PCEConfig,
 	requestImmediateRecomputeChan chan struct{},
 	snapshotRefreshChan chan<- struct{},
@@ -77,6 +77,20 @@ func (p *PCE) Run(ctx context.Context, graph *Graph) {
 		case <-ticker.C:
 		case <-p.requestImmediateRecomputeChan:
 			immediate = true
+
+			// For cases where a PE goes down, all of its adjs will report down
+			// We wait about 100ms for those to arrive so that we don't repeatedly recompute for
+			// the same event
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(100 * time.Millisecond):
+			}
+
+			select {
+			case <-p.requestImmediateRecomputeChan:
+			default:
+			}
 		}
 
 		if !p.costGraph.IsReady() {
@@ -97,6 +111,7 @@ func (p *PCE) Run(ctx context.Context, graph *Graph) {
 
 		graph.mu.RLock()
 		pceGraph := NewPCEGraph(graph)
+		repairList := p.computeTILFASegments(ctx, graph, pceGraph)
 
 		p.updateStaticBandwidthUtilizationCost(pceGraph)
 
@@ -273,12 +288,17 @@ func (p *PCE) Run(ctx context.Context, graph *Graph) {
 
 		if immediate {
 			select {
+			// Sends the refresh event to pane so that changes can be
+			// displayed immediately
 			case p.snapshotRefreshChan <- struct{}{}:
 			default:
 			}
 		}
 
-		p.reportChan <- paths
+		p.reportChan <- PCEUpdate{
+			Paths:      paths,
+			RepairList: repairList,
+		}
 	}
 }
 

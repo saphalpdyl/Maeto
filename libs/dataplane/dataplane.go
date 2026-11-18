@@ -157,7 +157,7 @@ type Dataplane interface {
 	GetRules() ([]DataplaneRule, error)
 
 	// TODO: Rename tunnelIface to just dev
-	InsertPrefixRoute(tunnelIface string, tableID int, prefix netip.Prefix, via netip.Addr) error
+	InsertPrefixRoute(tunnelIface string, tableID int, prefix netip.Prefix, via netip.Addr, allowLeak bool) error
 	RemovePrefixRoute(prefix netip.Prefix, tableID int) error
 	GetPrefixRoutes() ([]DataplaneRoute, error)
 

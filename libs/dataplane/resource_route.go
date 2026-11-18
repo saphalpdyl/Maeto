@@ -15,11 +15,12 @@ const (
 
 // Ideompotently replaced. no need for delete+create
 type Route struct {
-	Table  int          `rc:"id"`
-	Dst    netip.Prefix `rc:"id"`
-	Dev    string       `rc:"mut"`
-	Via    netip.Addr   `rc:"mut"`
-	Metric int
+	Table     int          `rc:"id"`
+	Dst       netip.Prefix `rc:"id"`
+	Dev       string       `rc:"mut"`
+	Via       netip.Addr   `rc:"mut"`
+	Metric    int
+	AllowLeak bool
 }
 
 func (r *Route) ID() ID {

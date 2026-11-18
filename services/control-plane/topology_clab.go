@@ -28,14 +28,15 @@ type RawTopologyData struct {
 		EdgePrefix    string `json:"edge_prefix"`
 	} `json:"defaults"`
 	Pops []struct {
-		ID         string `json:"id"`
-		Name       string `json:"name"`
-		ClabLabel  string `json:"clab_label"`
-		Index      int    `json:"index"`
-		IsisNet    string `json:"isis_net"`
-		Locator    string `json:"locator"`
-		Loopback   string `json:"loopback"`
-		Interfaces []struct {
+		ID            string `json:"id"`
+		Name          string `json:"name"`
+		ClabLabel     string `json:"clab_label"`
+		Index         int    `json:"index"`
+		IsisNet       string `json:"isis_net"`
+		Locator       string `json:"locator"`
+		MirrorLocator string `json:"mirror_locator"`
+		Loopback      string `json:"loopback"`
+		Interfaces    []struct {
 			Name    string `json:"name"`
 			Role    string `json:"role"`
 			Peer    string `json:"peer"`
@@ -170,6 +171,11 @@ func generateGraphFromRawTopology(rawTopoData *RawTopologyData) (*Graph, error) 
 			return nil, fmt.Errorf("failed to parse locator as netip.Prefix: %s", p.Locator)
 		}
 
+		mirrorLocator, err := netip.ParsePrefix(p.MirrorLocator)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse mirror locator as netip.Prefix: %s", p.MirrorLocator)
+		}
+
 		g.nodes[NodeID(p.ID)] = &Node{
 			ID:       NodeID(p.ID),
 			Name:     p.Name,
@@ -178,6 +184,8 @@ func generateGraphFromRawTopology(rawTopoData *RawTopologyData) (*Graph, error) 
 			Loopback: loopback,
 			Locator:  locator,
 			Attrs:    map[string]string{},
+
+			MirrorLocator: mirrorLocator,
 
 			ProtectedBy: toNodeIDs(p.ProtectedBy),
 			ProtectorOf: toNodeIDs(p.ProtectorOf),
@@ -357,6 +365,10 @@ func (c *ClabTopologyManager) SetEndXSIDs(node NodeID, sidsByIface map[string]ne
 		}
 
 		sid := sidsByIface[edge.LocalIface]
+		if sid.IsValid() {
+			edge.LastEndX = sid
+		}
+
 		if sid == edge.EndX {
 			continue
 		}

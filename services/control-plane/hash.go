@@ -1,7 +1,9 @@
 package controlplane
 
+const serviceFuncBase = 0xf000
+
 const (
-	low  uint16 = 0xf001
+	low  uint16 = serviceFuncBase + 1
 	high uint16 = 0xffff
 	n    uint16 = high - low + 1 // 4095 = 3^2 * 5 * 7 * 13
 

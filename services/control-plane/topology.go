@@ -20,6 +20,8 @@ type Node struct {
 	Locator  netip.Prefix
 	Attrs    map[string]string
 
+	MirrorLocator netip.Prefix
+
 	ProtectedBy []NodeID
 	ProtectorOf []NodeID
 }
@@ -42,6 +44,10 @@ type Edge struct {
 	Up        bool
 
 	EndX netip.Addr
+	// Last know EndX. During failure, the controller set EndX to empty
+	// We want to keep on building the repairList for the PLR
+	// while the pe-down/link-down event is occurring.
+	LastEndX netip.Addr
 }
 
 type Prefix struct {
