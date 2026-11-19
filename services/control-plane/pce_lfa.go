@@ -22,7 +22,7 @@ type LFARepairListItem struct {
 func (p *PCE) computeTILFASegments(ctx context.Context, topo *Graph, g *PCEGraph) LFARepairList {
 	repairList := LFARepairList{
 		RepairList: make(map[NodeID][]LFARepairListItem),
-		Graph:      NewPCEGraph(topo.Clone()),
+		Graph:      NewPCEGraph(topo),
 	}
 
 	for _, protectorNode := range g.nodes {

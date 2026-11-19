@@ -24,6 +24,7 @@ type PE_PortalIntent struct {
 	ReservedBandwidth map[uint64]float64 `json:"reserved_bandwidth"`
 	Role              PERole             `json:"role"`
 
+	// Contains the replicated information of the tenant on the protected PE
 	ProtectedInfo ProtectedInfo `json:"protected_info"`
 }
 
@@ -48,8 +49,8 @@ type PEIntent struct {
 	// DSCP -> Color marking
 	TrafficClassIntent []PETrafficClassIntent `json:"traffic_class_intent"`
 
-	Protected       []string          `json:"protected"`
 	LFARepairIntent []LFARepairIntent `json:"lfa_repair_list_intent"`
+	MirrorSID       netip.Addr        `json:"mirror_sid"`
 }
 
 type PETrafficClassIntent struct {
@@ -177,8 +178,6 @@ func (i *PEIntent) Clone() Intent {
 
 		out.Tenants[tenantID] = copied
 	}
-
-	out.Protected = slices.Clone(i.Protected)
 
 	if i.Peers != nil {
 		out.Peers = make(map[string]PeerIntent, len(i.Peers))

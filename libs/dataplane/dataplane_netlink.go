@@ -47,6 +47,8 @@ const (
 	NftablesLimitChain          = "police"
 )
 
+const SRDummyInterface = "sr0"
+
 type LinuxNetlink struct {
 	nft *nftables.Conn
 }
@@ -616,7 +618,7 @@ func (l *LinuxNetlink) UpsertPolicy(nhid string, dtsid string, vrfTableId string
 	if err := run("ip", "-6", "nexthop", "replace", "id", nhid,
 		"encap", "seg6", "mode", "encap",
 		"segs", strings.Join(segs, ","),
-		"dev", "sr0"); err != nil {
+		"dev", SRDummyInterface); err != nil {
 		return fmt.Errorf("upsert seg6 nexthop id %s: %w", nhid, err)
 	}
 
@@ -633,20 +635,7 @@ func (l *LinuxNetlink) UpsertRouteToPolicy(dest string, vrfTableId string, nhid 
 	return nil
 }
 
-func (l *LinuxNetlink) UpsertDT46SID(sid netip.Addr, vrfTableID int, tableID int) error {
-	vrf, err := vrfByTable(vrfTableID)
-	if err != nil {
-		return fmt.Errorf("lookup vrf by table %d: %w", vrfTableID, err)
-	}
-
-	// End.DT46 accepts only the vrftable attribute -- the kernel rejects the
-	// route outright if SEG6_LOCAL_TABLE is set alongside it
-	encap := &netlink.SEG6LocalEncap{
-		Action:   seg6LocalActionEndDT46,
-		VrfTable: vrfTableID,
-	}
-	encap.Flags[nl.SEG6_LOCAL_VRFTABLE] = true
-
+func (l *LinuxNetlink) UpsertDTSID(sid netip.Addr, vrfTableID int, tableID int, sidType EncapType) error {
 	table := unix.RT_TABLE_MAIN
 	if tableID > 0 {
 		table = tableID
@@ -657,16 +646,84 @@ func (l *LinuxNetlink) UpsertDT46SID(sid netip.Addr, vrfTableID int, tableID int
 			IP:   net.IP(sid.AsSlice()),
 			Mask: net.CIDRMask(128, 128),
 		},
-		Table:     table,
-		Family:    netlink.FAMILY_V6,
-		Protocol:  MaetoSIDProto,
-		LinkIndex: vrf.Attrs().Index,
-		Encap:     encap,
+		Table:    table,
+		Family:   netlink.FAMILY_V6,
+		Protocol: MaetoSIDProto,
+	}
+
+	switch sidType {
+	case EncapTypeDT6:
+		iface, err := netlink.LinkByName(SRDummyInterface)
+		if err != nil {
+			return fmt.Errorf("lookup interface %s: %w", SRDummyInterface, err)
+		}
+		route.LinkIndex = iface.Attrs().Index
+
+		encap := &netlink.SEG6LocalEncap{
+			Action: nl.SEG6_LOCAL_ACTION_END_DT6,
+			Table:  vrfTableID,
+		}
+		encap.Flags[nl.SEG6_LOCAL_TABLE] = true
+
+		route.Encap = encap
+
+	case EncapTypeDT46:
+		vrf, err := vrfByTable(vrfTableID)
+		if err != nil {
+			return fmt.Errorf("lookup vrf by table %d: %w", vrfTableID, err)
+		}
+		route.LinkIndex = vrf.Attrs().Index
+
+		// End.DT46 accepts only the vrftable attribute -- the kernel rejects the
+		// route outright if SEG6_LOCAL_TABLE is set alongside it
+		encap := &netlink.SEG6LocalEncap{
+			Action:   seg6LocalActionEndDT46,
+			VrfTable: vrfTableID,
+		}
+		encap.Flags[nl.SEG6_LOCAL_VRFTABLE] = true
+
+		route.Encap = encap
+
+	default:
+		return fmt.Errorf("unknown or unsupported encap type %s", string(sidType))
 	}
 
 	if err := netlink.RouteReplace(route); err != nil {
-		return fmt.Errorf("upsert DT46 sid %s (vrftable %d, dev %s): %w",
-			sid, vrfTableID, vrf.Attrs().Name, err)
+		return fmt.Errorf("failed to upsert DT SID: %s (vrftable %d table %d): %w", sid.String(), vrfTableID, tableID, err)
+	}
+
+	return nil
+}
+
+func (l *LinuxNetlink) UpsertEndSID(sid netip.Addr, tableID int) error {
+	encap := &netlink.SEG6LocalEncap{
+		Action: nl.SEG6_LOCAL_ACTION_END,
+	}
+
+	table := unix.RT_TABLE_MAIN
+	if tableID > 0 {
+		table = tableID
+	}
+
+	iface, err := netlink.LinkByName(SRDummyInterface)
+	if err != nil {
+		return fmt.Errorf("lookup interface %s: %w", SRDummyInterface, err)
+	}
+
+	route := &netlink.Route{
+		Dst: &net.IPNet{
+			IP:   net.IP(sid.AsSlice()),
+			Mask: net.CIDRMask(128, 128),
+		},
+		Table:     table,
+		Family:    netlink.FAMILY_V6,
+		Protocol:  MaetoSIDProto,
+		Encap:     encap,
+		LinkIndex: iface.Attrs().Index,
+	}
+
+	if err := netlink.RouteReplace(route); err != nil {
+		return fmt.Errorf("upsert end sid %s dev %d: %w", sid.String(), table, err)
 	}
 
 	return nil
@@ -763,6 +820,11 @@ func (l *LinuxNetlink) GetSIDs(FilterBy *EncapType, GroupingKey *int) ([]Datapla
 			continue
 		}
 
+		lookupTable := encap.VrfTable
+		if encapType == EncapTypeDT6 {
+			lookupTable = encap.Table
+		}
+
 		sid := DataplaneSID{
 			Dev:        names[r.LinkIndex],
 			Dst:        r.Dst,
@@ -770,7 +832,7 @@ func (l *LinuxNetlink) GetSIDs(FilterBy *EncapType, GroupingKey *int) ([]Datapla
 			Table:      r.Table,
 			Type:       r.Type,
 			EncapType:  encapType,
-			VrfTableID: encap.VrfTable,
+			VrfTableID: lookupTable,
 		}
 
 		sids = append(sids, sid)
@@ -800,7 +862,7 @@ func (l *LinuxNetlink) GetSRRoutes() ([]DataplaneSRRoute, error) {
 			}
 
 			srRoute := DataplaneSRRoute{
-				Dev:       "sr0", // TODO: Dummy interface but make it configurable
+				Dev:       SRDummyInterface, // TODO: Dummy interface but make it configurable
 				LinkIndex: r.LinkIndex,
 				Dst:       r.Dst,
 				Table:     r.Table,
@@ -831,9 +893,9 @@ func (l *LinuxNetlink) InsertSRRouteForPrefix(prefix netip.Prefix, tableID int, 
 		encap.Segments[i] = net.IP(s.AsSlice())
 	}
 
-	iface, err := netlink.LinkByName("sr0")
+	iface, err := netlink.LinkByName(SRDummyInterface)
 	if err != nil {
-		return fmt.Errorf("lookup tunnel interface %s: %w", "sr0", err)
+		return fmt.Errorf("lookup tunnel interface %s: %w", SRDummyInterface, err)
 	}
 
 	route := &netlink.Route{
@@ -847,7 +909,7 @@ func (l *LinuxNetlink) InsertSRRouteForPrefix(prefix netip.Prefix, tableID int, 
 
 	if err := netlink.RouteReplace(route); err != nil {
 		return fmt.Errorf("insert srv6 encap route %s (segs %v, dev %s, table %d): %w",
-			prefix, segs, "sr0", tableID, err)
+			prefix, segs, SRDummyInterface, tableID, err)
 	}
 
 	return nil

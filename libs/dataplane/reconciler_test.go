@@ -51,6 +51,16 @@ func TestLiveDataplaneRead(t *testing.T) {
 type TestDefaultRouteOnlyDataplane struct {
 }
 
+func (t *TestDefaultRouteOnlyDataplane) UpsertDTSID(sid netip.Addr, vrfTableID int, tableID int, sidType dataplane.EncapType) error {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (t *TestDefaultRouteOnlyDataplane) UpsertEndSID(sid netip.Addr, tableID int) error {
+	//TODO implement me
+	panic("implement me")
+}
+
 // RemoveRule implements [dataplane.Dataplane].
 func (t *TestDefaultRouteOnlyDataplane) RemoveRule(priority int, src *netip.Prefix, tableID int, mark int, iifName string, dst *netip.Prefix) error {
 	panic("unimplemented")

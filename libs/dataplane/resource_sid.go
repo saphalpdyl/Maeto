@@ -10,6 +10,8 @@ type SIDType string
 const (
 	SIDDT46 SIDType = "dt46" // Ranges from locator:node:(f001->ffff)::
 	SIDB6   SIDType = "b6"   // unused
+	SIDEnd  SIDType = "end"
+	SIDDT6  SIDType = "dt6"
 )
 
 // SID is basically a special route

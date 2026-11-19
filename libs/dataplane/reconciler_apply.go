@@ -116,13 +116,23 @@ func (r *Reconciler) Apply(ctx context.Context, diff DiffResult) error {
 				}
 
 			case *SID:
-				if res.SIDType != SIDDT46 {
+				switch res.SIDType {
+				case SIDDT46:
+					if err := r.dp.UpsertDTSID(res.SID, res.VrfTableID, res.TableID, EncapTypeDT46); err != nil {
+						r.logger.ErrorContext(ctx, "failed to upsert DT46 SID", log.Err(err))
+					}
+				case SIDDT6:
+					if err := r.dp.UpsertDTSID(res.SID, res.VrfTableID, res.TableID, EncapTypeDT6); err != nil {
+						r.logger.ErrorContext(ctx, "failed to upsert DT46 SID", log.Err(err))
+					}
+				case SIDEnd:
+					if err := r.dp.UpsertEndSID(res.SID, res.TableID); err != nil {
+						r.logger.ErrorContext(ctx, "failed to upsert END SID", log.Err(err))
+					}
+				default:
 					r.logger.WarnContext(ctx, "SID Type is not supported", slog.String("sid_type", string(res.SIDType)))
 				}
 
-				if err := r.dp.UpsertDT46SID(res.SID, res.VrfTableID, res.TableID); err != nil {
-					r.logger.ErrorContext(ctx, "failed to upsert DT46 SID", log.Err(err))
-				}
 			case *Classification:
 				if err := r.dp.InsertClassification(res.Classifier, res.Mark); err != nil {
 					r.logger.ErrorContext(ctx, "failed to insert Classification", log.Err(err))

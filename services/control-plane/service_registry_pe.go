@@ -122,3 +122,10 @@ func (r *ServiceRegistry) StageRepairIntentForPE(
 		return nil
 	})
 }
+
+func (r *ServiceRegistry) StageMirrorSIDIntent(tx *RegistryTx, nodeID NodeID, mirrorSID netip.Addr) {
+	tx.MutatePE(nodeID, func(intent *nodesync.PEIntent) error {
+		intent.MirrorSID = mirrorSID
+		return nil
+	})
+}

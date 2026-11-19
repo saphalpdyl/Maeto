@@ -108,6 +108,10 @@ func ColorTableID(vrfTable int, color uint64) int {
 	return int(color)<<vrfTableBits | vrfTable
 }
 
+const (
+	PLRTableID = 950
+)
+
 func (r *Reconciler) RenderPEIntent(
 	ctx context.Context,
 	pe *nodesync.PEIntent,
@@ -115,10 +119,7 @@ func (r *Reconciler) RenderPEIntent(
 	routeTableCollisionMap := make(map[int]string) // tableID -> tenantID
 	resources := make(map[string]Resource)
 
-	// ip -6 route add <End.X towards PopA> table 950 encap seg6.... <PEB Mirror SID> dev sr0
-	// ip -6 route add <DT6 prefix of PopA> table 950 encap seg6.. <PEB Mirror SID> dev sr0
-
-	mirrorTableID := StringToID("mirror")
+	mirrorTableID := StringToID("mirror") // as the protector
 
 	for _, tIntent := range pe.TrafficClassIntent {
 		for _, dscp := range tIntent.DSCP {
@@ -132,6 +133,47 @@ func (r *Reconciler) RenderPEIntent(
 			}
 
 			resources[classification.ID().Key] = classification
+		}
+	}
+
+	// This PE as the protector
+	if pe.MirrorSID.IsValid() {
+		mirrorSID := &SID{
+			SIDType:    SIDDT6,
+			SID:        pe.MirrorSID,
+			VrfTableID: int(mirrorTableID),
+		}
+
+		resources[mirrorSID.ID().Key] = mirrorSID
+	}
+
+	// This PE as the PLR
+	for _, r := range pe.LFARepairIntent {
+		for _, t := range r.Triggers {
+			switch t.Kind {
+			case nodesync.LFATriggerSIDPrefixEndX:
+				// ip -6 route add fc00:0:3:e001::/128 table 950 \
+				// encap seg6local action End dev sr0
+				sid := &SID{
+					SIDType: SIDEnd,
+					SID:     t.SIDPrefix.Addr(),
+					TableID: PLRTableID,
+				}
+
+				resources[sid.ID().Key] = sid
+
+			case nodesync.LFATriggerSIDPrefixService:
+				// ip -6 route add fc00:0:5:f000::/52 table 950 \
+				// encap seg6 mode encap segs fc00:0:3:e002::,fc00:0:2:e003::,fc00:f:4:: dev eth1
+				srRoute := &SRRoute{
+					Prefix:   t.SIDPrefix,
+					Segments: r.Segments,
+					Table:    PLRTableID,
+					Color:    0,
+				}
+
+				resources[srRoute.ID().Key] = srRoute
+			}
 		}
 	}
 
@@ -211,6 +253,8 @@ func (r *Reconciler) RenderPEIntent(
 				resources[limit.ID().Key] = limit
 			}
 
+			// This PE as the protector
+			// Install the mirrored DT46 SID in the standby tables
 			if portalIntent.Role == nodesync.PERoleStandby && portalIntent.ProtectedInfo.DT46SID.IsValid() {
 				protectedDT46SID := &SID{
 					SIDType:    SIDDT46,

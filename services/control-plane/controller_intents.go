@@ -51,6 +51,13 @@ func (c *Controller) stagePeerIntents(tx *RegistryTx, ctx context.Context) {
 	}
 }
 
+func (c *Controller) stageMirrorSIDIntent(tx *RegistryTx) {
+	g := c.topology.Graph()
+	for _, n := range g.nodes {
+		c.serviceRegistry.StageMirrorSIDIntent(tx, n.ID, n.MirrorLocator.Addr())
+	}
+}
+
 func (c *Controller) stageTrafficClassMapping(tx *RegistryTx) {
 	g := c.topology.Graph()
 

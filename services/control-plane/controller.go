@@ -201,6 +201,7 @@ func (c *Controller) Start(ctx context.Context) {
 	tx := c.serviceRegistry.BeginTx()
 	c.stagePeerIntents(tx, ctx)
 	c.stageTrafficClassMapping(tx)
+	c.stageMirrorSIDIntent(tx)
 	err := tx.Commit(ctx)
 
 	if err != nil {

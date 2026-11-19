@@ -109,9 +109,11 @@ func (p *PCE) Run(ctx context.Context, graph *Graph) {
 			GatedReroutes:   make([]PCETickReportReroute, 0),
 		}
 
+		topo := graph.Clone()
 		graph.mu.RLock()
 		pceGraph := NewPCEGraph(graph)
-		repairList := p.computeTILFASegments(ctx, graph, pceGraph)
+
+		repairList := p.computeTILFASegments(ctx, topo, NewPCEGraph(topo))
 
 		p.updateStaticBandwidthUtilizationCost(pceGraph)
 

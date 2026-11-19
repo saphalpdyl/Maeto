@@ -31,6 +31,7 @@ const (
 	KindSRRoute        Kind = "sr_route"
 	KindClassification Kind = "classification"
 	KindLimit          Kind = "limit"
+	KindRepair         Kind = "repair"
 )
 
 type ID struct {
