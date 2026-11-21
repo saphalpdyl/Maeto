@@ -107,7 +107,7 @@ func (a *Agent) Run(ctx context.Context) {
 			nodeID:    a.node.ID,
 		})
 
-		health := NewHealthMonitor(a.logger.With(log.Domain(log.DomainControlPlane)))
+		health := failover.NewHealthMonitor(a.logger.With(log.Domain(log.DomainControlPlane)))
 		topologyReporterLinkUpdatesChan := health.CreateConsumer()
 
 		topology := &topologyReporter{

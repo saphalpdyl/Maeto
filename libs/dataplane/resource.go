@@ -31,7 +31,8 @@ const (
 	KindSRRoute        Kind = "sr_route"
 	KindClassification Kind = "classification"
 	KindLimit          Kind = "limit"
-	KindPLRTrigger     Kind = "plr_trigger"
+	KindRuleTrigger    Kind = "rule_trigger"
+	KindBFDPeer        Kind = "bfd_peer"
 )
 
 type ID struct {

@@ -68,9 +68,42 @@ def render_frr(pop_plan):
     lines += [
         "bfd",
         " profile maeto-core",
-        "  transmit-interval 50",
-        "  receive-interval 50",
-        "  detect-multiplier 6",
+        "  transmit-interval 10",
+        "  receive-interval 10",
+        "  detect-multiplier 4",
+        " !",
+        "!",
+    ]
+
+    lines += [
+        "bfd",
+        " profile maeto-cpe",
+        "  transmit-interval 300",
+        "  receive-interval 300",
+        "  detect-multiplier 3",
+        " !",
+        "!",
+    ]
+
+    return "\n".join(lines)
+
+
+def render_frr_cpe(cpe):
+    lines = [
+        f"frr version {FRR_VERSION}",
+        "frr defaults traditional",
+        f"hostname {cpe.node_name}",
+        "log stdout",
+        "log file /var/log/frr/frr.log debugging",
+        "service integrated-vtysh-config",
+        "!",
+        # tunnels ride the internet, so the timers are far looser than the
+        # core's; portald adds a peer per tunnel at runtime
+        "bfd",
+        " profile maeto-cpe",
+        "  transmit-interval 300",
+        "  receive-interval 300",
+        "  detect-multiplier 3",
         " !",
         "!",
     ]

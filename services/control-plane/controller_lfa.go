@@ -23,6 +23,7 @@ import (
 	"context"
 	"fmt"
 	"net/netip"
+	"slices"
 
 	"github.com/saphalpdyl/maeto/libs/nodesync"
 	"github.com/saphalpdyl/maeto/services/control-plane/log"
@@ -88,6 +89,7 @@ func (c *Controller) buildAndStageLFARepairSegments(ctx context.Context, repairL
 				}
 
 				segments = append(segments, protector.MirrorLocator.Addr())
+				slices.Reverse(segments)
 			}
 
 			intentsForNode = append(intentsForNode, nodesync.LFARepairIntent{

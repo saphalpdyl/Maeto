@@ -1,6 +1,7 @@
 package dataplane
 
 import (
+	"fmt"
 	"net"
 	"net/netip"
 )
@@ -76,9 +77,31 @@ type DataplaneRule struct {
 	Iif      string
 }
 
-type DataplanePLRTrigger struct {
-	Egress   string
-	Prefixes []netip.Prefix
+// TriggerRule is an ip rule armed ahead of a failure and installed only when
+// the egress it belongs to fails. Either Src or Dst is set.
+type TriggerRule struct {
+	Src      netip.Prefix
+	Dst      netip.Prefix
+	Table    int
+	Priority int
+}
+
+func (t TriggerRule) String() string {
+	return fmt.Sprintf("%s>%s@%d/%d", t.Src, t.Dst, t.Table, t.Priority)
+}
+
+// DataplaneBFDPeer is a configured (not protocol-created) bfdd session.
+// VRF is empty for the default vrf.
+type DataplaneBFDPeer struct {
+	Profile   string
+	VRF       string
+	Interface string
+	Peer      netip.Addr
+}
+
+type DataplaneRuleTrigger struct {
+	Egress string
+	Rules  []TriggerRule
 }
 
 type DataplaneClassification struct {
@@ -133,7 +156,8 @@ func (d *DataplaneVRF) Attrs() *DataplaneLinkAttrs { return &d.DataplaneLinkAttr
 
 type DataplaneXFRM struct {
 	DataplaneLinkAttrs
-	IfID uint32
+	IfID          uint32
+	LinkLocalAddr netip.Prefix
 }
 
 func (d *DataplaneXFRM) Type() string               { return "xfrm" }
@@ -153,7 +177,7 @@ type Dataplane interface {
 	GetLinksByType(ifaceType string) ([]DataplaneLink, error)
 
 	// masterVRFIndex == nil means no vrf master, which is the cpe case
-	InsertXFRMInterface(interfaceName string, underLayIface string, ifID uint32, masterVRFName *string) error
+	InsertXFRMInterface(interfaceName string, underLayIface string, ifID uint32, masterVRFName *string, linkLocalAddr netip.Prefix) error
 	RemoveXFRMInterface(linkIndex int) error
 
 	// tableID names the table directly; unix.RT_TABLE_MAIN on a cpe
@@ -194,9 +218,13 @@ type Dataplane interface {
 	GetLimits() ([]DataplaneLimit, error)
 	RemoveLimit(handle uint64) error
 
-	StoreTriggers(egress string, prefixes []netip.Prefix)
+	InsertBFDPeer(profile string, addr netip.Addr, vrf string, iface string) error
+	DeleteBFDPeer(addr netip.Addr, vrf string, iface string) error
+	GetBFDPeers() ([]DataplaneBFDPeer, error)
+
+	StoreTriggers(egress string, rules []TriggerRule)
 	RemoveTriggers(egress string)
-	GetTriggers() ([]DataplanePLRTrigger, error)
+	GetTriggers() ([]DataplaneRuleTrigger, error)
 	CleanupTriggers() error
 	ActivateRepair(egress string) error
 	ResetRepair(egress string, all bool) error

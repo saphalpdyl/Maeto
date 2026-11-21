@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/saphalpdyl/maeto/libs/controlapi"
 	"github.com/saphalpdyl/maeto/libs/dataplane"
+	"github.com/saphalpdyl/maeto/libs/failover"
 	"github.com/saphalpdyl/maeto/libs/nodesync"
 	"github.com/saphalpdyl/maeto/libs/swan"
 	"github.com/saphalpdyl/maeto/services/maeto-portal/log"
@@ -21,14 +23,17 @@ type Portal struct {
 
 	js jetstream.JetStream
 
-	// Intents pushed to by the intentkv watcher and read by the Reconciler
-	intentFeed chan *nodesync.NodeIntent
-	reconciler *dataplane.Reconciler
+	mu          sync.Mutex
+	intentFeeds []chan *nodesync.NodeIntent
+	reconciler  *dataplane.Reconciler
+	dp          dataplane.Dataplane
 
 	swanClient *swan.Client
 
 	config PortalConfig
 	logger *slog.Logger
+
+	healthMonitor *failover.HealthMonitor
 }
 
 func NewPortal(
@@ -39,23 +44,25 @@ func NewPortal(
 	logger *slog.Logger,
 	swanClient *swan.Client,
 ) *Portal {
-	intentFeed := make(chan *nodesync.NodeIntent, 32)
-	reconciler := dataplane.NewReconciler(
+	portal := &Portal{
+		InstanceId:    instanceId,
+		config:        config,
+		logger:        logger,
+		js:            js,
+		intentFeeds:   make([]chan *nodesync.NodeIntent, 0),
+		swanClient:    swanClient,
+		healthMonitor: failover.NewHealthMonitor(logger.With(log.Domain(log.DomainFailover))),
+		dp:            dp,
+	}
+
+	portal.reconciler = dataplane.NewReconciler(
 		dp,
 		nodesync.NodeTypeCPE,
 		logger.With(log.Domain(log.DomainReconciler)),
-		intentFeed,
+		portal.createIntentConsumer(),
 	)
 
-	return &Portal{
-		InstanceId: instanceId,
-		config:     config,
-		logger:     logger,
-		js:         js,
-		reconciler: reconciler,
-		intentFeed: intentFeed,
-		swanClient: swanClient,
-	}
+	return portal
 }
 
 func (p *Portal) Run(ctx context.Context) error {
@@ -156,22 +163,59 @@ func (p *Portal) Run(ctx context.Context) error {
 	}()
 
 	go func() {
-		err := nodesync.Watch(
-			ctx,
-			p.js,
-			p.logger.With(log.Domain(log.DomainControlPlane)),
-			nodesync.IntentBucket,
-			nodesync.Key(nodesync.PrefixCPE, p.config.PortalID, nodesync.LaneIntent),
-			p.intentFeed,
-		)
-
-		if err != nil {
-			p.logger.ErrorContext(ctx, "intent watch failed",
-				log.Domain(log.DomainControlPlane),
-				log.Err(err),
-			)
+		if err := p.healthMonitor.Start(ctx); err != nil && ctx.Err() == nil {
+			p.logger.ErrorContext(ctx, "health monitor stopped", log.Err(err))
 		}
 	}()
+
+	failoverLatch := failover.NewFailoverLatch(
+		p.healthMonitor.CreateConsumer(),
+		p.logger.With(log.Domain(log.DomainFailover)),
+		func(egress string) error {
+			p.logger.ErrorContext(ctx, "EGRESS FAILURE: TRYING TO SWITCH")
+
+			if err := p.dp.ActivateRepair(egress); err != nil {
+				p.logger.ErrorContext(ctx, "failed to activate repair", log.Err(err))
+				return err
+			}
+
+			return nil
+		},
+		func(s string) error {
+			p.logger.ErrorContext(ctx, fmt.Sprintf("FAILOVER RESET FOR EGRESS: %s ", s))
+			return nil
+		},
+	)
+
+	go failoverLatch.Start(ctx)
+
+	go func(fl *failover.FailoverLatch) {
+		failoverIntentFeed := p.createIntentConsumer()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case intent := <-failoverIntentFeed:
+				cpeIntent, _ := intent.Intent.(*nodesync.CPEIntent)
+				grouping := make(map[string][]string)
+
+				for _, t := range cpeIntent.Tunnels {
+					groups, exists := grouping[t.TunnelPE]
+					if !exists {
+						grouping[t.TunnelPE] = make([]string, 0)
+					}
+
+					xfrmName := fmt.Sprintf("mto-tun-%s-%d", cpeIntent.TenantID, t.TunnelInterfaceID)
+					grouping[t.TunnelPE] = append(groups, xfrmName)
+				}
+
+				fl.SetGrouping(grouping)
+				fl.MarkReady()
+			}
+		}
+	}(failoverLatch)
+
+	go p.setupIntentWatch(ctx)
 
 	<-ctx.Done()
 

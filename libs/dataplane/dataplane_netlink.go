@@ -2,7 +2,9 @@ package dataplane
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -11,6 +13,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/google/nftables"
 	"github.com/google/nftables/expr"
@@ -55,9 +58,11 @@ const SRDummyInterface = "sr0"
 type LinuxNetlink struct {
 	nft *nftables.Conn
 
-	mu                    sync.Mutex
-	triggers              map[string][]netip.Prefix
-	triggerEgressByPrefix map[netip.Prefix]string
+	mu                  sync.Mutex
+	triggers            map[string][]TriggerRule
+	triggerEgressByRule map[TriggerRule]string
+
+	bfdVTYSocketPath string
 }
 
 // RemoveVRF deletes the vrf device at linkIndex. IFLA_GROUP is not a match key
@@ -203,16 +208,19 @@ func (l *LinuxNetlink) GetPrefixRoutes() ([]DataplaneRoute, error) {
 	return routes, nil
 }
 
-func NewLinuxNetlink() (*LinuxNetlink, error) {
+func NewLinuxNetlink(
+	bfdVTYSocketPath string,
+) (*LinuxNetlink, error) {
 	nft, err := nftables.New()
 	if err != nil {
 		return nil, err
 	}
 
 	return &LinuxNetlink{
-		nft:                   nft,
-		triggers:              make(map[string][]netip.Prefix),
-		triggerEgressByPrefix: make(map[netip.Prefix]string),
+		nft:                 nft,
+		triggers:            make(map[string][]TriggerRule),
+		triggerEgressByRule: make(map[TriggerRule]string),
+		bfdVTYSocketPath:    bfdVTYSocketPath,
 	}, nil
 }
 
@@ -473,8 +481,35 @@ func (l *LinuxNetlink) GetLinksByType(ifaceType string) ([]DataplaneLink, error)
 					return nil, fmt.Errorf("got type == xfrm, couldn't parse to Xfrmi")
 				}
 
+				var address netip.Prefix
+				addrs, err := netlink.AddrList(l, netlink.FAMILY_V6)
+				if err != nil {
+					return nil, err
+				}
+
+				for _, a := range addrs {
+					if a.Scope != unix.RT_SCOPE_LINK {
+						continue
+					}
+
+					ip, ok := netip.AddrFromSlice(a.IP)
+					if !ok {
+						continue
+					}
+
+					if !ip.IsLinkLocalUnicast() {
+						continue
+					}
+
+					ones, _ := a.Mask.Size()
+					address = netip.PrefixFrom(ip.Unmap(), ones)
+
+					break
+				}
+
 				maetoLinks = append(maetoLinks, &DataplaneXFRM{
 					DataplaneLinkAttrs: dpLinkAttrs,
+					LinkLocalAddr:      address,
 					IfID:               l.Ifid,
 				})
 
@@ -579,7 +614,7 @@ func vrfByTable(tableID int) (*netlink.Vrf, error) {
 
 // InsertXFRMInterface implements [Dataplane].
 // masterVRFIndex == nil means no vrf master, which is the cpe case
-func (l *LinuxNetlink) InsertXFRMInterface(interfaceName string, underLayIface string, ifID uint32, masterVRFName *string) error {
+func (l *LinuxNetlink) InsertXFRMInterface(interfaceName string, underLayIface string, ifID uint32, masterVRFName *string, linkLocalAddr netip.Prefix) error {
 	underlay, err := netlink.LinkByName(underLayIface)
 	if err != nil {
 		return fmt.Errorf("lookup underlay interface %s: %w", underLayIface, err)
@@ -602,6 +637,19 @@ func (l *LinuxNetlink) InsertXFRMInterface(interfaceName string, underLayIface s
 		return fmt.Errorf("xfrm device %s already exists", interfaceName)
 	}
 
+	// Disable the kernel from auto-generating link-local address for XFRM interfaces
+	if err := os.WriteFile(
+		fmt.Sprintf("/proc/sys/net/ipv6/conf/%s/addr_gen_mode", interfaceName),
+		[]byte("1"),
+		0o600,
+	); err != nil {
+		return fmt.Errorf("disable link-local generation on %s: %w", interfaceName, err)
+	} // nolint:all
+
+	if err := netlink.LinkSetUp(xfrm); err != nil {
+		return fmt.Errorf("bring up xfrm device %s: %w", interfaceName, err)
+	}
+
 	if masterVRFName != nil {
 		vrf, err := netlink.LinkByName(*masterVRFName)
 		if err != nil {
@@ -613,8 +661,16 @@ func (l *LinuxNetlink) InsertXFRMInterface(interfaceName string, underLayIface s
 		}
 	}
 
-	if err := netlink.LinkSetUp(xfrm); err != nil {
-		return fmt.Errorf("bring up xfrm device %s: %w", interfaceName, err)
+	if linkLocalAddr.IsValid() {
+		if err := netlink.AddrReplace(xfrm, &netlink.Addr{
+			IPNet: &net.IPNet{
+				IP:   linkLocalAddr.Addr().AsSlice(),
+				Mask: net.CIDRMask(linkLocalAddr.Bits(), 128),
+			},
+			Flags: unix.IFA_F_NODAD,
+		}); err != nil {
+			return fmt.Errorf("add local address %s: %w", linkLocalAddr.String(), err)
+		}
 	}
 
 	return nil
@@ -1387,13 +1443,18 @@ func (l *LinuxNetlink) RemoveLimit(handle uint64) error {
 	return l.nft.Flush()
 }
 
-func (l *LinuxNetlink) StoreTriggers(egress string, prefixes []netip.Prefix) {
+func (l *LinuxNetlink) StoreTriggers(egress string, rules []TriggerRule) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	l.triggers[egress] = slices.Clone(prefixes)
-	for _, p := range prefixes {
-		l.triggerEgressByPrefix[p] = egress
+	normalized := make([]TriggerRule, 0, len(rules))
+	for _, rule := range rules {
+		normalized = append(normalized, normalizeTriggerRule(rule))
+	}
+
+	l.triggers[egress] = normalized
+	for _, rule := range normalized {
+		l.triggerEgressByRule[rule] = egress
 	}
 }
 
@@ -1404,61 +1465,124 @@ func (l *LinuxNetlink) RemoveTriggers(egress string) {
 	delete(l.triggers, egress)
 }
 
-func (l *LinuxNetlink) GetTriggers() ([]DataplanePLRTrigger, error) {
+func (l *LinuxNetlink) GetTriggers() ([]DataplaneRuleTrigger, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	dpTriggers := make([]DataplanePLRTrigger, 0, len(l.triggers))
-	for egress, prefixes := range l.triggers {
-		dpTriggers = append(dpTriggers, DataplanePLRTrigger{
-			Egress:   egress,
-			Prefixes: slices.Clone(prefixes),
+	dpTriggers := make([]DataplaneRuleTrigger, 0, len(l.triggers))
+	for egress, rules := range l.triggers {
+		dpTriggers = append(dpTriggers, DataplaneRuleTrigger{
+			Egress: egress,
+			Rules:  slices.Clone(rules),
 		})
 	}
 
 	return dpTriggers, nil
 }
 
-func (l *LinuxNetlink) getActiveTriggers() (map[string][]netip.Prefix, error) {
-	rules, err := netlink.RuleList(netlink.FAMILY_V6)
+func normalizeTriggerRule(rule TriggerRule) TriggerRule {
+	if rule.Src.IsValid() {
+		rule.Src = rule.Src.Masked()
+	}
+
+	if rule.Dst.IsValid() {
+		rule.Dst = rule.Dst.Masked()
+	}
+
+	return rule
+}
+
+func triggerRuleToNetlink(rule TriggerRule) *netlink.Rule {
+	nlRule := netlink.NewRule()
+	nlRule.Priority = rule.Priority
+	nlRule.Table = rule.Table
+	nlRule.Protocol = uint8(MaetoTriggerProto)
+	nlRule.Family = netlink.FAMILY_V6
+
+	if rule.Src.IsValid() {
+		nlRule.Src = prefixToIPNet(rule.Src)
+	}
+
+	if rule.Dst.IsValid() {
+		nlRule.Dst = prefixToIPNet(rule.Dst)
+	}
+
+	return nlRule
+}
+
+func ipNetToPrefix(ipNet *net.IPNet) (netip.Prefix, bool) {
+	if ipNet == nil {
+		return netip.Prefix{}, true
+	}
+
+	addr, ok := netip.AddrFromSlice(ipNet.IP)
+	if !ok {
+		return netip.Prefix{}, false
+	}
+
+	ones, _ := ipNet.Mask.Size()
+	return netip.PrefixFrom(addr, ones).Masked(), true
+}
+
+func triggerRuleFromNetlink(nlRule netlink.Rule) (TriggerRule, bool) {
+	src, ok := ipNetToPrefix(nlRule.Src)
+	if !ok {
+		return TriggerRule{}, false
+	}
+
+	dst, ok := ipNetToPrefix(nlRule.Dst)
+	if !ok {
+		return TriggerRule{}, false
+	}
+
+	rule := TriggerRule{
+		Src:      src,
+		Dst:      dst,
+		Table:    nlRule.Table,
+		Priority: nlRule.Priority,
+	}
+
+	return rule, true
+}
+
+func listTriggerRules() ([]netlink.Rule, error) {
+	nlRules, err := netlink.RuleList(netlink.FAMILY_V6)
 	if err != nil {
 		return nil, fmt.Errorf("list rules: %w", err)
 	}
 
-	triggers := make([]netip.Prefix, 0)
-
-	for _, rule := range rules {
-		if rule.Protocol != uint8(MaetoTriggerProto) {
+	triggerRules := make([]netlink.Rule, 0)
+	for _, nlRule := range nlRules {
+		if nlRule.Protocol != uint8(MaetoTriggerProto) {
 			continue
 		}
 
-		if rule.Dst != nil {
-			dst, ok := netip.AddrFromSlice(rule.Dst.IP)
-			if !ok {
-				continue
-			}
-
-			ones, _ := rule.Dst.Mask.Size()
-			dstPrefix := netip.PrefixFrom(dst, ones)
-
-			triggers = append(triggers, dstPrefix)
-		}
+		triggerRules = append(triggerRules, nlRule)
 	}
 
-	triggerMap := make(map[string][]netip.Prefix)
+	return triggerRules, nil
+}
 
-	for _, trigger := range triggers {
-		egress, exists := l.triggerEgressByPrefix[trigger]
+func (l *LinuxNetlink) getActiveTriggers() (map[string][]TriggerRule, error) {
+	nlRules, err := listTriggerRules()
+	if err != nil {
+		return nil, err
+	}
+
+	triggerMap := make(map[string][]TriggerRule)
+
+	for _, nlRule := range nlRules {
+		rule, ok := triggerRuleFromNetlink(nlRule)
+		if !ok {
+			continue
+		}
+
+		egress, exists := l.triggerEgressByRule[rule]
 		if !exists {
 			continue
 		}
 
-		_, exists = triggerMap[egress]
-		if !exists {
-			triggerMap[egress] = make([]netip.Prefix, 0)
-		}
-
-		triggerMap[egress] = append(triggerMap[egress], trigger)
+		triggerMap[egress] = append(triggerMap[egress], rule)
 	}
 
 	return triggerMap, nil
@@ -1468,25 +1592,18 @@ func (l *LinuxNetlink) ActivateRepair(egress string) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	prefixes, exists := l.triggers[egress]
+	rules, exists := l.triggers[egress]
 	if !exists {
-		return fmt.Errorf("trigger prefixes for %s not found", egress)
+		return fmt.Errorf("trigger rules for %s not found", egress)
 	}
 
-	for _, prefix := range prefixes {
-		rule := netlink.NewRule()
-		rule.Priority = 100
-		rule.Table = PLRTableID
-		rule.Protocol = uint8(MaetoTriggerProto)
-		rule.Family = netlink.FAMILY_V6
-		rule.Dst = prefixToIPNet(prefix)
-
-		if err := netlink.RuleAdd(rule); err != nil {
+	for _, rule := range rules {
+		if err := netlink.RuleAdd(triggerRuleToNetlink(rule)); err != nil {
 			if errors.Is(err, unix.EEXIST) {
 				continue
 			}
 
-			return fmt.Errorf("add trigger rule: %w", err)
+			return fmt.Errorf("add trigger rule %s: %w", rule, err)
 		}
 	}
 
@@ -1502,35 +1619,28 @@ func (l *LinuxNetlink) ResetRepair(egress string, all bool) error {
 		return err
 	}
 
-	triggersToReset := make([]netip.Prefix, 0)
+	rulesToReset := make([]TriggerRule, 0)
 
 	if !all {
-		egressTriggers, exists := triggerMap[egress]
+		egressRules, exists := triggerMap[egress]
 		if !exists {
-			return fmt.Errorf("trigger prefixes for %s not found", egress)
+			return fmt.Errorf("trigger rules for %s not found", egress)
 		}
 
-		triggersToReset = egressTriggers
+		rulesToReset = egressRules
 	} else {
-		for _, p := range triggerMap {
-			triggersToReset = append(triggersToReset, p...)
+		for _, rules := range triggerMap {
+			rulesToReset = append(rulesToReset, rules...)
 		}
 	}
 
-	for _, prefix := range triggersToReset {
-		rule := netlink.NewRule()
-		rule.Priority = 100
-		rule.Table = PLRTableID
-		rule.Protocol = uint8(MaetoTriggerProto)
-		rule.Family = netlink.FAMILY_V6
-		rule.Dst = prefixToIPNet(prefix)
-
-		if err := netlink.RuleDel(rule); err != nil {
+	for _, rule := range rulesToReset {
+		if err := netlink.RuleDel(triggerRuleToNetlink(rule)); err != nil {
 			if errors.Is(err, unix.ENOENT) {
 				continue
 			}
 
-			return fmt.Errorf("delete trigger rule: %w", err)
+			return fmt.Errorf("delete trigger rule %s: %w", rule, err)
 		}
 	}
 
@@ -1542,37 +1652,192 @@ func (l *LinuxNetlink) CleanupTriggers() error {
 	defer l.mu.Unlock()
 
 	// l.triggers is authoritative
-	l.triggerEgressByPrefix = make(map[netip.Prefix]string)
-	for egress, prefixes := range l.triggers {
-		for _, p := range prefixes {
-			l.triggerEgressByPrefix[p] = egress
+	l.triggerEgressByRule = make(map[TriggerRule]string)
+	for egress, rules := range l.triggers {
+		for _, rule := range rules {
+			l.triggerEgressByRule[rule] = egress
 		}
 	}
 
-	rules, err := netlink.RuleList(netlink.FAMILY_V6)
+	nlRules, err := listTriggerRules()
 	if err != nil {
-		return fmt.Errorf("list rules: %w", err)
+		return err
 	}
 
-	for _, rule := range rules {
-		if rule.Protocol != uint8(MaetoTriggerProto) || rule.Dst == nil {
-			continue
+	for _, nlRule := range nlRules {
+		rule, ok := triggerRuleFromNetlink(nlRule)
+		if ok {
+			if _, known := l.triggerEgressByRule[rule]; known {
+				continue
+			}
 		}
 
-		dst, ok := netip.AddrFromSlice(rule.Dst.IP)
-		if !ok {
-			continue
-		}
-
-		ones, _ := rule.Dst.Mask.Size()
-		if _, known := l.triggerEgressByPrefix[netip.PrefixFrom(dst, ones)]; known {
-			continue
-		}
-
-		if err := netlink.RuleDel(&rule); err != nil && !errors.Is(err, unix.ENOENT) {
+		if err := netlink.RuleDel(&nlRule); err != nil && !errors.Is(err, unix.ENOENT) {
 			return fmt.Errorf("delete trigger rule: %w", err)
 		}
 	}
 
 	return nil
+}
+
+func vtyCommand(conn net.Conn, cmd string) (string, error) {
+	if _, err := conn.Write(append([]byte(cmd), 0)); err != nil {
+		return "", err
+	}
+
+	var out []byte
+	buf := make([]byte, 4096)
+	for {
+		n, err := conn.Read(buf)
+		if err != nil {
+			return "", err
+		}
+		out = append(out, buf[:n]...)
+
+		if len(out) >= 4 && out[len(out)-4] == 0 && out[len(out)-3] == 0 && out[len(out)-2] == 0 {
+			status := out[len(out)-1]
+			text := string(out[:len(out)-4])
+			if status != 0 {
+				return text, fmt.Errorf("vty %q: status %d: %s", cmd, status, text)
+			}
+			return text, nil
+		}
+	}
+}
+
+func dialVTY(path string) (net.Conn, error) {
+	dialer := net.Dialer{Timeout: 2 * time.Second}
+	conn, err := dialer.DialContext(context.Background(), "unix", path)
+	if err != nil {
+		return nil, fmt.Errorf("dial %s: %w", path, err)
+	}
+
+	if err := conn.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		conn.Close()
+		return nil, err
+	}
+
+	return conn, nil
+}
+
+func (l *LinuxNetlink) InsertBFDPeer(profile string, addr netip.Addr, vrf string, iface string) error {
+	conn, err := dialVTY(l.bfdVTYSocketPath)
+	if err != nil {
+		return err
+	}
+
+	defer conn.Close()
+
+	cmds := []string{
+		"enable",
+		"configure terminal",
+		"bfd",
+		bfdPeerCommand(addr, vrf, iface),
+		fmt.Sprintf("profile %s", profile),
+		"end",
+	}
+
+	for _, cmd := range cmds {
+		if _, err := vtyCommand(conn, cmd); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (l *LinuxNetlink) DeleteBFDPeer(addr netip.Addr, vrf string, iface string) error {
+	conn, err := dialVTY(l.bfdVTYSocketPath)
+	if err != nil {
+		return err
+	}
+
+	defer conn.Close()
+
+	cmds := []string{
+		"enable",
+		"configure terminal",
+		"bfd",
+		"no " + bfdPeerCommand(addr, vrf, iface),
+		"end",
+	}
+
+	for _, cmd := range cmds {
+		if _, err := vtyCommand(conn, cmd); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+const DefaultBfddVTYSocketPath = "/var/run/frr/bfdd.vty"
+
+// The default vrf is left out of the command; bfdd reports it as "default"
+func bfdPeerCommand(addr netip.Addr, vrf string, iface string) string {
+	cmd := fmt.Sprintf("peer %s interface %s", addr.String(), iface)
+	if vrf != "" {
+		cmd += " vrf " + vrf
+	}
+
+	return cmd
+}
+
+type bfdPeerJSON struct {
+	Multihop  bool   `json:"multihop"`
+	Peer      string `json:"peer"`
+	VRF       string `json:"vrf"`
+	Interface string `json:"interface"`
+	Type      string `json:"type"`
+	Profile   string `json:"profile"`
+}
+
+func (l *LinuxNetlink) GetBFDPeers() ([]DataplaneBFDPeer, error) {
+	conn, err := dialVTY(l.bfdVTYSocketPath)
+	if err != nil {
+		return nil, err
+	}
+
+	defer conn.Close()
+
+	// unix vty sessions start in view mode; bfdd's show commands are enable-only
+	if _, err := vtyCommand(conn, "enable"); err != nil {
+		return nil, err
+	}
+
+	out, err := vtyCommand(conn, "show bfd peers json")
+	if err != nil {
+		return nil, err
+	}
+
+	var sessions []bfdPeerJSON
+	if err := json.Unmarshal([]byte(out), &sessions); err != nil {
+		return nil, fmt.Errorf("parse bfd peers: %w", err)
+	}
+
+	peers := make([]DataplaneBFDPeer, 0, len(sessions))
+	for _, session := range sessions {
+		if session.Type != "configured" || session.Multihop {
+			continue
+		}
+
+		addr, err := netip.ParseAddr(session.Peer)
+		if err != nil {
+			continue
+		}
+
+		vrf := session.VRF
+		if vrf == "default" {
+			vrf = ""
+		}
+
+		peers = append(peers, DataplaneBFDPeer{
+			Profile:   session.Profile,
+			VRF:       vrf,
+			Interface: session.Interface,
+			Peer:      addr.WithZone(""),
+		})
+	}
+
+	return peers, nil
 }

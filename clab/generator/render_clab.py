@@ -197,6 +197,8 @@ def render_clab(topo, plan):
             # everything through the internet router, never out of band via docker
             "network-mode": "none",
             "binds": [
+                "conf/shared/frr_daemons_cpe:/etc/frr/daemons",
+                f"conf/{cpe.node_name}/frr.conf:/etc/frr/frr.conf",
                 f"{CA_CERT_BIND}:{CA_CERT_CONTAINER_PATH}",
                 f"conf/{cpe.node_name}/cert.pem:{CERT_CONTAINER_PATH}",
                 f"conf/{cpe.node_name}/key.pem:{KEY_CONTAINER_PATH}",
@@ -211,6 +213,7 @@ def render_clab(topo, plan):
                 f"ip -6 route replace default via {cp.gateway}",
                 f"ip link set dev {cp.lan_iface} up",
                 f"ip -6 addr replace {cp.lan_address} dev {cp.lan_iface}",
+                "sh -c '/usr/lib/frr/docker-start &'",
             ],
             "labels": {"clab_label": cpe.clab_label},
         }

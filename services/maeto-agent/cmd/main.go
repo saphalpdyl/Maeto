@@ -91,7 +91,7 @@ func main() {
 	}()
 
 	// TODO: Change to VPP later
-	linuxDataplane, err := dataplane.NewLinuxNetlink()
+	linuxDataplane, err := dataplane.NewLinuxNetlink(dataplane.DefaultBfddVTYSocketPath)
 	if err != nil {
 		logger.ErrorContext(ctx, "failed to create linux dataplane", log.Err(err))
 	}

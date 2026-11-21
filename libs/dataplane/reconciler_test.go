@@ -15,7 +15,7 @@ func TestLiveDataplaneRead(t *testing.T) {
 
 	// testIntentFeed := make(chan *intent.NodeIntent, 32)
 
-	dp, err := dataplane.NewLinuxNetlink()
+	dp, err := dataplane.NewLinuxNetlink(dataplane.DefaultBfddVTYSocketPath)
 	if err != nil {
 		t.Fatalf("failed to create linux dataplane: %v", err)
 	}
@@ -51,7 +51,7 @@ func TestLiveDataplaneRead(t *testing.T) {
 type TestDefaultRouteOnlyDataplane struct {
 }
 
-func (t *TestDefaultRouteOnlyDataplane) StoreTriggers(egress string, prefixes []netip.Prefix) {
+func (t *TestDefaultRouteOnlyDataplane) StoreTriggers(egress string, rules []dataplane.TriggerRule) {
 	//TODO implement me
 	panic("implement me")
 }
@@ -61,7 +61,7 @@ func (t *TestDefaultRouteOnlyDataplane) RemoveTriggers(egress string) {
 	panic("implement me")
 }
 
-func (t *TestDefaultRouteOnlyDataplane) GetTriggers() ([]dataplane.DataplanePLRTrigger, error) {
+func (t *TestDefaultRouteOnlyDataplane) GetTriggers() ([]dataplane.DataplaneRuleTrigger, error) {
 	//TODO implement me
 	panic("implement me")
 }
@@ -172,7 +172,7 @@ func (t *TestDefaultRouteOnlyDataplane) InsertPrefixRoute(tunnelIface string, ta
 	panic("unimplemented")
 }
 
-func (t *TestDefaultRouteOnlyDataplane) InsertXFRMInterface(interfaceName string, underLayIface string, ifID uint32, masterVRFIndex *string) error {
+func (t *TestDefaultRouteOnlyDataplane) InsertXFRMInterface(interfaceName string, underLayIface string, ifID uint32, masterVRFName *string, linkLocalAddr netip.Prefix) error {
 	panic("unimplemented")
 }
 
@@ -216,4 +216,16 @@ func (t *TestDefaultRouteOnlyDataplane) GetLimits() ([]dataplane.DataplaneLimit,
 
 func (t *TestDefaultRouteOnlyDataplane) RemoveLimit(handle uint64) error {
 	panic("unimplemented")
+}
+
+func (t *TestDefaultRouteOnlyDataplane) InsertBFDPeer(profile string, addr netip.Addr, vrf string, iface string) error {
+	return nil
+}
+
+func (t *TestDefaultRouteOnlyDataplane) DeleteBFDPeer(addr netip.Addr, vrf string, iface string) error {
+	return nil
+}
+
+func (t *TestDefaultRouteOnlyDataplane) GetBFDPeers() ([]dataplane.DataplaneBFDPeer, error) {
+	return nil, nil
 }

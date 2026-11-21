@@ -96,6 +96,14 @@ func (r *Reconciler) Plan(ctx context.Context, desired *nodesync.NodeIntent) (ma
 		return nil, nil, fmt.Errorf("dataplane failure: couldn't retrieve triggers: %w", err)
 	}
 
+	// bfdd being down must not block the rest of the reconcile; its peers are
+	// then simply re-added on the next pass
+	bfdPeers, err := r.dp.GetBFDPeers()
+	if err != nil {
+		r.logger.WarnContext(ctx, "couldn't retrieve bfd peers", "err", err)
+		bfdPeers = nil
+	}
+
 	currentResources, err := r.RenderFIB(
 		ctx,
 		vrfLinks,
@@ -107,6 +115,7 @@ func (r *Reconciler) Plan(ctx context.Context, desired *nodesync.NodeIntent) (ma
 		classifications,
 		limits,
 		triggers,
+		bfdPeers,
 	)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to render FIB state: %w", err)

@@ -1,6 +1,6 @@
 # static values shared across the generator
 
-GENERATOR_VERSION = "2.4.0"
+GENERATOR_VERSION = "2.5.0"
 
 POP_IMAGE = "maeto-pop:latest"
 FRR_VERSION = "10.6.0"
@@ -122,6 +122,35 @@ isisd_options="  -A 127.0.0.1"
 bfdd_options="  -A 127.0.0.1 --dplaneaddr ipv4c:127.0.0.1:50700 -M maeto"
 pathd_options="  -A 127.0.0.1"
 staticd_options="-A 127.0.0.1"
+"""
+
+# a cpe only needs bfd over its tunnels: no igp, and no xdp data plane, so
+# bfdd runs its sessions in software and reports them through the maeto module
+FRR_CPE_DAEMONS = """zebra=yes
+bfdd=yes
+
+isisd=no
+staticd=no
+bgpd=no
+ospfd=no
+ospf6d=no
+ripd=no
+ripngd=no
+pimd=no
+pim6d=no
+ldpd=no
+nhrpd=no
+eigrpd=no
+babeld=no
+sharpd=no
+pbrd=no
+fabricd=no
+vrrpd=no
+pathd=no
+
+vtysh_enable=yes
+zebra_options="  -A 127.0.0.1 -s 90000000"
+bfdd_options="  -A 127.0.0.1 -M maeto"
 """
 
 # Assumes PYTHONPATH=clab/

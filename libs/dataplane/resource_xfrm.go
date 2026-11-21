@@ -1,20 +1,24 @@
 package dataplane
 
-import "fmt"
+import (
+	"fmt"
+	"net/netip"
+)
 
 // need for delete + create
 type XFRM struct {
-	Name      string `rc:"id"`
-	IfID      uint32 `rc:"id"`
-	Parent    string
-	MasterVRF string `rc:"mut"`
-	Index     int    // observed only
+	Name          string `rc:"id"`
+	IfID          uint32 `rc:"id"`
+	Parent        string
+	MasterVRF     string `rc:"mut"`
+	LinkLocalAddr netip.Prefix
+	Index         int // observed only
 }
 
 func (x *XFRM) ID() ID {
 	return ID{
 		Kind: KindXFRM,
-		Key:  fmt.Sprintf("%s:%s.%d", KindXFRM, x.Name, x.IfID),
+		Key:  fmt.Sprintf("%s:%s.%d.%s", KindXFRM, x.Name, x.IfID, x.LinkLocalAddr.String()),
 	}
 }
 

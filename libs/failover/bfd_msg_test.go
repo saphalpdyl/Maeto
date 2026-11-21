@@ -1,4 +1,4 @@
-package maetoagent
+package failover
 
 import (
 	"net/netip"

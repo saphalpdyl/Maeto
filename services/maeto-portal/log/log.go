@@ -11,6 +11,7 @@ const (
 	DomainControlPlane    LogDomain = "CONTROL_PLANE"
 	DomainTunnel          LogDomain = "TUNNEL"
 	DomainReconciler      LogDomain = "RECONCILER"
+	DomainFailover        LogDomain = "FAILOVER"
 )
 
 func Domain(v LogDomain) slog.Attr { return slog.String("domain", string(v)) }

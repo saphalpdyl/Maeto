@@ -76,7 +76,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	linuxDataplane, err := dataplane.NewLinuxNetlink()
+	linuxDataplane, err := dataplane.NewLinuxNetlink(dataplane.DefaultBfddVTYSocketPath)
 	if err != nil {
 		logger.ErrorContext(ctx, "failed to create linux dataplane", log.Err(err))
 	}

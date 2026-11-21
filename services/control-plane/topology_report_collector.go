@@ -95,6 +95,12 @@ func (t *TopologyReportCollector) evaluateNodeDown(ctx context.Context) {
 	}
 
 	changed := t.topology.SetDownNodes(fresh, ready)
+	for _, c := range changed {
+		if t.topology.graph.down[c] {
+			t.ready[c] = false
+		}
+	}
+
 	if len(changed) > 0 {
 		t.logger.WarnContext(ctx, "node down state changed", slog.Any("nodes", changed))
 	}

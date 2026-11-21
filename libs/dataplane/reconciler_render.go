@@ -30,16 +30,30 @@ func (r *Reconciler) RenderCPEIntent(ctx context.Context, cpe *nodesync.CPEInten
 		return nil, fmt.Errorf("cpe intent has no site prefix, nothing could select the tunnel")
 	}
 
+	xfrmPrefix, err := netip.ParsePrefix("fe80::2/64")
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse xfrm prefix: %w", err)
+	}
+
 	for _, tunnel := range cpe.Tunnels {
 		xfrmTunnelName := fmt.Sprintf("mto-tun-%s-%d", cpe.TenantID, tunnel.TunnelInterfaceID)
 		xfrm := &XFRM{
-			Name:      xfrmTunnelName,
-			IfID:      tunnel.TunnelInterfaceID,
-			Parent:    "lo",
-			MasterVRF: "", // no VRF for CPE
-			Index:     0,  // observed kernel-assigned value
+			Name:          xfrmTunnelName,
+			IfID:          tunnel.TunnelInterfaceID,
+			Parent:        "lo",
+			MasterVRF:     "", // no VRF for CPE
+			LinkLocalAddr: xfrmPrefix,
+			Index:         0, // observed kernel-assigned value
 		}
 		resources[xfrm.ID().Key] = xfrm
+
+		bfdPeer := &BFDPeer{
+			Profile:   TunnelBFDProfile,
+			VRF:       "",
+			Interface: xfrmTunnelName,
+			Peer:      PETunnelLinkLocalAddr,
+		}
+		resources[bfdPeer.ID().Key] = bfdPeer
 
 		tableID := StringToID(xfrmTunnelName)
 
@@ -63,6 +77,10 @@ func (r *Reconciler) RenderCPEIntent(ctx context.Context, cpe *nodesync.CPEInten
 		}
 	}
 
+	if trigger := cpeFailoverTrigger(cpe); trigger != nil {
+		resources[trigger.ID().Key] = trigger
+	}
+
 	// Traffic from CPE addressed to its LAN (the site) was being bounced back and forth
 	// in the tunnel because the rule above kept sending LAN traffic towards the tunnel
 	// and the pop sent back the packet towards the CPE
@@ -74,6 +92,41 @@ func (r *Reconciler) RenderCPEIntent(ctx context.Context, cpe *nodesync.CPEInten
 	resources[siteDstRule.ID().Key] = siteDstRule
 
 	return resources, nil
+}
+
+func cpeFailoverTrigger(cpe *nodesync.CPEIntent) *RuleTrigger {
+	var primary *nodesync.CPETunnelIntent
+	var standby *nodesync.CPETunnelIntent
+
+	for i := range cpe.Tunnels {
+		tunnel := &cpe.Tunnels[i]
+
+		if tunnel.Role == nodesync.TunnelRolePrimary {
+			primary = tunnel
+			continue
+		}
+
+		if standby == nil || tunnel.TunnelPE < standby.TunnelPE {
+			standby = tunnel
+		}
+	}
+
+	if primary == nil || standby == nil {
+		return nil
+	}
+
+	standbyTunnelName := fmt.Sprintf("mto-tun-%s-%d", cpe.TenantID, standby.TunnelInterfaceID)
+
+	return &RuleTrigger{
+		Egress: primary.TunnelPE, // ActivateRepair sends the egress name of the node that failed
+		Rules: []TriggerRule{
+			{
+				Src:      cpe.SitePrefix,
+				Table:    int(StringToID(standbyTunnelName)),
+				Priority: CPEFailoverRulePriority,
+			},
+		},
+	}
 }
 
 // Bitwise structure of a Per-Color Routing table ID
@@ -108,8 +161,18 @@ func ColorTableID(vrfTable int, color uint64) int {
 	return int(color)<<vrfTableBits | vrfTable
 }
 
+// Both ends of every tunnel use the same pair; link-locals are scoped to the
+// interface, so they never collide across tunnels
+var (
+	PETunnelLinkLocalAddr  = netip.MustParseAddr("fe80::1")
+	CPETunnelLinkLocalAddr = netip.MustParseAddr("fe80::2")
+)
+
+const TunnelBFDProfile = "maeto-cpe"
+
 const (
-	PLRTableID = 950
+	PLRTableID             = 950
+	PLRTriggerRulePriority = 100
 )
 
 func (r *Reconciler) RenderPEIntent(
@@ -147,9 +210,15 @@ func (r *Reconciler) RenderPEIntent(
 		resources[mirrorSID.ID().Key] = mirrorSID
 	}
 
+	// Used for BFD for CE-PE edge under IPSec tunnel
+	xfrmLinkLocalAddr, err := netip.ParsePrefix("fe80::1/64")
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse xfrm prefix: %w", err)
+	}
+
 	// This PE as the PLR
 	for _, r := range pe.LFARepairIntent {
-		prefixes := make([]netip.Prefix, 0)
+		rules := make([]TriggerRule, 0, len(r.Triggers))
 		for _, t := range r.Triggers {
 			switch t.Kind {
 			case nodesync.LFATriggerSIDPrefixEndX:
@@ -176,15 +245,19 @@ func (r *Reconciler) RenderPEIntent(
 				resources[srRoute.ID().Key] = srRoute
 			}
 
-			prefixes = append(prefixes, t.SIDPrefix)
+			rules = append(rules, TriggerRule{
+				Dst:      t.SIDPrefix,
+				Table:    PLRTableID,
+				Priority: PLRTriggerRulePriority,
+			})
 		}
 
-		plrTrigger := &PLRTrigger{
-			Egress:   r.Protecting,
-			Prefixes: prefixes,
+		trigger := &RuleTrigger{
+			Egress: r.Protecting,
+			Rules:  rules,
 		}
 
-		resources[plrTrigger.ID().Key] = plrTrigger
+		resources[trigger.ID().Key] = trigger
 	}
 
 	for tenantID, t := range pe.Tenants {
@@ -226,14 +299,23 @@ func (r *Reconciler) RenderPEIntent(
 			xfrmName := fmt.Sprintf("mto-tun-%s-%d", tenantID, portalIntent.TunnelInterfaceID)
 
 			xfrm := &XFRM{
-				Name:      xfrmName,
-				IfID:      portalIntent.TunnelInterfaceID,
-				Parent:    portalIntent.HostFacingInterface,
-				MasterVRF: vrfTableName,
-				Index:     0,
+				Name:          xfrmName,
+				IfID:          portalIntent.TunnelInterfaceID,
+				Parent:        portalIntent.HostFacingInterface,
+				MasterVRF:     vrfTableName,
+				LinkLocalAddr: xfrmLinkLocalAddr,
+				Index:         0,
 			}
 
 			resources[xfrm.ID().Key] = xfrm
+
+			bfdPeer := &BFDPeer{
+				Profile:   TunnelBFDProfile,
+				VRF:       vrfTableName,
+				Interface: xfrmName,
+				Peer:      CPETunnelLinkLocalAddr,
+			}
+			resources[bfdPeer.ID().Key] = bfdPeer
 
 			// vrf owns the XFRM interfaces, not the standby VRF
 			// the dataplane checks whether the device is owned by the vrf
@@ -374,7 +456,8 @@ func (r *Reconciler) RenderFIB(
 	srRoutes []DataplaneSRRoute,
 	classifications []DataplaneClassification,
 	limits []DataplaneLimit,
-	triggers []DataplanePLRTrigger,
+	triggers []DataplaneRuleTrigger,
+	bfdPeers []DataplaneBFDPeer,
 ) (map[string]Resource, error) {
 	resources := make(map[string]Resource)
 
@@ -412,11 +495,12 @@ func (r *Reconciler) RenderFIB(
 
 	for _, l := range xfrmLinks {
 		xfrm := &XFRM{
-			Name:      l.Name,
-			IfID:      l.IfID,
-			Parent:    l.ParentName,
-			MasterVRF: l.MasterName,
-			Index:     l.Index,
+			Name:          l.Name,
+			IfID:          l.IfID,
+			Parent:        l.ParentName,
+			MasterVRF:     l.MasterName,
+			Index:         l.Index,
+			LinkLocalAddr: l.LinkLocalAddr,
 		}
 
 		resources[xfrm.ID().Key] = xfrm
@@ -482,13 +566,24 @@ func (r *Reconciler) RenderFIB(
 		resources[srRoute.ID().Key] = srRoute
 	}
 
-	for _, t := range triggers {
-		plrTrigger := &PLRTrigger{
-			Egress:   t.Egress,
-			Prefixes: t.Prefixes,
+	for _, p := range bfdPeers {
+		peer := &BFDPeer{
+			Profile:   p.Profile,
+			VRF:       p.VRF,
+			Interface: p.Interface,
+			Peer:      p.Peer,
 		}
 
-		resources[plrTrigger.ID().Key] = plrTrigger
+		resources[peer.ID().Key] = peer
+	}
+
+	for _, t := range triggers {
+		trigger := &RuleTrigger{
+			Egress: t.Egress,
+			Rules:  t.Rules,
+		}
+
+		resources[trigger.ID().Key] = trigger
 	}
 
 	return resources, nil

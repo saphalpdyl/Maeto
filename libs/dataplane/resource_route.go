@@ -8,9 +8,10 @@ import (
 // A cpe carries one tenant, so one table and one rule priority is enough. Both
 // are maeto's alone: main stays owned by whatever manages the wan.
 const (
-	CPETunnelTableBase  = 100
-	CPERulePriority     = 100
-	CPESiteRulePriority = 99
+	CPETunnelTableBase      = 100
+	CPERulePriority         = 100
+	CPEFailoverRulePriority = 99
+	CPESiteRulePriority     = 98
 )
 
 // Ideompotently replaced. no need for delete+create

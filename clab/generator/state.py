@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 
 from .constants import (
     BOOT_FILENAME,
+    FRR_CPE_DAEMONS,
     FRR_DAEMONS,
     GENERATOR_VERSION,
     HASH_DIR_LEN,
@@ -15,7 +16,7 @@ from .constants import (
 from .render_boot import render_boot
 from .render_clab import render_clab
 from .render_data import render_data, render_node
-from .render_frr import render_frr
+from .render_frr import render_frr, render_frr_cpe
 from .render_mgmt_routes import render_mgmt_routes
 from .render_nft import render_nft
 from .render_tenant_db import render_tenant_db
@@ -54,11 +55,13 @@ def write_output(topo, plan, digest, build_dir):
     _write(os.path.join(out, "topology.data.json"), render_data(topo, plan, digest))
     _write(os.path.join(out, "tenant.db.json"), render_tenant_db(topo))
     _write(os.path.join(out, "conf", "shared", "frr_daemons"), FRR_DAEMONS)
+    _write(os.path.join(out, "conf", "shared", "frr_daemons_cpe"), FRR_CPE_DAEMONS)
     _write(os.path.join(out, MGMT_ROUTES_FILENAME), render_mgmt_routes(topo, plan))
     copy_ca_cert(out)
 
     for cpe in topo.cpes:
         render_cert(out, cpe.node_name, cpe_identity(cpe.portal_id))
+        _write(os.path.join(out, "conf", cpe.node_name, "frr.conf"), render_frr_cpe(cpe))
 
     for pop in topo.pops:
         render_cert(out, pop.node_name, pop_identity(pop.node_name))

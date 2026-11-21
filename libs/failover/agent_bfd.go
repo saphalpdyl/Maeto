@@ -1,4 +1,4 @@
-package maetoagent
+package failover
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"syscall"
 
-	"github.com/saphalpdyl/maeto/services/maeto-agent/log"
+	"github.com/saphalpdyl/maeto/libs/failover/log"
 )
 
 const DefaultMaetoSocketPath = "/run/maeto/frr.bfd.sock"

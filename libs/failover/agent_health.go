@@ -1,4 +1,4 @@
-package maetoagent
+package failover
 
 import (
 	"context"
@@ -6,8 +6,8 @@ import (
 	"maps"
 	"sync"
 
+	"github.com/saphalpdyl/maeto/libs/failover/log"
 	"github.com/saphalpdyl/maeto/libs/nodesync"
-	"github.com/saphalpdyl/maeto/services/maeto-agent/log"
 )
 
 type HealthMonitor struct {
@@ -25,7 +25,7 @@ type HealthMonitor struct {
 func NewHealthMonitor(logger *slog.Logger) *HealthMonitor {
 	bfdReportChan := make(chan BFDMessage)
 
-	bfd := NewBFD(DefaultMaetoSocketPath, bfdReportChan, logger.With(log.Domain(log.DomainBFDListener)))
+	bfd := NewBFD(DefaultMaetoSocketPath, bfdReportChan, logger)
 
 	return &HealthMonitor{
 		bfd:           bfd,
