@@ -17,7 +17,7 @@ func (r *Reconciler) Apply(ctx context.Context, diff DiffResult) error {
 	// First of all, we remove shit
 	// We remove from bottom up i.e route -> xfrm -> vrf
 	// TODO: Later group by kind in a map so that we don't traverse everything everytime
-	for _, kind := range []Kind{KindLimit, KindClassification, KindRule, KindSRRoute, KindSID, KindRoute, KindXFRM, KindVRF} {
+	for _, kind := range []Kind{KindPLRTrigger, KindLimit, KindClassification, KindRule, KindSRRoute, KindSID, KindRoute, KindXFRM, KindVRF} {
 		for _, resource := range diff.Remove {
 			if resource.ID().Kind != kind {
 				continue
@@ -67,13 +67,15 @@ func (r *Reconciler) Apply(ctx context.Context, diff DiffResult) error {
 					r.logger.ErrorContext(ctx, "failed to remove limit", log.Err(err))
 					break
 				}
+			case *PLRTrigger:
+				r.dp.RemoveTriggers(res.Egress)
 			}
 
 		}
 	}
 
 	// Addition
-	for _, kind := range []Kind{KindVRF, KindXFRM, KindRoute, KindSID, KindSRRoute, KindRule, KindClassification, KindLimit} {
+	for _, kind := range []Kind{KindVRF, KindXFRM, KindRoute, KindSID, KindSRRoute, KindRule, KindClassification, KindLimit, KindPLRTrigger} {
 		for _, resource := range diff.Add {
 			if resource.ID().Kind != kind {
 				continue
@@ -142,9 +144,15 @@ func (r *Reconciler) Apply(ctx context.Context, diff DiffResult) error {
 					r.logger.ErrorContext(ctx, "failed to insert Limit", log.Err(err))
 					r.logger.ErrorContext(ctx, fmt.Sprintf("failed to insert Limit: %v", *res))
 				}
+			case *PLRTrigger:
+				r.dp.StoreTriggers(res.Egress, res.Prefixes)
 			}
 
 		}
+	}
+
+	if err := r.dp.CleanupTriggers(); err != nil {
+		r.logger.ErrorContext(ctx, "failed to cleanup triggers", log.Err(err))
 	}
 
 	return nil

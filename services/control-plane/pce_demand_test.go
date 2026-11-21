@@ -115,7 +115,7 @@ func findDemand(t *testing.T, demands []Demand, name string) Demand {
 }
 
 func Test_BuildDemandsOrdersNamedClassesThenTierThenClassThenDefault(t *testing.T) {
-	demands := BuildDemands(eightPopDemandRepo(t))
+	demands := BuildDemands(eightPopDemandRepo(t), &Graph{})
 
 	assert.Equal(t, []string{
 		"273/voice/A>C",
@@ -132,7 +132,7 @@ func Test_BuildDemandsOrdersNamedClassesThenTierThenClassThenDefault(t *testing.
 }
 
 func Test_BuildDemandsSumsClassesOfSitesSharingAPop(t *testing.T) {
-	demands := BuildDemands(eightPopDemandRepo(t))
+	demands := BuildDemands(eightPopDemandRepo(t), &Graph{})
 
 	voice := findDemand(t, demands, "231/voice/A>G")
 	assert.Equal(t, 130.0, voice.FromMbps)
@@ -160,7 +160,7 @@ func Test_BuildDemandsSkipsClassMissingAtOneEnd(t *testing.T) {
 		"273/voice/C>A",
 		"273/default/A>C",
 		"273/default/C>A",
-	}, demandNames(BuildDemands(repo)))
+	}, demandNames(BuildDemands(repo, &Graph{})))
 }
 
 func Test_BuildDemandsSkipsDefaultWhenFullyCarved(t *testing.T) {
@@ -174,7 +174,7 @@ func Test_BuildDemandsSkipsDefaultWhenFullyCarved(t *testing.T) {
 	assert.Equal(t, []string{
 		"273/voice/A>C",
 		"273/voice/C>A",
-	}, demandNames(BuildDemands(repo)))
+	}, demandNames(BuildDemands(repo, &Graph{})))
 }
 
 func Test_BuildDemandsIgnoresTenantOnASinglePop(t *testing.T) {
@@ -185,11 +185,11 @@ func Test_BuildDemandsIgnoresTenantOnASinglePop(t *testing.T) {
 		}},
 	)
 
-	assert.Empty(t, BuildDemands(repo))
+	assert.Empty(t, BuildDemands(repo, &Graph{}))
 }
 
 func Test_BuildDemandsSilverVoiceBeatsGoldBulk(t *testing.T) {
-	demands := BuildDemands(eightPopDemandRepo(t))
+	demands := BuildDemands(eightPopDemandRepo(t), &Graph{})
 	names := demandNames(demands)
 
 	assert.Less(t,
@@ -219,7 +219,7 @@ func Test_BuildDemandsUnrankedTierSortsAfterRankedTiers(t *testing.T) {
 		"231/default/G>A",
 		"100/default/A>B",
 		"100/default/B>A",
-	}, demandNames(BuildDemands(repo)))
+	}, demandNames(BuildDemands(repo, &Graph{})))
 }
 
 func Test_BuildDemandsSameTierOrdersByClassBeforeTenant(t *testing.T) {
@@ -234,21 +234,21 @@ func Test_BuildDemandsSameTierOrdersByClassBeforeTenant(t *testing.T) {
 		}},
 	)
 
-	names := demandNames(BuildDemands(repo))
+	names := demandNames(BuildDemands(repo, &Graph{}))
 	assert.Less(t, indexOf(names, "300/voice/B>D"), indexOf(names, "273/streaming/A>C"))
 }
 
 func Test_BuildDemandsIsDeterministic(t *testing.T) {
 	repo := eightPopDemandRepo(t)
-	first := demandNames(BuildDemands(repo))
+	first := demandNames(BuildDemands(repo, &Graph{}))
 
 	for range 50 {
-		assert.Equal(t, first, demandNames(BuildDemands(repo)))
+		assert.Equal(t, first, demandNames(BuildDemands(repo, &Graph{})))
 	}
 }
 
 func Test_DemandKeysCarryTheClassLabel(t *testing.T) {
-	demands := BuildDemands(eightPopDemandRepo(t))
+	demands := BuildDemands(eightPopDemandRepo(t), &Graph{})
 	voice := findDemand(t, demands, "273/voice/A>C")
 
 	assert.Equal(t, PathKey{Tenant: 273, From: "A", To: "C", Label: demandLabelVoice}, voice.PathKey())

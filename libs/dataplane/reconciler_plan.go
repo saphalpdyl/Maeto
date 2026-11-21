@@ -91,6 +91,11 @@ func (r *Reconciler) Plan(ctx context.Context, desired *nodesync.NodeIntent) (ma
 		return nil, nil, fmt.Errorf("dataplane failure: couldn't retrieve limits: %w", err)
 	}
 
+	triggers, err := r.dp.GetTriggers()
+	if err != nil {
+		return nil, nil, fmt.Errorf("dataplane failure: couldn't retrieve triggers: %w", err)
+	}
+
 	currentResources, err := r.RenderFIB(
 		ctx,
 		vrfLinks,
@@ -101,6 +106,7 @@ func (r *Reconciler) Plan(ctx context.Context, desired *nodesync.NodeIntent) (ma
 		srRoutes,
 		classifications,
 		limits,
+		triggers,
 	)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to render FIB state: %w", err)

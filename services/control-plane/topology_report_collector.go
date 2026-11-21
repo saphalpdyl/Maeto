@@ -16,6 +16,7 @@ const (
 	topologyReportStaleAfter    = 30 * time.Second
 	topologyReportSweepInterval = 10 * time.Second
 	topologyReportRewatchDelay  = 2 * time.Second
+	topologySettleDelay         = 1 * time.Second
 )
 
 // TopologyReportCollector feeds what nodes report on their topology lane into
@@ -29,6 +30,8 @@ type TopologyReportCollector struct {
 	reportedAt map[NodeID]time.Time
 
 	pceImmediateRecomputeChan chan struct{}
+
+	ready map[NodeID]bool
 }
 
 func NewTopologyReportCollector(
@@ -43,6 +46,7 @@ func NewTopologyReportCollector(
 		topology:                  topology,
 		reportedAt:                make(map[NodeID]time.Time),
 		pceImmediateRecomputeChan: pceImmediateRecomputeChan,
+		ready:                     map[NodeID]bool{},
 	}
 }
 
@@ -53,15 +57,46 @@ func (t *TopologyReportCollector) Run(ctx context.Context) {
 	sweep := time.NewTicker(topologyReportSweepInterval)
 	defer sweep.Stop()
 
+	// Debounce (collect report for a sec before sending it since node-down events send a burst of events)
+	var recomputeIn <-chan time.Time
+
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case report := <-feed:
-			t.apply(ctx, report)
+			changed := t.apply(ctx, report)
+			if changed && recomputeIn == nil {
+				recomputeIn = time.After(topologySettleDelay)
+			}
+		case <-recomputeIn:
+			recomputeIn = nil
+			t.evaluateNodeDown(ctx)
+			select {
+			case t.pceImmediateRecomputeChan <- struct{}{}:
+			default:
+			}
 		case <-sweep.C:
+			t.evaluateNodeDown(ctx)
 			t.clearStale(ctx)
 		}
+	}
+}
+
+func (t *TopologyReportCollector) evaluateNodeDown(ctx context.Context) {
+	fresh := make(map[NodeID]bool)
+	ready := make(map[NodeID]bool)
+
+	for id, reportedAt := range t.reportedAt {
+		if time.Since(reportedAt) < topologyReportStaleAfter {
+			fresh[id] = true
+			ready[id] = t.ready[id]
+		}
+	}
+
+	changed := t.topology.SetDownNodes(fresh, ready)
+	if len(changed) > 0 {
+		t.logger.WarnContext(ctx, "node down state changed", slog.Any("nodes", changed))
 	}
 }
 
@@ -82,7 +117,7 @@ func (t *TopologyReportCollector) watch(ctx context.Context, feed chan<- nodesyn
 	}
 }
 
-func (t *TopologyReportCollector) apply(ctx context.Context, report nodesync.TopologyReport) {
+func (t *TopologyReportCollector) apply(ctx context.Context, report nodesync.TopologyReport) bool {
 	nodeID := NodeID(report.NodeID)
 
 	sidsByIface := make(map[string]netip.Addr, len(report.Adjacencies))
@@ -97,22 +132,18 @@ func (t *TopologyReportCollector) apply(ctx context.Context, report nodesync.Top
 			slog.Any("edges", changed))
 	}
 
-	changed = t.topology.SetLinkStates(nodeID, report.Links)
-	if len(changed) > 0 {
-		t.logger.InfoContext(ctx, "link states changed",
+	linkStateChanged := t.topology.SetLinkStates(nodeID, report.Links)
+	if len(linkStateChanged) > 0 {
+		t.logger.InfoContext(ctx, "link states linkStateChanged",
 			log.NodeID(string(nodeID)),
-			slog.Any("edges", changed),
+			slog.Any("edges", linkStateChanged),
 			slog.Any("links", report.Links))
 	}
 
-	if len(changed) > 0 {
-		select {
-		case t.pceImmediateRecomputeChan <- struct{}{}:
-		default:
-		}
-	}
-
 	t.reportedAt[nodeID] = report.ReportedAt
+	t.ready[nodeID] = report.Ready
+
+	return (len(changed) > 0) || (len(linkStateChanged) > 0)
 }
 
 func (t *TopologyReportCollector) clearStale(ctx context.Context) {

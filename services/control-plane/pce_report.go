@@ -183,7 +183,7 @@ func (r *PCETickReport) Log(ctx context.Context) {
 		}
 	}
 
-	r.Logger.LogAttrs(ctx, slog.LevelInfo, "pce tick report",
+	r.Logger.LogAttrs(ctx, slog.LevelDebug, "pce tick report",
 		slog.Time("timestamp", r.Timestamp),
 		slog.Attr{Key: "reroutes", Value: slog.GroupValue(reroutes...)},
 		slog.Attr{Key: "gated_reroutes", Value: slog.GroupValue(gated...)},

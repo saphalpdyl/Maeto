@@ -13,6 +13,7 @@ const (
 	DomainReconciler       LogDomain = "RECONCILER"
 	DomainIntentSupervisor LogDomain = "INTENT_SUPERVISOR"
 	DomainBFDListener      LogDomain = "BFD_LISTENER"
+	DomainFailover         LogDomain = "FAILOVER"
 )
 
 func Domain(v LogDomain) slog.Attr { return slog.String("domain", string(v)) }

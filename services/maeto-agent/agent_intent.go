@@ -10,17 +10,25 @@ import (
 )
 
 func (a *Agent) fanOutToFeeds(ctx context.Context, item *nodesync.NodeIntent) {
-	select {
-	case a.dataplaneIntentFeed <- item.Clone():
-	default:
-		a.logger.WarnContext(ctx, "dropped dataplane intent, feed seems full", slog.Any("item", item.Clone()))
-	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
 
-	select {
-	case a.probeIntentFeed <- item.Clone():
-	default:
-		a.logger.WarnContext(ctx, "dropped probe intent, feed seems full", slog.Any("item", item.Clone()))
+	for _, feed := range a.intentFeeds {
+		select {
+		case feed <- item.Clone():
+		default:
+			a.logger.WarnContext(ctx, "dropped intent, feed seems full", slog.Any("item", item.Clone()))
+		}
 	}
+}
+
+func (a *Agent) createIntentConsumer() chan *nodesync.NodeIntent {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	intentFeed := make(chan *nodesync.NodeIntent, 32)
+	a.intentFeeds = append(a.intentFeeds, intentFeed)
+	return intentFeed
 }
 
 func (a *Agent) setupIntentWatch(ctx context.Context) {

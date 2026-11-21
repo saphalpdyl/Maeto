@@ -83,7 +83,7 @@ sim:
 	docker compose up --build --force-recreate maeto-sim
 
 ddbg: # dev debug
-	DEBUG=1 MAETO_DLV_LISTEN=[::]:2345 docker compose up --build maeto-control-plane
+	DEBUG=1 MAETO_DLV_LISTEN=[::]:2345 docker compose up --build --force-recreate maeto-control-plane
 
 build-vm:
 	docker build --build-arg DEBUG=$(DEBUG) -t maeto-control-plane:latest -f docker/maeto-control-plane.Dockerfile .
@@ -120,6 +120,8 @@ apd:
 	$(MAKE) DEBUG=1 apply
 
 apdev: ap dev
+
+apdbg: ap ddbg
 
 ## Generators
 sqlc-gen:

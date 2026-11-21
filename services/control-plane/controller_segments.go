@@ -20,6 +20,8 @@ import (
 // Every remote site reachable over a path becomes one route on the
 // path's ingress PE, grouped here per PE and per tenant.
 func (c *Controller) buildRemoteRoutesByNode(ctx context.Context, paths PathSet) map[NodeID]map[TenantID][]remoteSiteRoute {
+	topo := c.topology.Graph().Clone()
+
 	remoteRoutesByNode := make(map[NodeID]map[TenantID][]remoteSiteRoute)
 	for _, key := range slices.SortedFunc(maps.Keys(paths), PathKey.Compare) {
 		path := paths[key]
@@ -47,7 +49,8 @@ func (c *Controller) buildRemoteRoutesByNode(ctx context.Context, paths PathSet)
 		// In the future, based on user input, a site prefix can be divided
 		// into subnets with different policies
 		for _, remoteSite := range tenant.Sites {
-			if NodeID(remoteSite.AttachNodeID) != key.To {
+			remoteNodeID, ok := topo.EffectivePE(NodeID(remoteSite.AttachNodeID))
+			if !ok || remoteNodeID != key.To {
 				continue
 			}
 
@@ -61,7 +64,8 @@ func (c *Controller) buildRemoteRoutesByNode(ctx context.Context, paths PathSet)
 }
 
 func (c *Controller) buildAndStageSegments(ctx context.Context, remoteRoutesByNode map[NodeID]map[TenantID][]remoteSiteRoute, tx *RegistryTx) {
-	pceGraph := NewPCEGraph(c.topology.Graph().Clone())
+	topo := c.topology.Graph().Clone()
+	pceGraph := NewPCEGraph(topo)
 	for nodeID, tenantsMap := range remoteRoutesByNode {
 		localNode, exists := c.topology.GetNodeByID(nodeID)
 		if !exists {
@@ -74,7 +78,12 @@ func (c *Controller) buildAndStageSegments(ctx context.Context, remoteRoutesByNo
 
 			for _, route := range routes {
 
-				remoteNode, exists := c.topology.GetNodeByID(NodeID(route.Remote.AttachNodeID))
+				effectiveRemoteNodeID, ok := topo.EffectivePE(NodeID(route.Remote.AttachNodeID))
+				if !ok {
+					continue
+				}
+
+				remoteNode, exists := c.topology.GetNodeByID(effectiveRemoteNodeID)
 				if !exists {
 					c.logger.ErrorContext(ctx, "failed to get Node entry", log.NodeID(string(nodeID)))
 					continue

@@ -51,6 +51,36 @@ func TestLiveDataplaneRead(t *testing.T) {
 type TestDefaultRouteOnlyDataplane struct {
 }
 
+func (t *TestDefaultRouteOnlyDataplane) StoreTriggers(egress string, prefixes []netip.Prefix) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (t *TestDefaultRouteOnlyDataplane) RemoveTriggers(egress string) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (t *TestDefaultRouteOnlyDataplane) GetTriggers() ([]dataplane.DataplanePLRTrigger, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (t *TestDefaultRouteOnlyDataplane) CleanupTriggers() error {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (t *TestDefaultRouteOnlyDataplane) ActivateRepair(egress string) error {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (t *TestDefaultRouteOnlyDataplane) ResetRepair(egress string, all bool) error {
+	//TODO implement me
+	panic("implement me")
+}
+
 func (t *TestDefaultRouteOnlyDataplane) UpsertDTSID(sid netip.Addr, vrfTableID int, tableID int, sidType dataplane.EncapType) error {
 	//TODO implement me
 	panic("implement me")

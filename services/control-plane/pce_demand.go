@@ -35,7 +35,7 @@ func (d Demand) BandwidthReservation() *BandwidthReservation {
 	}
 }
 
-func BuildDemands(tenantRepo TenantRepository) []Demand {
+func BuildDemands(tenantRepo TenantRepository, g *Graph) []Demand {
 	var demands []Demand
 
 	for _, tenant := range tenantRepo.TenantsByPriority() {
@@ -48,7 +48,11 @@ func BuildDemands(tenantRepo TenantRepository) []Demand {
 		// 		PopA-tenant-273[voice] = voice(site1) + voice(site2) // mbps
 		// 		PopA-tenant-273[streaming] = streaming(site1) + streaming(site2) // mbps
 		for _, site := range tenant.Sites {
-			popID := NodeID(site.AttachNodeID)
+			popID, success := g.EffectivePE(NodeID(site.AttachNodeID))
+			if !success {
+				continue
+			}
+
 			if popsWithLabels[popID] == nil {
 				popsWithLabels[popID] = make(map[uint64]float64)
 			}

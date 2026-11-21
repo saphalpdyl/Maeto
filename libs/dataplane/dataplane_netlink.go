@@ -8,7 +8,9 @@ import (
 	"net"
 	"net/netip"
 	"os"
+	"slices"
 	"strings"
+	"sync"
 
 	"github.com/google/nftables"
 	"github.com/google/nftables/expr"
@@ -33,6 +35,7 @@ const (
 	MaetoSIDProto netlink.RouteProtocol = 212
 	// For encap seg6 routes; MaetoSIDProto is for seg6local routes
 	MaetoSIDSegsProto netlink.RouteProtocol = 213
+	MaetoTriggerProto netlink.RouteProtocol = 215
 )
 
 // SEG6_LOCAL_ACTION_END_DT46 from uapi/linux/seg6_local.h. vishvananda/netlink
@@ -51,6 +54,10 @@ const SRDummyInterface = "sr0"
 
 type LinuxNetlink struct {
 	nft *nftables.Conn
+
+	mu                    sync.Mutex
+	triggers              map[string][]netip.Prefix
+	triggerEgressByPrefix map[netip.Prefix]string
 }
 
 // RemoveVRF deletes the vrf device at linkIndex. IFLA_GROUP is not a match key
@@ -203,7 +210,9 @@ func NewLinuxNetlink() (*LinuxNetlink, error) {
 	}
 
 	return &LinuxNetlink{
-		nft: nft,
+		nft:                   nft,
+		triggers:              make(map[string][]netip.Prefix),
+		triggerEgressByPrefix: make(map[netip.Prefix]string),
 	}, nil
 }
 
@@ -739,7 +748,7 @@ func (l *LinuxNetlink) RemoveSID(sid netip.Addr, tableID int) error {
 
 	err := netlink.RouteDel(&netlink.Route{
 		Dst: &net.IPNet{
-			IP:   net.IP(sid.AsSlice()),
+			IP:   sid.AsSlice(),
 			Mask: net.CIDRMask(128, 128),
 		},
 		Table:    table,
@@ -1376,4 +1385,194 @@ func (l *LinuxNetlink) RemoveLimit(handle uint64) error {
 	}
 
 	return l.nft.Flush()
+}
+
+func (l *LinuxNetlink) StoreTriggers(egress string, prefixes []netip.Prefix) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	l.triggers[egress] = slices.Clone(prefixes)
+	for _, p := range prefixes {
+		l.triggerEgressByPrefix[p] = egress
+	}
+}
+
+func (l *LinuxNetlink) RemoveTriggers(egress string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	delete(l.triggers, egress)
+}
+
+func (l *LinuxNetlink) GetTriggers() ([]DataplanePLRTrigger, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	dpTriggers := make([]DataplanePLRTrigger, 0, len(l.triggers))
+	for egress, prefixes := range l.triggers {
+		dpTriggers = append(dpTriggers, DataplanePLRTrigger{
+			Egress:   egress,
+			Prefixes: slices.Clone(prefixes),
+		})
+	}
+
+	return dpTriggers, nil
+}
+
+func (l *LinuxNetlink) getActiveTriggers() (map[string][]netip.Prefix, error) {
+	rules, err := netlink.RuleList(netlink.FAMILY_V6)
+	if err != nil {
+		return nil, fmt.Errorf("list rules: %w", err)
+	}
+
+	triggers := make([]netip.Prefix, 0)
+
+	for _, rule := range rules {
+		if rule.Protocol != uint8(MaetoTriggerProto) {
+			continue
+		}
+
+		if rule.Dst != nil {
+			dst, ok := netip.AddrFromSlice(rule.Dst.IP)
+			if !ok {
+				continue
+			}
+
+			ones, _ := rule.Dst.Mask.Size()
+			dstPrefix := netip.PrefixFrom(dst, ones)
+
+			triggers = append(triggers, dstPrefix)
+		}
+	}
+
+	triggerMap := make(map[string][]netip.Prefix)
+
+	for _, trigger := range triggers {
+		egress, exists := l.triggerEgressByPrefix[trigger]
+		if !exists {
+			continue
+		}
+
+		_, exists = triggerMap[egress]
+		if !exists {
+			triggerMap[egress] = make([]netip.Prefix, 0)
+		}
+
+		triggerMap[egress] = append(triggerMap[egress], trigger)
+	}
+
+	return triggerMap, nil
+}
+
+func (l *LinuxNetlink) ActivateRepair(egress string) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	prefixes, exists := l.triggers[egress]
+	if !exists {
+		return fmt.Errorf("trigger prefixes for %s not found", egress)
+	}
+
+	for _, prefix := range prefixes {
+		rule := netlink.NewRule()
+		rule.Priority = 100
+		rule.Table = PLRTableID
+		rule.Protocol = uint8(MaetoTriggerProto)
+		rule.Family = netlink.FAMILY_V6
+		rule.Dst = prefixToIPNet(prefix)
+
+		if err := netlink.RuleAdd(rule); err != nil {
+			if errors.Is(err, unix.EEXIST) {
+				continue
+			}
+
+			return fmt.Errorf("add trigger rule: %w", err)
+		}
+	}
+
+	return nil
+}
+
+func (l *LinuxNetlink) ResetRepair(egress string, all bool) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	triggerMap, err := l.getActiveTriggers()
+	if err != nil {
+		return err
+	}
+
+	triggersToReset := make([]netip.Prefix, 0)
+
+	if !all {
+		egressTriggers, exists := triggerMap[egress]
+		if !exists {
+			return fmt.Errorf("trigger prefixes for %s not found", egress)
+		}
+
+		triggersToReset = egressTriggers
+	} else {
+		for _, p := range triggerMap {
+			triggersToReset = append(triggersToReset, p...)
+		}
+	}
+
+	for _, prefix := range triggersToReset {
+		rule := netlink.NewRule()
+		rule.Priority = 100
+		rule.Table = PLRTableID
+		rule.Protocol = uint8(MaetoTriggerProto)
+		rule.Family = netlink.FAMILY_V6
+		rule.Dst = prefixToIPNet(prefix)
+
+		if err := netlink.RuleDel(rule); err != nil {
+			if errors.Is(err, unix.ENOENT) {
+				continue
+			}
+
+			return fmt.Errorf("delete trigger rule: %w", err)
+		}
+	}
+
+	return nil
+}
+
+func (l *LinuxNetlink) CleanupTriggers() error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	// l.triggers is authoritative
+	l.triggerEgressByPrefix = make(map[netip.Prefix]string)
+	for egress, prefixes := range l.triggers {
+		for _, p := range prefixes {
+			l.triggerEgressByPrefix[p] = egress
+		}
+	}
+
+	rules, err := netlink.RuleList(netlink.FAMILY_V6)
+	if err != nil {
+		return fmt.Errorf("list rules: %w", err)
+	}
+
+	for _, rule := range rules {
+		if rule.Protocol != uint8(MaetoTriggerProto) || rule.Dst == nil {
+			continue
+		}
+
+		dst, ok := netip.AddrFromSlice(rule.Dst.IP)
+		if !ok {
+			continue
+		}
+
+		ones, _ := rule.Dst.Mask.Size()
+		if _, known := l.triggerEgressByPrefix[netip.PrefixFrom(dst, ones)]; known {
+			continue
+		}
+
+		if err := netlink.RuleDel(&rule); err != nil && !errors.Is(err, unix.ENOENT) {
+			return fmt.Errorf("delete trigger rule: %w", err)
+		}
+	}
+
+	return nil
 }

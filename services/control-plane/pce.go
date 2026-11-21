@@ -119,13 +119,16 @@ func (p *PCE) Run(ctx context.Context, graph *Graph) {
 
 		costSnapshot := p.costGraph.Costs()
 
+		seen := make(map[PathKey]bool)
+
 	DemandLoop:
-		for _, demand := range BuildDemands(p.tenants) {
+		for _, demand := range BuildDemands(p.tenants, topo) {
 
 			// PathKey is the boundary. Label is a domain-agnostic identifier.
 			// 	It can be anything although its being used here to define objectives (latency, jitter etc.)
 			// 	Becomes 'Color' RFC 9256 during transport towards the agent dataplane
 			pathKey := demand.PathKey()
+			seen[pathKey] = true
 			candidateReservation := demand.BandwidthReservation()
 
 			// Prune Graph with existing bandwidth reservations
@@ -157,7 +160,7 @@ func (p *PCE) Run(ctx context.Context, graph *Graph) {
 
 			previousPath := previous[pathKey]
 			if previousPath == nil {
-				p.logger.InfoContext(
+				p.logger.DebugContext(
 					ctx,
 					"no previous path found; likely first pass",
 					slog.String("fromNode", string(demand.From)),
@@ -199,6 +202,11 @@ func (p *PCE) Run(ctx context.Context, graph *Graph) {
 			}
 
 			if previousPath.Equal(computedPath) {
+				if err := p.bandwidthReservationReg.Move(ctx, previousPath.Edges, computedPathEdges, demand.Tenant.ID, candidateReservation); err != nil {
+					p.logger.ErrorContext(ctx, "failed to resize/move bandwidth reservation into itself",
+						"from", demand.From, "to", demand.To, log.Err(err))
+				}
+
 				paths[pathKey] = computedPath
 				continue
 			}
@@ -279,6 +287,25 @@ func (p *PCE) Run(ctx context.Context, graph *Graph) {
 
 		// the channel send can block; nothing below reads the graph
 		graph.mu.RUnlock()
+
+		// Remove bandwidth reservation of moved paths
+		for key, path := range previous {
+			if seen[key] {
+				continue
+			}
+
+			reservation := &BandwidthReservation{
+				Key: BandwidthReservationKey{
+					SourcePop: key.From,
+					SinkPop:   key.To,
+					Label:     key.Label,
+				},
+			}
+
+			if err := p.bandwidthReservationReg.Move(ctx, path.Edges, nil, key.Tenant, reservation); err != nil {
+				p.logger.ErrorContext(ctx, "failed to release ghost bandwidth reservation")
+			}
+		}
 
 		tickReport.NewPathSet = paths
 		tickReport.Log(ctx)

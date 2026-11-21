@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/saphalpdyl/maeto/libs/controlapi"
 	"github.com/saphalpdyl/maeto/libs/dataplane"
+	"github.com/saphalpdyl/maeto/libs/failover"
 	"github.com/saphalpdyl/maeto/libs/nodesync"
 	"github.com/saphalpdyl/maeto/libs/probe"
 	"github.com/saphalpdyl/maeto/libs/swan"
@@ -18,16 +20,15 @@ import (
 )
 
 type Agent struct {
+	mu sync.Mutex
+
 	js         jetstream.JetStream
 	node       *Node
 	logger     *slog.Logger
 	reconciler *dataplane.Reconciler
 	dp         dataplane.Dataplane // owned primarily by the Reconciler
 
-	// Carries the same intent feed. A goroutine broadcasts
-	// received to both these channel
-	dataplaneIntentFeed chan *nodesync.NodeIntent
-	probeIntentFeed     chan *nodesync.NodeIntent
+	intentFeeds []chan *nodesync.NodeIntent
 
 	probeSupervisor *probe.Supervisor
 
@@ -41,8 +42,18 @@ func NewAgent(
 	dp dataplane.Dataplane,
 	swanClient *swan.Client,
 ) *Agent {
-	dataplaneIntentFeed := make(chan *nodesync.NodeIntent, 32)
-	probeIntentFeed := make(chan *nodesync.NodeIntent, 32)
+
+	agent := &Agent{
+		js:          js,
+		node:        node,
+		logger:      logger,
+		dp:          dp,
+		swanClient:  swanClient,
+		intentFeeds: make([]chan *nodesync.NodeIntent, 0),
+	}
+
+	dataplaneIntentFeed := agent.createIntentConsumer()
+	probeIntentFeed := agent.createIntentConsumer()
 
 	reconciler := dataplane.NewReconciler(dp, nodesync.NodeTypePE, logger.With(log.Domain(log.DomainReconciler)), dataplaneIntentFeed)
 
@@ -57,17 +68,10 @@ func NewAgent(
 		Runner:      probe.NewDefaultRunner(dispatcher, logger),
 	}, logger.With(log.Domain(log.DomainIntentSupervisor)), dp, probeIntentFeed)
 
-	return &Agent{
-		js:                  js,
-		node:                node,
-		logger:              logger,
-		reconciler:          reconciler,
-		dataplaneIntentFeed: dataplaneIntentFeed,
-		probeIntentFeed:     probeIntentFeed,
-		dp:                  dp,
-		probeSupervisor:     probeSupervisor,
-		swanClient:          swanClient,
-	}
+	agent.reconciler = reconciler
+	agent.probeSupervisor = probeSupervisor
+
+	return agent
 }
 
 func (a *Agent) Node() *Node {
@@ -103,7 +107,8 @@ func (a *Agent) Run(ctx context.Context) {
 			nodeID:    a.node.ID,
 		})
 
-		linkUpdates := make(chan map[string]nodesync.LinkState)
+		health := NewHealthMonitor(a.logger.With(log.Domain(log.DomainControlPlane)))
+		topologyReporterLinkUpdatesChan := health.CreateConsumer()
 
 		topology := &topologyReporter{
 			publisher:   publisher,
@@ -111,11 +116,56 @@ func (a *Agent) Run(ctx context.Context) {
 			nodeID:      a.node.ID,
 			dp:          a.dp,
 			logger:      a.logger.With(log.Domain(log.DomainControlPlane)),
-			linkUpdates: linkUpdates,
+			linkUpdates: topologyReporterLinkUpdatesChan,
 		}
 		go topology.Run(ctx)
 
-		health := NewHealthMonitor(linkUpdates, a.logger.With(log.Domain(log.DomainControlPlane)))
+		failoverLatch := failover.NewFailoverLatch(
+			health.CreateConsumer(),
+			a.logger.With(log.Domain(log.DomainFailover)),
+			func(egress string) error {
+				a.logger.ErrorContext(ctx, "EGRESS FAILURE: TRYING TO LOCALLY REPAIR")
+
+				if err := a.dp.ActivateRepair(egress); err != nil {
+					a.logger.ErrorContext(ctx, "failed to activate repair", log.Err(err))
+					return err
+				}
+
+				a.logger.ErrorContext(ctx, "EGRESS FAILURE: REPAIRED SUCCESSFULLY")
+				return nil
+			},
+			func(s string) error {
+				a.logger.ErrorContext(ctx, fmt.Sprintf("FAILOVER RESET FOR EGRESS: %s ", s))
+				return nil
+			},
+		)
+		go failoverLatch.Start(ctx)
+
+		go func(fl *failover.FailoverLatch) {
+			failoverIntentFeed := a.createIntentConsumer()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case intent := <-failoverIntentFeed:
+					peIntent, _ := intent.Intent.(*nodesync.PEIntent)
+					grouping := make(map[string][]string)
+
+					for _, p := range peIntent.Peers {
+						groups, exists := grouping[p.PeerID]
+						if !exists {
+							grouping[p.PeerID] = make([]string, 0)
+						}
+
+						grouping[p.PeerID] = append(groups, p.LocalInterface)
+					}
+
+					fl.SetGrouping(grouping)
+					fl.MarkReady()
+				}
+			}
+		}(failoverLatch)
+
 		go func() {
 			if err := health.Start(ctx); err != nil && ctx.Err() == nil {
 				a.logger.ErrorContext(ctx, "health monitor stopped", log.Err(err))

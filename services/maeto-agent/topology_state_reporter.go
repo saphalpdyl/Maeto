@@ -85,6 +85,7 @@ func (t *topologyReporter) collect() (*nodesync.TopologyReport, error) {
 		ReportedAt:  time.Now(),
 		Adjacencies: make([]nodesync.AdjacencyReport, 0, len(sids)),
 		Links:       t.links,
+		Ready:       true,
 	}
 
 	for _, sid := range sids {

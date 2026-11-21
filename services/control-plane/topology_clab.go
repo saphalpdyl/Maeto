@@ -144,9 +144,9 @@ var _ TopologyManager = (*ClabTopologyManager)(nil)
 
 func NewClabTopologyManager(cfg ClabTopologyConfig) *ClabTopologyManager {
 	return &ClabTopologyManager{
-		config:         cfg,
 		ready:          false,
 		graph:          nil,
+		config:         cfg,
 		domainMetadata: SRv6DomainMetadata{},
 	}
 }
@@ -157,6 +157,7 @@ func generateGraphFromRawTopology(rawTopoData *RawTopologyData) (*Graph, error) 
 		edges:    make(map[EdgeID]*Edge),
 		prefixes: make(map[string]*Prefix),
 		adj:      make(map[NodeID][]EdgeID),
+		down:     make(map[NodeID]bool),
 	}
 
 	for _, p := range rawTopoData.Pops {
@@ -375,6 +376,29 @@ func (c *ClabTopologyManager) SetEndXSIDs(node NodeID, sidsByIface map[string]ne
 
 		edge.EndX = sid
 		changed = append(changed, edge.ID)
+	}
+
+	return changed
+}
+
+func (c *ClabTopologyManager) SetDownNodes(fresh map[NodeID]bool, ready map[NodeID]bool) []NodeID {
+	c.graph.mu.Lock()
+	defer c.graph.mu.Unlock()
+
+	changed := make([]NodeID, 0)
+	for id := range c.graph.nodes {
+		if c.graph.down[id] {
+			if ready[id] {
+				delete(c.graph.down, id)
+				changed = append(changed, id)
+			}
+			continue
+		}
+
+		if c.graph.LostAllNeighbors(id, fresh) {
+			c.graph.down[id] = true
+			changed = append(changed, id)
+		}
 	}
 
 	return changed

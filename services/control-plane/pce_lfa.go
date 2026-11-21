@@ -38,6 +38,10 @@ func (p *PCE) computeTILFASegments(ctx context.Context, topo *Graph, g *PCEGraph
 			plrs := plrsOf(topo, protects)
 
 			for _, plr := range plrs {
+				if topo.down[plr] {
+					continue
+				}
+
 				repairListOfNode, exists := repairList.RepairList[plr]
 				if !exists {
 					repairListOfNode = make([]LFARepairListItem, 0)

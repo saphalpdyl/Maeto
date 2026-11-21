@@ -141,7 +141,7 @@ func (r *Reconciler) RenderPEIntent(
 		mirrorSID := &SID{
 			SIDType:    SIDDT6,
 			SID:        pe.MirrorSID,
-			VrfTableID: int(mirrorTableID),
+			VrfTableID: int(mirrorTableID), // tableID (where the SID lives) is on main
 		}
 
 		resources[mirrorSID.ID().Key] = mirrorSID
@@ -149,6 +149,7 @@ func (r *Reconciler) RenderPEIntent(
 
 	// This PE as the PLR
 	for _, r := range pe.LFARepairIntent {
+		prefixes := make([]netip.Prefix, 0)
 		for _, t := range r.Triggers {
 			switch t.Kind {
 			case nodesync.LFATriggerSIDPrefixEndX:
@@ -174,7 +175,16 @@ func (r *Reconciler) RenderPEIntent(
 
 				resources[srRoute.ID().Key] = srRoute
 			}
+
+			prefixes = append(prefixes, t.SIDPrefix)
 		}
+
+		plrTrigger := &PLRTrigger{
+			Egress:   r.Protecting,
+			Prefixes: prefixes,
+		}
+
+		resources[plrTrigger.ID().Key] = plrTrigger
 	}
 
 	for tenantID, t := range pe.Tenants {
@@ -364,6 +374,7 @@ func (r *Reconciler) RenderFIB(
 	srRoutes []DataplaneSRRoute,
 	classifications []DataplaneClassification,
 	limits []DataplaneLimit,
+	triggers []DataplanePLRTrigger,
 ) (map[string]Resource, error) {
 	resources := make(map[string]Resource)
 
@@ -469,6 +480,15 @@ func (r *Reconciler) RenderFIB(
 		}
 
 		resources[srRoute.ID().Key] = srRoute
+	}
+
+	for _, t := range triggers {
+		plrTrigger := &PLRTrigger{
+			Egress:   t.Egress,
+			Prefixes: t.Prefixes,
+		}
+
+		resources[plrTrigger.ID().Key] = plrTrigger
 	}
 
 	return resources, nil

@@ -76,6 +76,11 @@ type DataplaneRule struct {
 	Iif      string
 }
 
+type DataplanePLRTrigger struct {
+	Egress   string
+	Prefixes []netip.Prefix
+}
+
 type DataplaneClassification struct {
 	Classifier uint32
 	Mark       uint32
@@ -188,4 +193,11 @@ type Dataplane interface {
 	InsertLimit(iifname string, mark *uint32, exceptMarks []uint32, rateBytes uint64, burstBytes uint32) error
 	GetLimits() ([]DataplaneLimit, error)
 	RemoveLimit(handle uint64) error
+
+	StoreTriggers(egress string, prefixes []netip.Prefix)
+	RemoveTriggers(egress string)
+	GetTriggers() ([]DataplanePLRTrigger, error)
+	CleanupTriggers() error
+	ActivateRepair(egress string) error
+	ResetRepair(egress string, all bool) error
 }

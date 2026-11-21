@@ -68,6 +68,9 @@ type Graph struct {
 	edges    map[EdgeID]*Edge
 	prefixes map[string]*Prefix
 	adj      map[NodeID][]EdgeID
+
+	// State
+	down map[NodeID]bool
 }
 
 // Clone returns a deep copy: nothing in the copy shares memory with g, so it
@@ -106,7 +109,41 @@ func (g *Graph) Clone() *Graph {
 		newGraph.adj[id] = slices.Clone(edgeIDs)
 	}
 
+	newGraph.down = maps.Clone(g.down)
+
 	return newGraph
+}
+
+func (g *Graph) LostAllNeighbors(node NodeID, fresh map[NodeID]bool) bool {
+	witnesses := 0
+	for _, edge := range g.edges {
+		if edge.Remote != node || !fresh[edge.Local] {
+			continue
+		}
+
+		if edge.Up {
+			return false
+		}
+
+		witnesses++
+	}
+
+	return witnesses > 0
+}
+
+// EffectivePE returns the protector node IDs if the designated Node is down
+func (g *Graph) EffectivePE(node NodeID) (NodeID, bool) {
+	if !g.down[node] {
+		return node, true
+	}
+
+	for _, protectorNode := range g.nodes[node].ProtectedBy {
+		if !g.down[protectorNode] {
+			return protectorNode, true
+		}
+	}
+
+	return "", false
 }
 
 type TopologyManager interface {
@@ -115,4 +152,6 @@ type TopologyManager interface {
 
 	// Get SRv6 domain metadata such as SRv6 domain prefix
 	GetDomainMetadata() SRv6DomainMetadata
+
+	SetDownNodes(fresh map[NodeID]bool, ready map[NodeID]bool) []NodeID
 }

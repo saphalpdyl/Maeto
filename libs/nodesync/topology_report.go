@@ -13,6 +13,7 @@ type TopologyReport struct {
 	Adjacencies []AdjacencyReport `json:"adjacencies"`
 	// Separate from Adjacencies: a down link loses its adjacency and End.X.
 	Links map[string]LinkState `json:"links,omitempty"`
+	Ready bool                 `json:"ready"`
 }
 
 type LinkState string
