@@ -139,13 +139,15 @@ func isLinkNotFound(err error) bool {
 }
 
 // RemovePrefixRoute deletes prefix from tableID. Protocol is a match key for
-// RTM_DELROUTE, so this can only ever remove a route maeto installed.
-func (l *LinuxNetlink) RemovePrefixRoute(prefix netip.Prefix, tableID int) error {
+// RTM_DELROUTE, so this can only ever remove a route maeto installed. The
+// metric is one too, so a backup at another metric for the same prefix stays.
+func (l *LinuxNetlink) RemovePrefixRoute(prefix netip.Prefix, tableID int, metric int) error {
 	err := netlink.RouteDel(&netlink.Route{
 		Dst:      prefixToIPNet(prefix),
 		Table:    tableID,
 		Family:   netlink.FAMILY_V6,
 		Protocol: MaetoRouteProto,
+		Priority: routeMetric(metric),
 	})
 	if err != nil {
 		if errors.Is(err, unix.ESRCH) {
@@ -195,6 +197,7 @@ func (l *LinuxNetlink) GetPrefixRoutes() ([]DataplaneRoute, error) {
 			MTU:        r.MTU,
 			Rtt:        r.Rtt,
 			AdvMSS:     r.AdvMSS,
+			Metric:     r.Priority,
 		}
 
 		// Via is nil on an ordinary route, and only *netlink.Via carries an address
@@ -540,7 +543,7 @@ func (l *LinuxNetlink) GetLinksByType(ifaceType string) ([]DataplaneLink, error)
 // the gateway is not on-link for is rejected outright. An invalid via makes it
 // a device route out tunnelIface, which is what a NOARP xfrm interface needs.
 // tableID unix.RT_TABLE_MAIN (or 0) is the main table, the cpe case.
-func (l *LinuxNetlink) InsertPrefixRoute(tunnelIface string, tableID int, prefix netip.Prefix, via netip.Addr, allowLeak bool) error {
+func (l *LinuxNetlink) InsertPrefixRoute(tunnelIface string, tableID int, prefix netip.Prefix, via netip.Addr, metric int, allowLeak bool) error {
 	route := &netlink.Route{
 		Table:    tableID,
 		Family:   netlink.FAMILY_V6,
@@ -572,6 +575,10 @@ func (l *LinuxNetlink) InsertPrefixRoute(tunnelIface string, tableID int, prefix
 		}
 
 		route.LinkIndex = iface.Attrs().Index
+	}
+
+	if metric > 0 {
+		route.Priority = metric
 	}
 
 	if err := netlink.RouteReplace(route); err != nil {
@@ -933,6 +940,7 @@ func (l *LinuxNetlink) GetSRRoutes() ([]DataplaneSRRoute, error) {
 				Table:     r.Table,
 				Color:     0,
 				Segments:  netipSegments,
+				Metric:    r.Priority,
 			}
 
 			srRoutes = append(srRoutes, srRoute)
@@ -942,7 +950,7 @@ func (l *LinuxNetlink) GetSRRoutes() ([]DataplaneSRRoute, error) {
 	return srRoutes, nil
 }
 
-func (l *LinuxNetlink) InsertSRRouteForPrefix(prefix netip.Prefix, tableID int, segs []netip.Addr) error {
+func (l *LinuxNetlink) InsertSRRouteForPrefix(prefix netip.Prefix, tableID int, segs []netip.Addr, metric int) error {
 	if len(segs) == 0 {
 		return fmt.Errorf("insert srv6 encap route %s: no segments given", prefix)
 	}
@@ -972,6 +980,10 @@ func (l *LinuxNetlink) InsertSRRouteForPrefix(prefix netip.Prefix, tableID int, 
 		Encap:     encap,
 	}
 
+	if metric > 0 {
+		route.Priority = metric
+	}
+
 	if err := netlink.RouteReplace(route); err != nil {
 		return fmt.Errorf("insert srv6 encap route %s (segs %v, dev %s, table %d): %w",
 			prefix, segs, SRDummyInterface, tableID, err)
@@ -980,12 +992,13 @@ func (l *LinuxNetlink) InsertSRRouteForPrefix(prefix netip.Prefix, tableID int, 
 	return nil
 }
 
-func (l *LinuxNetlink) RemoveSRRouteForPrefix(prefix netip.Prefix, tableID int) error {
+func (l *LinuxNetlink) RemoveSRRouteForPrefix(prefix netip.Prefix, tableID int, metric int) error {
 	err := netlink.RouteDel(&netlink.Route{
 		Dst:      prefixToIPNet(prefix),
 		Table:    tableID,
 		Family:   netlink.FAMILY_V6,
 		Protocol: MaetoSIDSegsProto,
+		Priority: routeMetric(metric),
 	})
 	if err != nil {
 		if errors.Is(err, unix.ESRCH) {

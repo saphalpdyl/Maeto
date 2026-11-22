@@ -75,33 +75,40 @@ func (c *Controller) buildAndStageLFARepairSegments(ctx context.Context, repairL
 
 			var segments []netip.Addr
 
-			if r.IsPLRProtector {
-				// PE can process its own End.M SID after it encaps because its forwarded
-				// It's only for locally-generated packets that the PE
-				// can't process immediately at the headend
-				segments = []netip.Addr{protector.MirrorLocator.Addr()}
-			} else {
-				var err error
-				segments, err = lfaRepairSegments(repairList.Graph, &r.Path)
-				if err != nil {
-					c.logger.ErrorContext(ctx, "failed to build repair list segments", log.Err(err))
-					continue
-				}
-
-				segments = append(segments, protector.MirrorLocator.Addr())
-				slices.Reverse(segments)
+			var err error
+			segments, err = lfaRepairSegments(repairList.Graph, &r.Path)
+			if err != nil {
+				c.logger.ErrorContext(ctx, "failed to build repair list segments", log.Err(err))
+				continue
 			}
 
+			segments = append(segments, mirrorSIDFromPrefix(protector.MirrorLocator))
+			slices.Reverse(segments)
+
 			intentsForNode = append(intentsForNode, nodesync.LFARepairIntent{
-				Protector:      string(r.Protector),
-				Protecting:     string(r.Protecting),
-				Triggers:       triggers,
-				Segments:       segments,
-				IsPLRProtector: r.IsPLRProtector,
+				Protector:  string(r.Protector),
+				Protecting: string(r.Protecting),
+				Triggers:   triggers,
+				Segments:   segments,
 			})
 		}
 
 		c.serviceRegistry.StageRepairIntentForPE(tx, nodeID, intentsForNode)
+	}
+}
+
+func (c *Controller) buildAndStageStandbyActivation(ctx context.Context, topo *Graph, tx *RegistryTx) {
+	topo = topo.Clone()
+
+	for _, node := range topo.nodes {
+		if len(node.ProtectorOf) == 0 {
+			continue
+		}
+
+		c.serviceRegistry.StageStandbyActivation(ctx, tx, node.ID, func(primary NodeID) bool {
+			effective, ok := topo.EffectivePE(primary)
+			return ok && effective == node.ID
+		})
 	}
 }
 
@@ -124,7 +131,7 @@ func lfaRepairSegments(graph *PCEGraph, path *Path) ([]netip.Addr, error) {
 			continue
 		}
 
-		segments = append(segments, node.Locator.Addr())
+		segments = append(segments, mirrorSIDFromPrefix(node.Locator))
 	}
 
 	return segments, nil
@@ -138,4 +145,15 @@ func lfaRepairEndXOf(graph *PCEGraph, id PCEEdgeID) (netip.Addr, bool) {
 
 	endX := edge.RealEdges[0].EndX
 	return endX, endX.IsValid()
+}
+
+func mirrorSIDFromPrefix(prefix netip.Prefix) netip.Addr {
+	b := prefix.Addr().As16()
+
+	// mirror SID needs to be something other than ::1 or ::0 of the locator
+	// Subnet-Router Anycast address is the interface's prefix with the host bits 0
+	// i.e fc00:f:5::. Mirror SID did not work because Linux matched the anycast address
+	// first before the End.M (End.DT6)
+	b[7] = 1 // Makes fc00:f:5:: -> fc00:f:5:1::
+	return netip.AddrFrom16(b)
 }

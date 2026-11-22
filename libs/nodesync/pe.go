@@ -26,6 +26,9 @@ type PE_PortalIntent struct {
 
 	// Contains the replicated information of the tenant on the protected PE
 	ProtectedInfo ProtectedInfo `json:"protected_info"`
+
+	// StandbyActive==true copies standby table routes into the main VRF during failover
+	StandbyActive bool `json:"standby_active"`
 }
 
 type ProtectedInfo struct {
@@ -82,6 +85,15 @@ type TenantIntent struct {
 	// SID paths to install for a given prefix
 	// For example: fd7a:db8:beef::/64 -> fc00:0:1::, fc00:0:2::, fc00:0:3::, fc00:0:d46:2183:2341 (End.DT46 SID)
 	InstallPaths []PESIDInstallIntent `json:"install_paths"`
+
+	// Stores the egress sites prefix/decap SID pair
+	// The reconciler creates low priority SR routes meant for PE as the protector
+	EgressSites []EgressSiteIntent `json:"egress_sites"`
+}
+
+type EgressSiteIntent struct {
+	Prefix  netip.Prefix `json:"prefix"`
+	DT46SID netip.Addr   `json:"dt46_sid"`
 }
 
 type PESIDInstallIntent struct {
@@ -107,11 +119,13 @@ type LFATrigger struct {
 }
 
 type LFARepairIntent struct {
-	Protector      string       `json:"protector"`  // Where the list routes towards
-	Protecting     string       `json:"protecting"` // For whom this node is the PLR for
-	Triggers       []LFATrigger `json:"triggers"`   // What triggers the override
-	Segments       []netip.Addr `json:"segments"`
-	IsPLRProtector bool         `json:"is_plr_protector"`
+	Protector  string       `json:"protector"`  // Where the list routes towards
+	Protecting string       `json:"protecting"` // For whom this node is the PLR for
+	Triggers   []LFATrigger `json:"triggers"`   // What triggers the override
+	Segments   []netip.Addr `json:"segments"`
+
+	// Deprecated: PLR can never be a protector with the new topology
+	IsPLRProtector bool `json:"is_plr_protector"`
 }
 
 func (*PEIntent) isIntent() {}
@@ -147,6 +161,7 @@ func (i *PEIntent) Clone() Intent {
 		copied := &TenantIntent{
 			DT46SID:       tenant.DT46SID,
 			PortalIntents: make(map[string]PE_PortalIntent, len(tenant.PortalIntents)),
+			EgressSites:   slices.Clone(tenant.EgressSites),
 		}
 
 		// PE_PortalIntent is all value types
@@ -164,6 +179,7 @@ func (i *PEIntent) Clone() Intent {
 				ReservedBandwidth:   copiedReservedBandwidth,
 				Role:                portalIntent.Role,
 				ProtectedInfo:       portalIntent.ProtectedInfo,
+				StandbyActive:       portalIntent.StandbyActive,
 			}
 		}
 

@@ -132,12 +132,12 @@ func (t *TestDefaultRouteOnlyDataplane) GetSRRouteForPrefix() ([]dataplane.Datap
 }
 
 // InsertSRRouteForPrefix implements [dataplane.Dataplane].
-func (t *TestDefaultRouteOnlyDataplane) InsertSRRouteForPrefix(prefix netip.Prefix, tabelID int, segments []netip.Addr) error {
+func (t *TestDefaultRouteOnlyDataplane) InsertSRRouteForPrefix(prefix netip.Prefix, tableID int, segments []netip.Addr, metric int) error {
 	panic("unimplemented")
 }
 
 // RemoveSRRouteForPrefix implements [dataplane.Dataplane].
-func (t *TestDefaultRouteOnlyDataplane) RemoveSRRouteForPrefix(prefix netip.Prefix, tableID int) error {
+func (t *TestDefaultRouteOnlyDataplane) RemoveSRRouteForPrefix(prefix netip.Prefix, tableID int, metric int) error {
 	panic("unimplemented")
 }
 
@@ -168,7 +168,7 @@ func (t *TestDefaultRouteOnlyDataplane) GetPrefixRoutes() ([]dataplane.Dataplane
 	panic("unimplemented")
 }
 
-func (t *TestDefaultRouteOnlyDataplane) InsertPrefixRoute(tunnelIface string, tableID int, prefix netip.Prefix, via netip.Addr, allowLeak bool) error {
+func (t *TestDefaultRouteOnlyDataplane) InsertPrefixRoute(tunnelIface string, tableID int, prefix netip.Prefix, via netip.Addr, metric int, allowLeak bool) error {
 	panic("unimplemented")
 }
 
@@ -176,7 +176,7 @@ func (t *TestDefaultRouteOnlyDataplane) InsertXFRMInterface(interfaceName string
 	panic("unimplemented")
 }
 
-func (t *TestDefaultRouteOnlyDataplane) RemovePrefixRoute(prefix netip.Prefix, tableID int) error {
+func (t *TestDefaultRouteOnlyDataplane) RemovePrefixRoute(prefix netip.Prefix, tableID int, metric int) error {
 	panic("unimplemented")
 }
 

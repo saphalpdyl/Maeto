@@ -3,6 +3,7 @@ package failover
 import (
 	"context"
 	"log/slog"
+	"slices"
 	"sync"
 
 	"github.com/saphalpdyl/maeto/libs/failover/log"
@@ -24,6 +25,10 @@ type FailoverLatch struct {
 	activateRepairFunc func(string) error
 	resetRepairFunc    func(string) error
 
+	// without this, the latch activates on CPE start when bfdd is coming up
+	// the latch should only activate on up -> down transition
+	seenUp map[string]bool
+
 	ready bool
 }
 
@@ -42,12 +47,19 @@ func NewFailoverLatch(
 		grouping:           make(map[string][]string),
 		wasDown:            make(map[string]bool),
 		ready:              false,
+		seenUp:             make(map[string]bool),
 	}
 }
 
 func (f *FailoverLatch) SetGrouping(grouping map[string][]string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+
+	for egress, ifaces := range grouping {
+		if !slices.Equal(f.grouping[egress], ifaces) {
+			delete(f.seenUp, egress)
+		}
+	}
 
 	f.grouping = grouping
 }
@@ -77,9 +89,13 @@ func (f *FailoverLatch) evaluate(ctx context.Context, linkStates map[string]node
 	f.linkStates = linkStates
 
 	for egress, ifaces := range f.grouping {
+		if groupUp(ifaces, linkStates) {
+			f.seenUp[egress] = true
+		}
+
 		down := groupDown(linkStates, ifaces)
 
-		if f.ready && down && !f.wasDown[egress] {
+		if f.ready && down && !f.wasDown[egress] && f.seenUp[egress] {
 			f.logger.InfoContext(ctx, "egress down, activating repair", slog.String("egress", egress))
 			if err := f.activateRepairFunc(egress); err != nil {
 				f.logger.ErrorContext(ctx, "failed to activate repair", slog.String("egress", egress), log.Err(err))
@@ -88,6 +104,16 @@ func (f *FailoverLatch) evaluate(ctx context.Context, linkStates map[string]node
 
 		f.wasDown[egress] = down
 	}
+}
+
+func groupUp(ifaces []string, linkStates map[string]nodesync.LinkState) bool {
+	for _, iface := range ifaces {
+		if linkStates[iface] != nodesync.LinkStateUp {
+			return false
+		}
+	}
+
+	return len(ifaces) > 0
 }
 
 func (f *FailoverLatch) Reset(ctx context.Context, egress string) error {

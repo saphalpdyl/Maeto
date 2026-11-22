@@ -9,6 +9,8 @@ defmodule MaetoPane.Pane.Fib do
   import Bitwise
 
   @main_table 254
+  # what the kernel gives an ipv6 route installed without a metric
+  @default_metric 1024
   @plr_table 950
   @vrf_table_bits 24
   @vrf_table_mask (1 <<< @vrf_table_bits) - 1
@@ -87,15 +89,18 @@ defmodule MaetoPane.Pane.Fib do
     }
   end
 
-  # the reconciler stores segment lists tail-first, as netlink takes them
+  # the reconciler stores segment lists tail-first, as netlink takes them. A
+  # route above the default metric is a best-effort backup under a te path
   defp sr_route(spec, name) do
     segments = spec["Segments"] |> List.wrap() |> Enum.reverse() |> Enum.join(" → ")
+    metric = spec["Metric"]
+    backup? = is_integer(metric) and metric > @default_metric
 
     %{
       table: name.(spec["Table"]),
       match: spec["Prefix"],
-      action: "encap [#{segments}]",
-      kind: "srv6"
+      action: "encap [#{segments}]" <> if(backup?, do: " metric #{metric}", else: ""),
+      kind: if(backup?, do: "backup", else: "srv6")
     }
   end
 

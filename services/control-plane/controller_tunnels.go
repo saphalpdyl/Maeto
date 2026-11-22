@@ -334,8 +334,50 @@ func (c *Controller) handlePETunnelUpdate(ctx context.Context, data []byte) erro
 		ProtectedInfo:       protectedInfo,
 	}
 
+	// Backup SR Routes
+	allSitesOfTenant := c.tenants.SitesByTenantID(site.TenantID)
+	egressSites := make([]nodesync.EgressSiteIntent, 0)
+	for _, s := range allSitesOfTenant {
+		// Don't add backup routes for sites belonging to the PE
+		// This does not include backup sites
+		if s.AttachNodeID == string(node.ID) {
+			continue
+		}
+
+		attachNode, exists := c.topology.GetNodeByID(NodeID(s.AttachNodeID))
+		if !exists {
+			c.logger.WarnContext(
+				ctx,
+				"failed to find attach node in topology when calculating backup routes",
+				"attach_node",
+				s.AttachNodeID,
+				"portal_id",
+				s.PortalID,
+			)
+			continue
+		}
+
+		dt46, err := c.serviceRegistry.GetOrGenerateSID(
+			ctx,
+			attachNode.Locator,
+			fmt.Sprintf("%d", s.TenantID),
+			dataplane.EncapTypeDT46,
+		)
+		if err != nil {
+			c.logger.ErrorContext(ctx, "failed to get or generate SID for tenant during replication", log.Err(err))
+			continue
+		}
+
+		egressSites = append(egressSites, nodesync.EgressSiteIntent{
+			Prefix:  s.Prefix,
+			DT46SID: dt46,
+		})
+	}
+
 	tx := c.serviceRegistry.BeginTx()
 	c.serviceRegistry.StagePortalIntentForNode(ctx, tx, node.ID, fmt.Sprintf("%d", tenant.ID), req.PortalID, portalIntent, topologyNode.Locator)
+	c.serviceRegistry.StageEgressBackupSRRoutes(ctx, tx, node.ID, fmt.Sprintf("%d", tenant.ID), topologyNode.Locator, egressSites)
+	c.buildAndStageStandbyActivation(ctx, c.topology.graph, tx)
 
 	err := tx.Commit(ctx)
 	if err != nil {

@@ -14,6 +14,18 @@ const (
 	CPESiteRulePriority     = 98
 )
 
+// The kernel installs an ipv6 route given no metric at 1024 and reports it
+// back as 1024, so desired 0 and observed 1024 are the same route
+const DefaultRouteMetric = 1024
+
+func routeMetric(metric int) int {
+	if metric <= 0 {
+		return DefaultRouteMetric
+	}
+
+	return metric
+}
+
 // Ideompotently replaced. no need for delete+create
 type Route struct {
 	Table     int          `rc:"id"`
@@ -27,7 +39,7 @@ type Route struct {
 func (r *Route) ID() ID {
 	return ID{
 		Kind: KindRoute,
-		Key:  fmt.Sprintf("%s:%d.%s.%s", KindRoute, r.Table, r.Dst.String(), r.Dev),
+		Key:  fmt.Sprintf("%s:%d.%s.%s.%d", KindRoute, r.Table, r.Dst.String(), r.Dev, routeMetric(r.Metric)),
 	}
 }
 
@@ -38,7 +50,7 @@ func (r *Route) CompareTo(actual Resource) Action {
 		return ActionCreate
 	}
 	if a, ok := actual.(*Route); ok {
-		if r.Table != a.Table || r.Dst != a.Dst || r.Dev != a.Dev || r.Via != a.Via || r.Metric != a.Metric {
+		if r.Table != a.Table || r.Dst != a.Dst || r.Dev != a.Dev || r.Via != a.Via || routeMetric(r.Metric) != routeMetric(a.Metric) {
 			return ActionReplace
 		}
 		return ActionNone

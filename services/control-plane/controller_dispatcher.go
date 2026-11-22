@@ -30,6 +30,7 @@ func (c *Controller) startPCEUpdatesDispatcher(ctx context.Context) {
 			// intents staged inside the method
 			c.buildAndStageSegments(ctx, remoteRoutesByNode, tx)
 			c.buildAndStageLFARepairSegments(ctx, update.RepairList, tx)
+			c.buildAndStageStandbyActivation(ctx, c.topology.graph, tx)
 
 			err := tx.Commit(ctx)
 			if err != nil {

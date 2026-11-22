@@ -329,6 +329,18 @@ func (r *Reconciler) RenderPEIntent(
 			if portalIntent.Role != nodesync.PERolePrimary {
 				routeTableID = int(standbyVRFTableID)
 				allowLeak = true
+
+				// StandbyActive==true when controller acknowledges PE down and CE switchover
+				if portalIntent.StandbyActive {
+					route := &Route{
+						Table: int(tableID),
+						Dst:   portalIntent.SitePrefix,
+						Dev:   xfrmName,
+						Via:   netip.Addr{},
+					}
+
+					resources[route.ID().Key] = route
+				}
 			}
 
 			route := &Route{
@@ -406,6 +418,18 @@ func (r *Reconciler) RenderPEIntent(
 			resources[rule.ID().Key] = rule
 		}
 
+		// Backup SR routes
+		// Low priority SR routes with encap[<DT46>] to allow for egress of protected sites
+		for _, e := range t.EgressSites {
+			srRoute := &SRRoute{
+				Prefix:   e.Prefix,
+				Segments: []netip.Addr{e.DT46SID},
+				Table:    int(tableID),
+				Metric:   2048,
+			}
+
+			resources[srRoute.ID().Key] = srRoute
+		}
 	}
 
 	return resources, nil
@@ -517,7 +541,7 @@ func (r *Reconciler) RenderFIB(
 			Dst:    netip.PrefixFrom(ip, ones),
 			Dev:    r.Dev,
 			Via:    viaip,
-			Metric: 0,
+			Metric: r.Metric,
 		}
 
 		resources[route.ID().Key] = route
@@ -562,6 +586,7 @@ func (r *Reconciler) RenderFIB(
 			Segments: r.Segments,
 			Color:    uint64(r.Color),
 			Table:    r.Table,
+			Metric:   r.Metric,
 		}
 
 		resources[srRoute.ID().Key] = srRoute

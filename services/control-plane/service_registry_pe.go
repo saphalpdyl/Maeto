@@ -78,6 +78,25 @@ func (r *ServiceRegistry) StageSIDSegsForTenantOnNode(
 	})
 }
 
+func (r *ServiceRegistry) StageEgressBackupSRRoutes(
+	ctx context.Context,
+	tx *RegistryTx,
+	nodeID NodeID,
+	tenantID string,
+	locatorPrefix netip.Prefix,
+	egressSites []nodesync.EgressSiteIntent,
+) {
+	tx.MutatePE(nodeID, func(intent *nodesync.PEIntent) error {
+		tenantIntent, err := r.getOrCreateTenantIntentForPE(ctx, tenantID, locatorPrefix, intent)
+		if err != nil {
+			return fmt.Errorf("failed to get or create tenant intent for pe %s: %w", nodeID, err)
+		}
+
+		tenantIntent.EgressSites = egressSites
+		return nil
+	})
+}
+
 func (r *ServiceRegistry) StagePortalIntentForNode(ctx context.Context, tx *RegistryTx, nodeID NodeID, tenantID string, portalID string, portal *nodesync.PE_PortalIntent, locatorPrefix netip.Prefix) {
 	tx.MutatePE(nodeID, func(intent *nodesync.PEIntent) error {
 		tenantIntent, err := r.getOrCreateTenantIntentForPE(ctx, tenantID, locatorPrefix, intent)
@@ -86,6 +105,22 @@ func (r *ServiceRegistry) StagePortalIntentForNode(ctx context.Context, tx *Regi
 		}
 
 		tenantIntent.PortalIntents[portalID] = *portal
+		return nil
+	})
+}
+
+func (r *ServiceRegistry) StageStandbyActivation(ctx context.Context, tx *RegistryTx, nodeID NodeID, isActive func(primary NodeID) bool) {
+	tx.MutatePE(nodeID, func(intent *nodesync.PEIntent) error {
+		for _, tenant := range intent.Tenants {
+			for portalID, portal := range tenant.PortalIntents {
+				if portal.Role != nodesync.PERoleStandby {
+					continue
+				}
+
+				portal.StandbyActive = isActive(NodeID(portal.ProtectedInfo.PrimaryNodeID))
+				tenant.PortalIntents[portalID] = portal
+			}
+		}
 		return nil
 	})
 }

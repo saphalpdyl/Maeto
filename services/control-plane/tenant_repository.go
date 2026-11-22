@@ -74,6 +74,7 @@ type TenantRepository interface {
 	SiteByIdentity(identity string) (*Site, bool)
 	SiteByPortalID(portalID string) (*Site, bool)
 	SitesByPop(pop string) []*Site
+	SitesByTenantID(id TenantID) []*Site
 }
 
 type rawTenantDB struct {
@@ -335,6 +336,21 @@ func (r *JSONTenantRepository) SitesByPop(pop string) []*Site {
 	sites := r.byPop[pop]
 	out := make([]*Site, len(sites))
 	copy(out, sites)
+
+	return out
+}
+
+func (r *JSONTenantRepository) SitesByTenantID(id TenantID) []*Site {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	tenant, ok := r.byID[id]
+	if !ok {
+		return nil
+	}
+
+	out := make([]*Site, len(tenant.Sites))
+	copy(out, tenant.Sites)
 
 	return out
 }

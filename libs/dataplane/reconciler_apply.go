@@ -25,7 +25,7 @@ func (r *Reconciler) Apply(ctx context.Context, diff DiffResult) error {
 
 			switch res := resource.(type) {
 			case *Route:
-				if err := r.dp.RemovePrefixRoute(res.Dst, res.Table); err != nil {
+				if err := r.dp.RemovePrefixRoute(res.Dst, res.Table, res.Metric); err != nil {
 					r.logger.ErrorContext(ctx, "failed to remove route", log.Err(err))
 					break
 				}
@@ -53,7 +53,7 @@ func (r *Reconciler) Apply(ctx context.Context, diff DiffResult) error {
 					break
 				}
 			case *SRRoute:
-				if err := r.dp.RemoveSRRouteForPrefix(res.Prefix, res.Table); err != nil {
+				if err := r.dp.RemoveSRRouteForPrefix(res.Prefix, res.Table, res.Metric); err != nil {
 					r.logger.ErrorContext(ctx, "failed to remove SR Route", log.Err(err))
 					break
 				}
@@ -108,12 +108,12 @@ func (r *Reconciler) Apply(ctx context.Context, diff DiffResult) error {
 				}
 
 			case *Route:
-				if err := r.dp.InsertPrefixRoute(res.Dev, res.Table, res.Dst, res.Via, res.AllowLeak); err != nil {
+				if err := r.dp.InsertPrefixRoute(res.Dev, res.Table, res.Dst, res.Via, res.Metric, res.AllowLeak); err != nil {
 					r.logger.ErrorContext(ctx, "failed to insert Route", log.Err(err))
 				}
 
 			case *SRRoute:
-				if err := r.dp.InsertSRRouteForPrefix(res.Prefix, res.Table, res.Segments); err != nil {
+				if err := r.dp.InsertSRRouteForPrefix(res.Prefix, res.Table, res.Segments, res.Metric); err != nil {
 					r.logger.ErrorContext(ctx, "failed to insert SR Route", log.Err(err))
 				}
 

@@ -31,6 +31,7 @@ type DataplaneRoute struct {
 	MTU        int
 	Rtt        int
 	AdvMSS     int
+	Metric     int
 }
 
 type DataplaneSRRoute struct {
@@ -40,6 +41,7 @@ type DataplaneSRRoute struct {
 	Table     int
 	Color     int
 	Segments  []netip.Addr
+	Metric    int
 }
 
 type Seg6LocalType string
@@ -186,13 +188,13 @@ type Dataplane interface {
 	GetRules() ([]DataplaneRule, error)
 
 	// TODO: Rename tunnelIface to just dev
-	InsertPrefixRoute(tunnelIface string, tableID int, prefix netip.Prefix, via netip.Addr, allowLeak bool) error
-	RemovePrefixRoute(prefix netip.Prefix, tableID int) error
+	InsertPrefixRoute(tunnelIface string, tableID int, prefix netip.Prefix, via netip.Addr, metric int, allowLeak bool) error
+	RemovePrefixRoute(prefix netip.Prefix, tableID int, metric int) error
 	GetPrefixRoutes() ([]DataplaneRoute, error)
 
-	InsertSRRouteForPrefix(prefix netip.Prefix, tableID int, segments []netip.Addr) error
+	InsertSRRouteForPrefix(prefix netip.Prefix, tableID int, segments []netip.Addr, metric int) error
 	GetSRRoutes() ([]DataplaneSRRoute, error)
-	RemoveSRRouteForPrefix(prefix netip.Prefix, tableID int) error
+	RemoveSRRouteForPrefix(prefix netip.Prefix, tableID int, metric int) error
 
 	UpsertPolicy(nhid, dtsid, vrfTableId, vrfTableName string, sids []string) error
 	UpsertRouteToPolicy(dest, vrfTableId, nhid string) error

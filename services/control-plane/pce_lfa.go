@@ -13,9 +13,11 @@ type LFARepairList struct {
 }
 
 type LFARepairListItem struct {
-	Protector      NodeID // Where the list routes towards
-	Protecting     NodeID // For whom this node is the PLR for
-	Path           Path
+	Protector  NodeID // Where the list routes towards
+	Protecting NodeID // For whom this node is the PLR for
+	Path       Path
+
+	// Deprecated: PLR can never be a protector
 	IsPLRProtector bool
 }
 
@@ -47,21 +49,6 @@ func (p *PCE) computeTILFASegments(ctx context.Context, topo *Graph, g *PCEGraph
 					repairListOfNode = make([]LFARepairListItem, 0)
 				}
 
-				if plr == protectorNode.ID {
-					// When the PLR is the protector node itself
-					// we don't need a segment list to route towards it because
-					// the packets are already in the protector
-					// Manage it differently
-					repairListOfNode = append(repairListOfNode, LFARepairListItem{
-						Protector:      protectorNode.ID,
-						Protecting:     protects,
-						Path:           Path{},
-						IsPLRProtector: true,
-					})
-					repairList.RepairList[plr] = repairListOfNode
-					continue
-				}
-
 				path, err := p.ComputePath(pruned, plr, protectorNode.ID, WeightByHop())
 				if err != nil {
 					p.logger.ErrorContext(ctx, "failed to compute repair path", "node_from", plr, "node_to", protectorNode.ID, "err", err)
@@ -69,10 +56,9 @@ func (p *PCE) computeTILFASegments(ctx context.Context, topo *Graph, g *PCEGraph
 				}
 
 				repairListOfNode = append(repairListOfNode, LFARepairListItem{
-					Protector:      protectorNode.ID,
-					Protecting:     protects,
-					Path:           *path,
-					IsPLRProtector: false,
+					Protector:  protectorNode.ID,
+					Protecting: protects,
+					Path:       *path,
 				})
 
 				repairList.RepairList[plr] = repairListOfNode

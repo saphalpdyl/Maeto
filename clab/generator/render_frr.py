@@ -82,8 +82,8 @@ def render_frr(pop_plan):
     lines += [
         "bfd",
         " profile maeto-cpe",
-        "  transmit-interval 300",
-        "  receive-interval 300",
+        "  transmit-interval 100",
+        "  receive-interval 100",
         "  detect-multiplier 3",
         " !",
         "!",
