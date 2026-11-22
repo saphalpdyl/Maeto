@@ -242,6 +242,48 @@ defmodule MaetoPaneWeb.PopLive do
           </section>
         <% end %>
       </div>
+
+      <section :if={@node && @node.view} class="border-t border-line px-6 py-5">
+        <header class="mb-3 flex items-center gap-3">
+          <h2 class="text-[15px] font-medium">Forwarding tables</h2>
+        </header>
+
+        <p :if={@node.view.fib.tables == []} class="py-4 text-[13px] text-muted">
+          The agent has not reported its forwarding state yet
+        </p>
+
+        <div :for={table <- @node.view.fib.tables} class="mb-5">
+          <div class="mb-1.5 flex items-center gap-2">
+            <span class="font-mono text-[13px] font-medium">{table.name}</span>
+            <span class="font-mono text-xs text-faint">{length(table.rows)}</span>
+          </div>
+          <table class="w-full text-left text-xs">
+            <tbody>
+              <tr :for={row <- table.rows} class="border-b border-line last:border-0">
+                <td class="w-16 py-1.5 font-mono text-faint">{row.kind}</td>
+                <td class="w-72 py-1.5 font-mono">{row.match}</td>
+                <td class="py-1.5 font-mono text-muted">{row.action}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div :if={@node.view.fib.triggers != []} class="mb-2">
+          <div class="mb-1.5 flex items-center gap-2">
+            <span class="font-mono text-[13px] font-medium">armed triggers</span>
+          </div>
+          <table class="w-full text-left text-xs">
+            <tbody>
+              <tr :for={trigger <- @node.view.fib.triggers} class="border-b border-line last:border-0">
+                <td class="w-24 py-1.5 align-top font-mono">{trigger.egress}</td>
+                <td class="py-1.5 font-mono text-muted">
+                  <div :for={rule <- trigger.rules}>{rule}</div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
     </Layouts.app>
     """
   end

@@ -197,7 +197,8 @@ defmodule MaetoPane.Pane.Analysis do
       error: state && state["error"],
       reporting?: not is_nil(state),
       tenants: tenants,
-      sids: sids(tenants, state)
+      sids: sids(tenants, state),
+      fib: MaetoPane.Pane.Fib.build(state)
     }
   end
 
