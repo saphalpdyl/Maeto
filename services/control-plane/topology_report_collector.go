@@ -8,7 +8,9 @@ import (
 
 	"github.com/nats-io/nats.go/jetstream"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/saphalpdyl/maeto/libs/nodesync"
+	"github.com/saphalpdyl/maeto/libs/store"
 	"github.com/saphalpdyl/maeto/services/control-plane/log"
 )
 
@@ -28,6 +30,7 @@ type TopologyReportCollector struct {
 	js       jetstream.JetStream
 	logger   *slog.Logger
 	topology *ClabTopologyManager
+	db       *store.DataStore
 
 	reportedAt map[NodeID]time.Time
 
@@ -42,11 +45,13 @@ func NewTopologyReportCollector(
 	logger *slog.Logger,
 	pceImmediateRecomputeChan chan struct{},
 	topology *ClabTopologyManager,
+	db *store.DataStore,
 ) *TopologyReportCollector {
 	return &TopologyReportCollector{
 		js:                        js,
 		logger:                    logger,
 		topology:                  topology,
+		db:                        db,
 		reportedAt:                make(map[NodeID]time.Time),
 		pceImmediateRecomputeChan: pceImmediateRecomputeChan,
 		ready:                     map[NodeID]bool{},
@@ -163,6 +168,8 @@ func (t *TopologyReportCollector) apply(ctx context.Context, report nodesync.Top
 		t.readySince[nodeID] = time.Now()
 	}
 
+	t.recordHeartbeat(ctx, nodeID, report.Ready)
+
 	readyFlipped := t.ready[nodeID] != report.Ready
 	t.ready[nodeID] = report.Ready
 
@@ -182,5 +189,20 @@ func (t *TopologyReportCollector) clearStale(ctx context.Context) {
 
 		t.topology.SetEndXSIDs(nodeID, nil)
 		delete(t.reportedAt, nodeID)
+	}
+}
+
+func (t *TopologyReportCollector) recordHeartbeat(ctx context.Context, nodeID NodeID, ready bool) {
+	if t.db == nil {
+		return
+	}
+
+	err := t.db.Queries.InsertNodeHeartbeat(ctx, store.InsertNodeHeartbeatParams{
+		Time:   pgtype.Timestamptz{Time: time.Now(), Valid: true},
+		NodeID: string(nodeID),
+		Ready:  ready,
+	})
+	if err != nil {
+		t.logger.ErrorContext(ctx, "failed to record node heartbeat", log.NodeID(string(nodeID)), log.Err(err))
 	}
 }

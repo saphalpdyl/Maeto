@@ -96,7 +96,10 @@ defmodule MaetoPaneWeb.Pane.Nav do
       %{
         label: "Fabric",
         icon: "hero-share",
-        items: [item(:links, "Links", "hero-link", count(facts, :links))]
+        items: [
+          item(:dashboard, "Dashboard", "hero-heart", nil),
+          item(:links, "Links", "hero-link", count(facts, :links))
+        ]
       },
       %{
         label: "Routing",

@@ -376,7 +376,7 @@ defmodule MaetoPane.Pane.Paths do
     state
     |> Map.get(field)
     |> List.wrap()
-    |> Enum.filter(&(&1["kind"] == "sr_route"))
+    |> Enum.filter(&(&1["kind"] == "sr_route" and te_route?(&1["spec"])))
     |> Map.new(fn %{"spec" => spec} ->
       table = spec["Table"]
       vrf_table = table &&& @vrf_table_mask
@@ -388,6 +388,14 @@ defmodule MaetoPane.Pane.Paths do
       {{tenant, spec["Prefix"], color},
        %{segments: Enum.reverse(spec["Segments"] || []), table: table}}
     end)
+  end
+
+  @plr_table 950
+  @default_metric 1024
+
+  defp te_route?(spec) do
+    metric = spec["Metric"] || 0
+    spec["Table"] != @plr_table and metric <= @default_metric
   end
 
   defp class_table(nil, _color), do: nil

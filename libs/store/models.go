@@ -44,6 +44,12 @@ type NodeGeneration struct {
 	Generation int64
 }
 
+type NodeHeartbeat struct {
+	Time   pgtype.Timestamptz
+	NodeID string
+	Ready  bool
+}
+
 type NodeReport struct {
 	Time       pgtype.Timestamptz
 	NodeID     string

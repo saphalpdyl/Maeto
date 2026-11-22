@@ -9,6 +9,7 @@ defmodule MaetoPaneWeb.Pane.Inspector.NodePanel do
 
   import MaetoPaneWeb.Pane.Tones
   import MaetoPaneWeb.Pane.UI
+  import MaetoPaneWeb.Pane.Heartbeats, only: [heartbeat_bar: 1, label: 1, tone_text: 1]
 
   attr :selected, :map, required: true
   attr :paths, :list, default: []
@@ -57,6 +58,15 @@ defmodule MaetoPaneWeb.Pane.Inspector.NodePanel do
             {state_label(@selected.status)}
           </span>
         </dd>
+      </div>
+      <div :if={@selected[:heartbeat]}>
+        <dt class="mb-1 flex items-center justify-between text-xs text-muted">
+          Heartbeat
+          <span class={["font-mono", tone_text(List.last(@selected.heartbeat))]}>
+            {label(List.last(@selected.heartbeat))}
+          </span>
+        </dt>
+        <dd><.heartbeat_bar bars={@selected.heartbeat} /></dd>
       </div>
       <div>
         <dt class="text-xs text-muted">Sites · tenants</dt>

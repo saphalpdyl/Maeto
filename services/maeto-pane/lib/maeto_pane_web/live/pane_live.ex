@@ -32,6 +32,7 @@ defmodule MaetoPaneWeb.PaneLive do
   import MaetoPaneWeb.Pane.RegistryPanel
   import MaetoPaneWeb.Pane.SitesTable
   import MaetoPaneWeb.Pane.Reconciliation
+  import MaetoPaneWeb.Pane.Heartbeats, only: [heartbeats: 1]
   import MaetoPaneWeb.Pane.SyncChart
   import MaetoPaneWeb.Pane.Topology
   import MaetoPaneWeb.Pane.UI
@@ -54,7 +55,7 @@ defmodule MaetoPaneWeb.PaneLive do
      |> assign(:expanded_links, MapSet.new())
      |> assign(:cost_class, 0)
      |> assign(:link_stats, nil)
-     |> assign(:section, :paths)
+     |> assign(:section, :dashboard)
      |> assign(:overlay, :health)
      |> assign(:overlays, @overlays)
      |> assign(:page_title, "Pane")
@@ -67,7 +68,7 @@ defmodule MaetoPaneWeb.PaneLive do
   def handle_params(params, _uri, socket) do
     socket =
       case params["section"] do
-        section when section in ~w(changes paths links computed sites registry) ->
+        section when section in ~w(dashboard changes paths links computed sites registry) ->
           assign(socket, :section, String.to_existing_atom(section))
 
         _other ->
@@ -191,6 +192,7 @@ defmodule MaetoPaneWeb.PaneLive do
     |> assign(:facts, facts(graph, links, sites, rows, computed, changes))
     |> then(&assign(&1, :nav, Nav.groups(&1.assigns.facts, graph.nodes)))
     |> assign(:programmed_pairs, MapSet.new(rows, &{&1.pe, &1.dest}))
+
     |> price_links()
     |> resolve()
   end
@@ -311,6 +313,10 @@ defmodule MaetoPaneWeb.PaneLive do
     }
   end
 
+  defp selected_node_id(%{kind: :node, id: id}), do: id
+  defp selected_node_id(_selected), do: nil
+
+  defp section_title(:dashboard), do: "Node heartbeats"
   defp section_title(:changes), do: "Path changes"
   defp section_title(:paths), do: "Segment lists"
   defp section_title(:computed), do: "Computed paths"
@@ -324,6 +330,7 @@ defmodule MaetoPaneWeb.PaneLive do
   defp section_meta(:sites, facts), do: "#{facts.sites} registered"
   defp section_meta(:changes, facts), do: "#{facts.changes} events"
   defp section_meta(:registry, _facts), do: nil
+  defp section_meta(:dashboard, _facts), do: nil
 
   defp section_caption(section, _facts, _registry) when section != :registry, do: nil
 
@@ -440,6 +447,10 @@ defmodule MaetoPaneWeb.PaneLive do
               "max-h-[max(16rem,calc(100dvh-40rem))] overflow-y-auto"
           ]}>
             <%= case @section do %>
+              <% :dashboard -> %>
+                <div class="px-4 py-4">
+                  <.heartbeats nodes={@graph.nodes} selected={selected_node_id(@selected)} />
+                </div>
               <% :changes -> %>
                 <.changes_table changes={@changes} selection={@selection} />
               <% :paths -> %>

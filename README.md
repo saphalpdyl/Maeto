@@ -281,9 +281,11 @@ Done/In-progress:
 - Passive telemetry collection
 - Loss and jitter are NOT seeded values anymore. 
 - Provider Edge rate limiting (policing)
+- BFD-based link-down interface-up events
+- Dual-homing and sub-100ms FRR inside the core and failure recovery
 
 Not yet:
-- BFD-based link-down interface-up events + Netlink-based link-down interface-down events
+- Netlink-based link-down interface-down events
 - BGP-LS defined topology instead of statically generated topology
 - Link and Node Utilization in Cost  Graph as logical links.
 - Flexible Bandwidth Reservation: CIR, PIR and best-effort traffic allocation
@@ -292,6 +294,8 @@ Not yet:
 - Flowlet switching for elephant flows w/ eBPF for flow detection and switching itself.
 
 ## Screenshots 
+<img src="docs/images/screenshots/maeto-dashboard.png" alt="Link View" width="100%">
+
 <img src="docs/images/screenshots/maeto-dashboard-showing-links.png" alt="Link View" width="100%">
 
 <img src="docs/images/screenshots/maeto-dashboard-showing-segments.png" alt="Screenshot of the Segment lists menu" width="100%">

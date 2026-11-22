@@ -6,7 +6,7 @@ CREATE TABLE control_state (
     booted_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-INSERT INTO control_state (id, schema_version) VALUES (1, 1);
+INSERT INTO control_state (id, schema_version) VALUES (1, 2);
 
 CREATE TABLE node_generations (
     node_type  TEXT   NOT NULL,

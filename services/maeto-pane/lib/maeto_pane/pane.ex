@@ -12,6 +12,7 @@ defmodule MaetoPane.Pane do
   @control_bucket "maeto-pane-control"
   @topic "pane"
   @retry_after 2_000
+  @heartbeat_keep_ms 25 * 60 * 1_000
 
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
 
@@ -23,8 +24,9 @@ defmodule MaetoPane.Pane do
   def init(_opts) do
     Process.flag(:trap_exit, true)
     send(self(), :watch)
+    send(self(), :seed_heartbeats)
 
-    {:ok, empty()}
+    {:ok, Map.put(empty(), :started_at, System.system_time(:millisecond))}
   end
 
   @impl true
@@ -33,7 +35,15 @@ defmodule MaetoPane.Pane do
   end
 
   defp empty do
-    %{intents: %{}, states: %{}, control: nil, connected: false, watchers: []}
+    %{
+      intents: %{},
+      states: %{},
+      heartbeats: %{},
+      started_at: System.system_time(:millisecond),
+      control: nil,
+      connected: false,
+      watchers: []
+    }
   end
 
   @impl true
@@ -47,6 +57,31 @@ defmodule MaetoPane.Pane do
         Process.send_after(self(), :watch, @retry_after)
 
         {:noreply, Map.merge(state, %{connected: false, watchers: []})}
+    end
+  end
+
+  def handle_info(:seed_heartbeats, state) do
+    now = System.system_time(:millisecond)
+    since = DateTime.add(DateTime.utc_now(), -@heartbeat_keep_ms, :millisecond)
+
+    case heartbeat_history(since) do
+      {:ok, rows} ->
+        seeded =
+          Enum.reduce(rows, state.heartbeats, fn [node_id, at, ready], acc ->
+            beat = {DateTime.to_unix(at, :millisecond), ready}
+            Map.update(acc, "pop.#{node_id}", [beat], &[beat | &1])
+          end)
+          |> Map.new(fn {key, beats} ->
+            {key, beats |> Enum.uniq() |> Enum.sort_by(&elem(&1, 0), :desc)}
+          end)
+
+        {:noreply, broadcast(%{state | heartbeats: seeded, started_at: now - @heartbeat_keep_ms})}
+
+      {:error, reason} ->
+        Logger.debug("heartbeat history unavailable, retrying: #{inspect(reason)}")
+        Process.send_after(self(), :seed_heartbeats, @retry_after)
+
+        {:noreply, state}
     end
   end
 
@@ -77,6 +112,24 @@ defmodule MaetoPane.Pane do
   def handle_info({:kv, :control, action, _key, _value}, state)
       when action in [:key_deleted, :key_purged] do
     {:noreply, broadcast(Map.put(state, :control, nil))}
+  end
+
+  def handle_info({:kv, :states, :key_added, key, value}, state)
+      when is_binary(key) and binary_part(key, byte_size(key) - 9, 9) == ".topology" do
+    with [prefix, id, "topology"] <- String.split(key, "."),
+         {:ok, decoded} <- Jason.decode(value) do
+      now = System.system_time(:millisecond)
+      beat = {now, decoded["ready"] == true}
+
+      heartbeats =
+        Map.update(state.heartbeats, "#{prefix}.#{id}", [beat], fn beats ->
+          [beat | Enum.take_while(beats, fn {at, _} -> now - at <= @heartbeat_keep_ms end)]
+        end)
+
+      {:noreply, broadcast(%{state | heartbeats: heartbeats})}
+    else
+      _ -> {:noreply, state}
+    end
   end
 
   def handle_info({:kv, bucket, :key_added, key, value}, state) do
@@ -158,6 +211,17 @@ defmodule MaetoPane.Pane do
   defp describe({{:badmatch, {:error, reason}}, _stack}), do: inspect(reason)
 
   defp describe(reason), do: inspect(reason)
+
+  defp heartbeat_history(since) do
+    sql = "SELECT node_id, time, ready FROM node_heartbeats WHERE time >= $1 ORDER BY time"
+
+    case Postgrex.query(MaetoPane.DB, sql, [since]) do
+      {:ok, result} -> {:ok, result.rows}
+      {:error, error} -> {:error, error}
+    end
+  catch
+    :exit, reason -> {:error, reason}
+  end
 
   defp broadcast(state) do
     Phoenix.PubSub.broadcast(MaetoPane.PubSub, @topic, :pane_updated)

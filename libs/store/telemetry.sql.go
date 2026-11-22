@@ -67,6 +67,23 @@ func (q *Queries) InsertLinkSample(ctx context.Context, arg InsertLinkSamplePara
 	return err
 }
 
+const insertNodeHeartbeat = `-- name: InsertNodeHeartbeat :exec
+INSERT INTO node_heartbeats (time, node_id, ready)
+VALUES ($1, $2, $3)
+ON CONFLICT (node_id, time) DO NOTHING
+`
+
+type InsertNodeHeartbeatParams struct {
+	Time   pgtype.Timestamptz
+	NodeID string
+	Ready  bool
+}
+
+func (q *Queries) InsertNodeHeartbeat(ctx context.Context, arg InsertNodeHeartbeatParams) error {
+	_, err := q.db.Exec(ctx, insertNodeHeartbeat, arg.Time, arg.NodeID, arg.Ready)
+	return err
+}
+
 const listIfaceCounters = `-- name: ListIfaceCounters :many
 SELECT time, node_id, iface, rx_bytes, tx_bytes, rx_packets, tx_packets, rx_dropped, tx_dropped
 FROM iface_counters

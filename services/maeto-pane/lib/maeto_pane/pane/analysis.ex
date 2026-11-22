@@ -24,7 +24,12 @@ defmodule MaetoPane.Pane.Analysis do
     links = group_links(raw_edges)
 
     %{
-      nodes: Enum.map(raw_nodes, &graph_node(&1, inventory, by_id, faults)),
+      nodes:
+        Enum.map(raw_nodes, fn raw ->
+          raw
+          |> graph_node(inventory, by_id, faults)
+          |> Map.put(:heartbeat, MaetoPane.Pane.Heartbeat.bars(snapshot, "pop.#{raw["id"]}"))
+        end),
       links: links,
       edges: Enum.flat_map(links, &members/1),
       pce_edges: get_in(control, ["topology", "pce_edges"]) || [],

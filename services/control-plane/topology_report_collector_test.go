@@ -62,7 +62,7 @@ func Test_SetEndXSIDsClearsInterfacesMissingFromTheReport(t *testing.T) {
 
 func Test_StaleTopologyReportClearsEndXSIDs(t *testing.T) {
 	topology := newEndXFixture()
-	collector := NewTopologyReportCollector(nil, slog.New(slog.DiscardHandler), make(chan struct{}), topology)
+	collector := NewTopologyReportCollector(nil, slog.New(slog.DiscardHandler), make(chan struct{}), topology, nil)
 
 	collector.apply(context.Background(), nodesync.TopologyReport{
 		NodeID:     "A",

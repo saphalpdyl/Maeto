@@ -36,3 +36,8 @@ FROM link_samples
 WHERE telemetry_key = $1
 ORDER BY time DESC
 LIMIT $2;
+
+-- name: InsertNodeHeartbeat :exec
+INSERT INTO node_heartbeats (time, node_id, ready)
+VALUES ($1, $2, $3)
+ON CONFLICT (node_id, time) DO NOTHING;

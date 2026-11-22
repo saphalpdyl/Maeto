@@ -26,3 +26,14 @@ CREATE TABLE link_samples (
 SELECT create_hypertable('link_samples', 'time');
 
 SELECT add_retention_policy('link_samples', INTERVAL '7 days');
+
+CREATE TABLE node_heartbeats (
+    time    TIMESTAMPTZ NOT NULL,
+    node_id TEXT        NOT NULL,
+    ready   BOOLEAN     NOT NULL,
+    PRIMARY KEY (node_id, time)
+);
+
+SELECT create_hypertable('node_heartbeats', 'time');
+
+SELECT add_retention_policy('node_heartbeats', INTERVAL '7 days');

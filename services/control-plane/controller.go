@@ -143,6 +143,7 @@ func NewController(
 			logger.With(log.Domain(log.DomainControlPlaneLifecycle)),
 			pceImmediateRecomputeChan,
 			topology,
+			db,
 		),
 		nodeReports: NewNodeReportRecorder(
 			js,

@@ -14,7 +14,7 @@ import (
 	"github.com/saphalpdyl/maeto/libs/store"
 )
 
-const SchemaVersion int32 = 1
+const SchemaVersion int32 = 2
 
 type BootMode string
 
