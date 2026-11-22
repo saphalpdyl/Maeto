@@ -156,7 +156,20 @@ func (c *Client) LoadConnection(
 	confName string,
 	certData []byte,
 	caCertData []byte,
+	reinitiate bool,
 ) error {
+	child := ChildConf{
+		Mode:        "tunnel",
+		LocalTS:     []string{"::/0"},
+		RemoteTS:    []string{"::/0"},
+		StartAction: "none",
+	}
+
+	if reinitiate {
+		child.DPDAction = "restart"
+		child.CloseAction = "start"
+	}
+
 	req := LoadConnRequest{
 		confName: ConnConf{
 			Version:     "2",
@@ -165,6 +178,7 @@ func (c *Client) LoadConnection(
 			IfIDIn:      "%unique",
 			IfIDOut:     "%unique",
 			KeyingTries: "0",
+			DPDDelay:    "10",
 			Local: AuthConf{
 				Auth:  "pubkey",
 				Certs: []string{string(certData)},
@@ -176,12 +190,7 @@ func (c *Client) LoadConnection(
 				ID:      remoteID,
 			},
 			Children: map[string]ChildConf{
-				childName: {
-					Mode:        "tunnel",
-					LocalTS:     []string{"::/0"},
-					RemoteTS:    []string{"::/0"},
-					StartAction: "none",
-				},
+				childName: child,
 			},
 		},
 	}

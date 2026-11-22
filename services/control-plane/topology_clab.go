@@ -383,6 +383,13 @@ func (c *ClabTopologyManager) SetEndXSIDs(node NodeID, sidsByIface map[string]ne
 	return changed
 }
 
+func (c *ClabTopologyManager) IsNodeDown(id NodeID) bool {
+	c.graph.mu.RLock()
+	defer c.graph.mu.RUnlock()
+
+	return c.graph.down[id]
+}
+
 func (c *ClabTopologyManager) SetDownNodes(fresh map[NodeID]bool, ready map[NodeID]bool) []NodeID {
 	c.graph.mu.Lock()
 	defer c.graph.mu.Unlock()

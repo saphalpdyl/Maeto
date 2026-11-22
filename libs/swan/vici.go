@@ -20,6 +20,7 @@ type ConnConf struct {
 	Children    map[string]ChildConf `vici:"children"`
 	IfIDIn      string               `vici:"if_id_in"`
 	IfIDOut     string               `vici:"if_id_out"`
+	DPDDelay    string               `vici:"dpd_delay"`
 }
 
 type AuthConf struct {
@@ -36,6 +37,8 @@ type ChildConf struct {
 	IfIDIn      string   `vici:"if_id_in,omitempty"`
 	IfIDOut     string   `vici:"if_id_out,omitempty"`
 	StartAction string   `vici:"start_action"`
+	DPDAction   string   `vici:"dpd_action,omitempty"`
+	CloseAction string   `vici:"close_action,omitempty"`
 }
 
 type LoadKeyRequest struct {

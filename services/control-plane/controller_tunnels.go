@@ -219,6 +219,7 @@ func (c *Controller) handleCPETunnelUpdate(ctx context.Context, data []byte) err
 		SitePrefix:   site.Prefix,
 		PortalID:     req.PortalID,
 		Tunnels:      tunnels,
+		DownNodes:    c.topology.Graph().DownNodes(),
 	}
 
 	err := c.serviceRegistry.UpsertCPEIntentForSite(

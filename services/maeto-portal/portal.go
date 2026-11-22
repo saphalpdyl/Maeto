@@ -181,8 +181,12 @@ func (p *Portal) Run(ctx context.Context) error {
 
 			return nil
 		},
-		func(s string) error {
-			p.logger.ErrorContext(ctx, fmt.Sprintf("FAILOVER RESET FOR EGRESS: %s ", s))
+		func(egress string) error {
+			if err := p.dp.ResetRepair(egress, false); err != nil {
+				return err
+			}
+
+			p.logger.InfoContext(ctx, "failover reset", slog.String("egress", egress))
 			return nil
 		},
 	)
@@ -211,6 +215,7 @@ func (p *Portal) Run(ctx context.Context) error {
 
 				fl.SetGrouping(grouping)
 				fl.MarkReady()
+				fl.Recover(ctx, cpeIntent.DownNodes)
 			}
 		}
 	}(failoverLatch)

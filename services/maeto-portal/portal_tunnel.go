@@ -36,6 +36,7 @@ func (p *Portal) loadConnection(
 		childID,
 		certData,
 		caCertData,
+		true,
 	)
 	if err != nil {
 		return err

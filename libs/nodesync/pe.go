@@ -54,6 +54,8 @@ type PEIntent struct {
 
 	LFARepairIntent []LFARepairIntent `json:"lfa_repair_list_intent"`
 	MirrorSID       netip.Addr        `json:"mirror_sid"`
+
+	DownNodes []string `json:"down_nodes"`
 }
 
 type PETrafficClassIntent struct {
@@ -199,6 +201,8 @@ func (i *PEIntent) Clone() Intent {
 		out.Peers = make(map[string]PeerIntent, len(i.Peers))
 		maps.Copy(out.Peers, i.Peers)
 	}
+
+	out.DownNodes = slices.Clone(i.DownNodes)
 
 	if i.TrafficClassIntent != nil {
 		out.TrafficClassIntent = make([]PETrafficClassIntent, len(i.TrafficClassIntent))

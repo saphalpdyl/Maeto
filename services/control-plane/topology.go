@@ -141,6 +141,21 @@ func (g *Graph) LostAllNeighbors(node NodeID, fresh map[NodeID]bool) bool {
 	return witnesses > 0
 }
 
+func (g *Graph) DownNodes() []string {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+
+	out := make([]string, 0, len(g.down))
+	for id, down := range g.down {
+		if down {
+			out = append(out, string(id))
+		}
+	}
+
+	slices.Sort(out)
+	return out
+}
+
 // EffectivePE returns the protector node IDs if the designated Node is down
 func (g *Graph) EffectivePE(node NodeID) (NodeID, bool) {
 	if !g.down[node] {

@@ -117,6 +117,7 @@ func (a *Agent) Run(ctx context.Context) {
 			dp:          a.dp,
 			logger:      a.logger.With(log.Domain(log.DomainControlPlane)),
 			linkUpdates: topologyReporterLinkUpdatesChan,
+			reconciler:  a.reconciler,
 		}
 		go topology.Run(ctx)
 
@@ -134,8 +135,12 @@ func (a *Agent) Run(ctx context.Context) {
 				a.logger.ErrorContext(ctx, "EGRESS FAILURE: REPAIRED SUCCESSFULLY")
 				return nil
 			},
-			func(s string) error {
-				a.logger.ErrorContext(ctx, fmt.Sprintf("FAILOVER RESET FOR EGRESS: %s ", s))
+			func(egress string) error {
+				if err := a.dp.ResetRepair(egress, false); err != nil {
+					return err
+				}
+
+				a.logger.InfoContext(ctx, "failover reset", slog.String("egress", egress))
 				return nil
 			},
 		)
@@ -148,7 +153,11 @@ func (a *Agent) Run(ctx context.Context) {
 				case <-ctx.Done():
 					return
 				case intent := <-failoverIntentFeed:
-					peIntent, _ := intent.Intent.(*nodesync.PEIntent)
+					peIntent, ok := intent.Intent.(*nodesync.PEIntent)
+					if !ok || peIntent == nil {
+						continue
+					}
+
 					grouping := make(map[string][]string)
 
 					for _, p := range peIntent.Peers {
@@ -162,6 +171,7 @@ func (a *Agent) Run(ctx context.Context) {
 
 					fl.SetGrouping(grouping)
 					fl.MarkReady()
+					fl.Recover(ctx, peIntent.DownNodes)
 				}
 			}
 		}(failoverLatch)

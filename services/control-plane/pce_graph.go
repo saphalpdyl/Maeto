@@ -139,6 +139,13 @@ func NewPCEGraph(g *Graph) *PCEGraph {
 			continue // Remove link-down edges from the graph
 		}
 
+		if g.down[edge.Local] || g.down[edge.Remote] {
+			// Ignore links which are adjacencies to down nodes
+			// Especially important for link adjancencies of nodes
+			// which are rebooting and will take a while to be ready
+			continue
+		}
+
 		//pceID := NewBundleID(edge.Local, edge.Remote, "")
 		pceID := NewLinkID(edge)
 		pceEdge, exists := pg.edges[pceID]

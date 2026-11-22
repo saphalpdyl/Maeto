@@ -17,6 +17,8 @@ const (
 	topologyReportSweepInterval = 10 * time.Second
 	topologyReportRewatchDelay  = 2 * time.Second
 	topologySettleDelay         = 1 * time.Second
+
+	trustNodeReadySpan = 20 * time.Second
 )
 
 // TopologyReportCollector feeds what nodes report on their topology lane into
@@ -31,7 +33,8 @@ type TopologyReportCollector struct {
 
 	pceImmediateRecomputeChan chan struct{}
 
-	ready map[NodeID]bool
+	ready      map[NodeID]bool
+	readySince map[NodeID]time.Time
 }
 
 func NewTopologyReportCollector(
@@ -47,6 +50,7 @@ func NewTopologyReportCollector(
 		reportedAt:                make(map[NodeID]time.Time),
 		pceImmediateRecomputeChan: pceImmediateRecomputeChan,
 		ready:                     map[NodeID]bool{},
+		readySince:                make(map[NodeID]time.Time),
 	}
 }
 
@@ -88,16 +92,21 @@ func (t *TopologyReportCollector) evaluateNodeDown(ctx context.Context) {
 	ready := make(map[NodeID]bool)
 
 	for id, reportedAt := range t.reportedAt {
-		if time.Since(reportedAt) < topologyReportStaleAfter {
-			fresh[id] = true
-			ready[id] = t.ready[id]
+		if time.Since(reportedAt) >= topologyReportStaleAfter {
+			continue
 		}
+
+		fresh[id] = true
+
+		since, ok := t.readySince[id]
+		ready[id] = t.ready[id] && ok && time.Since(since) >= trustNodeReadySpan
 	}
 
 	changed := t.topology.SetDownNodes(fresh, ready)
 	for _, c := range changed {
-		if t.topology.graph.down[c] {
+		if t.topology.IsNodeDown(c) {
 			t.ready[c] = false
+			delete(t.readySince, c)
 		}
 	}
 
@@ -147,9 +156,17 @@ func (t *TopologyReportCollector) apply(ctx context.Context, report nodesync.Top
 	}
 
 	t.reportedAt[nodeID] = report.ReportedAt
+
+	if !report.Ready {
+		delete(t.readySince, nodeID)
+	} else if _, ok := t.readySince[nodeID]; !ok {
+		t.readySince[nodeID] = time.Now()
+	}
+
+	readyFlipped := t.ready[nodeID] != report.Ready
 	t.ready[nodeID] = report.Ready
 
-	return (len(changed) > 0) || (len(linkStateChanged) > 0)
+	return len(changed) > 0 || len(linkStateChanged) > 0 || readyFlipped
 }
 
 func (t *TopologyReportCollector) clearStale(ctx context.Context) {

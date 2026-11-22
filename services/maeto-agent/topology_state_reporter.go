@@ -22,11 +22,13 @@ const (
 )
 
 type topologyReporter struct {
-	publisher *nodesync.Publisher
-	key       string
-	nodeID    string
-	dp        dataplane.Dataplane
-	logger    *slog.Logger
+	publisher  *nodesync.Publisher
+	key        string
+	nodeID     string
+	dp         dataplane.Dataplane
+	reconciler *dataplane.Reconciler
+
+	logger *slog.Logger
 
 	linkUpdates <-chan map[string]nodesync.LinkState
 	links       map[string]nodesync.LinkState
@@ -85,7 +87,7 @@ func (t *topologyReporter) collect() (*nodesync.TopologyReport, error) {
 		ReportedAt:  time.Now(),
 		Adjacencies: make([]nodesync.AdjacencyReport, 0, len(sids)),
 		Links:       t.links,
-		Ready:       true,
+		Ready:       t.reconciler.IsDoneFirstReconcile(),
 	}
 
 	for _, sid := range sids {

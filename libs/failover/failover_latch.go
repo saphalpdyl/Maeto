@@ -116,12 +116,28 @@ func groupUp(ifaces []string, linkStates map[string]nodesync.LinkState) bool {
 	return len(ifaces) > 0
 }
 
+func (f *FailoverLatch) Recover(ctx context.Context, downNodes []string) {
+	f.mu.Lock()
+	egresses := make([]string, 0, len(f.grouping))
+	for egress := range f.grouping {
+		if !slices.Contains(downNodes, egress) {
+			egresses = append(egresses, egress)
+		}
+	}
+	f.mu.Unlock()
+
+	for _, egress := range egresses {
+		if err := f.Reset(ctx, egress); err != nil {
+			f.logger.ErrorContext(ctx, "failed to reset repair", slog.String("egress", egress), log.Err(err))
+		}
+	}
+}
+
 func (f *FailoverLatch) Reset(ctx context.Context, egress string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
 	if groupDown(f.linkStates, f.grouping[egress]) {
-		f.logger.WarnContext(ctx, "ignoring reset, egress still down", slog.String("egress", egress))
 		return nil
 	}
 

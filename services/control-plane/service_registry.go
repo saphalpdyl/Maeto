@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/netip"
+	"slices"
 	"time"
 
 	"sync"
@@ -144,4 +145,33 @@ func (r *ServiceRegistry) Restore(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func (r *ServiceRegistry) StageDownNodes(tx *RegistryTx, downNodes []string) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	for key, entry := range r.registry {
+		switch intent := entry.Intent.(type) {
+		case *nodesync.PEIntent:
+			if slices.Equal(intent.DownNodes, downNodes) {
+				continue
+			}
+
+			tx.MutatePE(NodeID(key), func(pe *nodesync.PEIntent) error {
+				pe.DownNodes = slices.Clone(downNodes)
+				return nil
+			})
+
+		case *nodesync.CPEIntent:
+			if slices.Equal(intent.DownNodes, downNodes) {
+				continue
+			}
+
+			tx.MutateCPE(key, func(cpe *nodesync.CPEIntent) error {
+				cpe.DownNodes = slices.Clone(downNodes)
+				return nil
+			})
+		}
+	}
 }

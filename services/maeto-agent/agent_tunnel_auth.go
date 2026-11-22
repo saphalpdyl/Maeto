@@ -49,6 +49,7 @@ func (a *Agent) loadConnection(ctx context.Context) error {
 		"cpe",
 		certData,
 		caCertData,
+		false,
 	)
 	if err != nil {
 		a.logger.ErrorContext(ctx, "failed to load connection", log.Err(err))

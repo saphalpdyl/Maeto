@@ -123,10 +123,6 @@ func (s *Supervisor) hasStarted() bool {
 	return s.started
 }
 
-// Start owns the lifetime of every probe: the context it is given is the
-// parent of each probe context, so reconcileWithTarget must only ever be
-// called from here. A request-scoped context reaching it would kill probes
-// when that request ends.
 func (s *Supervisor) Start(ctx context.Context) error {
 	s.markStarted()
 

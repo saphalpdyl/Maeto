@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync/atomic"
 	"time"
 
 	"github.com/saphalpdyl/maeto/libs/dataplane/log"
@@ -23,7 +24,13 @@ type Reconciler struct {
 	lastCurrent map[string]Resource
 	lastDesired map[string]Resource
 
+	doneFirstReconcile atomic.Bool
+
 	logger *slog.Logger
+}
+
+func (r *Reconciler) IsDoneFirstReconcile() bool {
+	return r.doneFirstReconcile.Load()
 }
 
 func (r *Reconciler) SetStateReporter(reporter StateReporter) {
@@ -101,6 +108,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, ni *nodesync.NodeIntent) (er
 
 			r.current = ni
 			converged = true
+
+			r.doneFirstReconcile.Store(true)
 
 			return nil // converged
 		}

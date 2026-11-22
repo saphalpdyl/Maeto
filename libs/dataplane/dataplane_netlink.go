@@ -1637,7 +1637,7 @@ func (l *LinuxNetlink) ResetRepair(egress string, all bool) error {
 	if !all {
 		egressRules, exists := triggerMap[egress]
 		if !exists {
-			return fmt.Errorf("trigger rules for %s not found", egress)
+			return nil
 		}
 
 		rulesToReset = egressRules

@@ -13,6 +13,8 @@ type CPEIntent struct {
 	TenantPrefix netip.Prefix      `json:"tenant_prefix"`
 	SitePrefix   netip.Prefix      `json:"site_prefix"`
 	Tunnels      []CPETunnelIntent `json:"tunnels"`
+
+	DownNodes []string `json:"down_nodes"`
 }
 
 type TunnelRole string
@@ -38,6 +40,7 @@ func (i *CPEIntent) Clone() Intent {
 
 	out := *i
 	out.Tunnels = slices.Clone(i.Tunnels)
+	out.DownNodes = slices.Clone(i.DownNodes)
 
 	return &out
 }

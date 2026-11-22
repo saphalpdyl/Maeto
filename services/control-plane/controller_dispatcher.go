@@ -31,6 +31,7 @@ func (c *Controller) startPCEUpdatesDispatcher(ctx context.Context) {
 			c.buildAndStageSegments(ctx, remoteRoutesByNode, tx)
 			c.buildAndStageLFARepairSegments(ctx, update.RepairList, tx)
 			c.buildAndStageStandbyActivation(ctx, c.topology.graph, tx)
+			c.serviceRegistry.StageDownNodes(tx, c.topology.Graph().DownNodes())
 
 			err := tx.Commit(ctx)
 			if err != nil {

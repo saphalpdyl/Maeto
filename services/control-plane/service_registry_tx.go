@@ -47,6 +47,21 @@ func (tx *RegistryTx) MutatePE(nodeID NodeID, mutate func(intent *nodesync.PEInt
 	})
 }
 
+func (tx *RegistryTx) MutateCPE(portalID string, mutate func(intent *nodesync.CPEIntent) error) {
+	tx.pending[portalID] = append(tx.pending[portalID], pendingMutation{
+		NodeType: nodesync.NodeTypeCPE,
+		EntryKey: portalID,
+		Mutate: func(i nodesync.Intent) error {
+			cpe, ok := i.(*nodesync.CPEIntent)
+			if !ok {
+				return fmt.Errorf("intent for cpe %s is %T", portalID, i)
+			}
+
+			return mutate(cpe)
+		},
+	})
+}
+
 func (tx *RegistryTx) Commit(ctx context.Context) error {
 	snapshots := make(map[string]*nodesync.NodeIntent)
 	collectedErrors := make([]error, 0)
