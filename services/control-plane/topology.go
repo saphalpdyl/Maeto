@@ -11,9 +11,19 @@ import (
 type NodeID string
 type EdgeID string
 
+type NodeRole string
+
+const (
+	// NodeRolePE terminates customer sites: tenant vrfs and the cpes' ipsec
+	NodeRolePE NodeRole = "pe"
+	// NodeRoleP is core only: igp, srv6 transit and plr repair
+	NodeRoleP NodeRole = "p"
+)
+
 type Node struct {
 	ID       NodeID
 	Name     string
+	Role     NodeRole
 	ASN      uint32
 	ISISNet  string
 	Loopback netip.Prefix

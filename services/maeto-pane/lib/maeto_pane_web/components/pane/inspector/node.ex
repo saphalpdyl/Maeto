@@ -153,6 +153,7 @@ defmodule MaetoPaneWeb.Pane.Inspector.NodePanel do
         <tbody>
           <tr :for={sid <- @selected.view.sids} class="border-b border-line last:border-0">
             <td class="py-1.5 font-mono">{sid.sid}</td>
+            <td class="font-mono text-muted">{sid.behavior}</td>
             <td class="font-mono tabular-nums text-muted">{sid.observed_table || "-"}</td>
             <td class="py-1.5 text-right">
               <.pill tone={if sid.status == :ok, do: "ok", else: "bad"}>{sid.status}</.pill>

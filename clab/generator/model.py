@@ -13,8 +13,9 @@ class Defaults:
 class Pop:
     id: str
     index: int          # stable identity, drives locator + isis id + derived link/edge ips
-    node_name: str      # PopA
+    node_name: str      # PeSEA, PSJC
     clab_label: str
+    role: str = "pe"    # pe | p
     data: dict = field(default_factory=dict)
     protected_by: list = field(default_factory=list)   # [pop id] that stand in when this pop fails
     protector_of: list = field(default_factory=list)   # [pop id], derived from the others' protected_by

@@ -97,7 +97,24 @@ func main() {
 	}
 
 	var swanClient *swan.Client
-	err = retry.Do(func() error {
+	if node.HasAccessSide() {
+		swanClient = connectSwan(ctx, logger)
+	}
+
+	agent := maetoagent.NewAgent(
+		node,
+		js,
+		logger.With(log.Domain(log.DomainAgentLifecycle)),
+		linuxDataplane,
+		swanClient,
+	)
+	agent.Run(ctx)
+}
+
+func connectSwan(ctx context.Context, logger *slog.Logger) *swan.Client {
+	var swanClient *swan.Client
+	err := retry.Do(func() error {
+		var err error
 		swanClient, err = swan.NewClient(logger.With(log.Domain(log.DomainAgentLifecycle)))
 		if err != nil {
 			logger.ErrorContext(ctx, "failed to create swan client", log.Err(err))
@@ -115,12 +132,5 @@ func main() {
 		os.Exit(1)
 	}
 
-	agent := maetoagent.NewAgent(
-		node,
-		js,
-		logger.With(log.Domain(log.DomainAgentLifecycle)),
-		linuxDataplane,
-		swanClient,
-	)
-	agent.Run(ctx)
+	return swanClient
 }

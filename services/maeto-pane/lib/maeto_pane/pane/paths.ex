@@ -21,16 +21,21 @@ defmodule MaetoPane.Pane.Paths do
 
     (get_in(control, ["topology", "nodes"]) || [])
     |> Enum.flat_map(fn node ->
-      case Net.parse_prefix(node["locator"] || "") do
-        {:ok, prefix} ->
-          {base, _bits} = prefix
-
-          [%{id: node["id"], name: node["name"], prefix: prefix, base: base}]
-
-        :error ->
-          []
-      end
+      locator(node, node["locator"], :core) ++ locator(node, node["mirror_locator"], :mirror)
     end)
+  end
+
+  # a mirror locator holds a single sid, the protector's End.M
+  defp locator(node, raw, kind) do
+    case Net.parse_prefix(raw || "") do
+      {:ok, prefix} ->
+        {base, _bits} = prefix
+
+        [%{id: node["id"], name: node["name"], prefix: prefix, base: base, kind: kind}]
+
+      :error ->
+        []
+    end
   end
 
   @doc "Every CSPF path the controller last computed, one per tenant and PoP pair."
@@ -326,7 +331,7 @@ defmodule MaetoPane.Pane.Paths do
       kind: :path,
       id: "#{id}|#{tenant}|#{prefix}|#{color}",
       pe: id,
-      pe_name: Enum.find_value(locators, &(&1.id == id && &1.name)),
+      pe_name: Enum.find_value(locators, &(&1.id == id && &1.kind == :core && &1.name)),
       tenant: tenant,
       prefix: prefix,
       color: color,
@@ -413,6 +418,7 @@ defmodule MaetoPane.Pane.Paths do
     end
   end
 
+  defp hop_role(_address, %{kind: :mirror}, _last?), do: :mirror
   defp hop_role(_address, _owner, true), do: :decap
   defp hop_role(address, %{base: address}, false), do: :transit
   defp hop_role(_address, _owner, false), do: :end_x

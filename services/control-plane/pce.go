@@ -305,6 +305,8 @@ func (p *PCE) Run(ctx context.Context, graph *Graph) {
 			if err := p.bandwidthReservationReg.Move(ctx, path.Edges, nil, key.Tenant, reservation); err != nil {
 				p.logger.ErrorContext(ctx, "failed to release ghost bandwidth reservation")
 			}
+
+			delete(paths, key)
 		}
 
 		tickReport.NewPathSet = paths

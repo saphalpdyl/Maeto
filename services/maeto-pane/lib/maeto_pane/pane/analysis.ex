@@ -244,6 +244,7 @@ defmodule MaetoPane.Pane.Analysis do
 
       %{
         sid: address,
+        behavior: behavior(want || got),
         tenant: owner && owner.id,
         expected_table: owner && owner.table_id,
         desired_table: want && want["TableID"],
@@ -257,8 +258,28 @@ defmodule MaetoPane.Pane.Analysis do
   defp status(_want, nil), do: :missing
 
   defp status(want, got) do
-    if want["TableID"] == got["TableID"], do: :ok, else: :wrong_vrf
+    if fib_table(want["TableID"]) == fib_table(got["TableID"]), do: :ok, else: :wrong_vrf
   end
+
+  # an intent leaves the table unset for main; the kernel reports main as 254
+  @main_table 254
+  defp fib_table(nil), do: @main_table
+  defp fib_table(0), do: @main_table
+  defp fib_table(table), do: table
+
+  # what the sid does, as the reconciler's sid types name it. A dt46 installed
+  # outside main is a protected pe's sid copied into the mirror table, and an
+  # End in the plr table is a repair trigger
+  @plr_table 950
+  defp behavior(%{"SIDType" => "dt6"}), do: "end.m"
+
+  defp behavior(%{"SIDType" => "dt46", "TableID" => table}) when table not in [nil, 0, @main_table],
+    do: "mirror dt46"
+
+  defp behavior(%{"SIDType" => "dt46"}), do: "end.dt46"
+  defp behavior(%{"SIDType" => "end", "TableID" => @plr_table}), do: "plr end"
+  defp behavior(%{"SIDType" => type}) when is_binary(type), do: type
+  defp behavior(_spec), do: "-"
 
   defp duplicate_sids(nodes) do
     nodes

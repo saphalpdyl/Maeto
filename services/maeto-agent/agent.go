@@ -183,16 +183,17 @@ func (a *Agent) Run(ctx context.Context) {
 
 	go a.setupIntentWatch(ctx)
 
-	eventChan, err := a.swanClient.WatchIKEUpdownEvents(ctx)
-	if err != nil {
-		a.logger.ErrorContext(ctx, "failed to watch events", log.Err(err))
-		return
-	}
+	// A p router terminates no ipsec: no tunnels to watch, report or resync
+	if a.node.HasAccessSide() {
+		eventChan, err := a.swanClient.WatchIKEUpdownEvents(ctx)
+		if err != nil {
+			a.logger.ErrorContext(ctx, "failed to watch events", log.Err(err))
+			return
+		}
 
-	go a.watchTunnelUpdates(ctx, eventChan)
-	go a.setupResyncWatch(ctx)
+		go a.watchTunnelUpdates(ctx, eventChan)
+		go a.setupResyncWatch(ctx)
 
-	if a.node.Access != nil {
 		// Loads private key from /etc/swanctl/private/key.pem and sends to charon via vici
 		if err := a.loadCredentials(ctx); err != nil {
 			return

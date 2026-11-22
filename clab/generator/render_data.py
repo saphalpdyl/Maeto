@@ -43,6 +43,7 @@ def _pop(pop, pp):
         "id": pop.id,
         "name": pop.node_name,
         "clab_label": pop.clab_label,
+        "role": pop.role,
         "index": pop.index,
         "isis_net": pp.isis_net,
         "locator": pp.locator_prefix,

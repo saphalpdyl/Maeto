@@ -25,6 +25,9 @@ from .constants import (
     MAX_CPES_PER_POP,
     OVERRIDE_KEYS,
     POP_KEYS,
+    NODE_ROLES,
+    ROLE_P,
+    ROLE_PE,
     TOP_LEVEL_KEYS,
 )
 from .errors import TopologyError
@@ -44,7 +47,8 @@ def parse_topology(source):
     classes = _parse_classes(root)
     tiers = _parse_tiers(root, {c.name for c in classes})
     tenants = _parse_tenants(root)
-    cpes = _parse_cpes(root, set(pop_index), tenants, tiers, {c.name for c in classes})
+    pe_ids = {p.id for p in pops if p.role == ROLE_PE}
+    cpes = _parse_cpes(root, pe_ids, tenants, tiers, {c.name for c in classes})
     links = _parse_links(root, pop_index)
     return Topology(name, defaults, pops, tenants, cpes, links, classes, tiers)
 
@@ -89,35 +93,47 @@ def _check_prefix(name, value, carve):
 
 
 def _parse_pops(root):
-    items = root.get("pops")
+    items = root.get("nodes")
     if not isinstance(items, list) or not items:
-        raise TopologyError("pops must be a non-empty list")
+        raise TopologyError("nodes must be a non-empty list")
     pops = []
     seen_ids = set()
     seen_idx = set()
     for i, raw in enumerate(items):
         if not isinstance(raw, dict):
-            raise TopologyError(f"pops[{i}] must be a mapping")
-        _reject_unknown(raw, POP_KEYS, f"pops[{i}]")
-        pid = _require_id(raw, f"pops[{i}]")
+            raise TopologyError(f"nodes[{i}] must be a mapping")
+        _reject_unknown(raw, POP_KEYS, f"nodes[{i}]")
+        pid = _require_id(raw, f"nodes[{i}]")
         if pid in seen_ids:
-            raise TopologyError(f"duplicate pop id: {pid}")
+            raise TopologyError(f"duplicate node id: {pid}")
         seen_ids.add(pid)
-        index = _pop_index(raw, i, f"pops[{i}]")
+        index = _pop_index(raw, i, f"nodes[{i}]")
         if index in seen_idx:
-            raise TopologyError(f"duplicate pop index: {index}")
+            raise TopologyError(f"duplicate node index: {index}")
         seen_idx.add(index)
-        node_name = f"Pop{pid}"
+        role = _role(raw, f"nodes[{i}]")
+        node_name = f"Pe{pid}" if role == ROLE_PE else f"P{pid}"
+        protected_by = _protected_by(raw, pid, f"nodes[{i}]")
+        if role == ROLE_P and protected_by:
+            raise TopologyError(f"nodes[{i}]: p router {pid} has no sites to protect")
         pops.append(Pop(
             id=pid,
             index=index,
             node_name=node_name,
-            clab_label=_clab_label(raw, node_name, f"pops[{i}]"),
-            data=_data(raw, f"pops[{i}]"),
-            protected_by=_protected_by(raw, pid, f"pops[{i}]"),
+            clab_label=_clab_label(raw, node_name, f"nodes[{i}]"),
+            role=role,
+            data=_data(raw, f"nodes[{i}]"),
+            protected_by=protected_by,
         ))
     _link_protectors(pops)
     return pops
+
+
+def _role(raw, where):
+    role = raw.get("role", ROLE_PE)
+    if role not in NODE_ROLES:
+        raise TopologyError(f"{where}.role must be one of: {', '.join(sorted(NODE_ROLES))}")
+    return role
 
 
 def _protected_by(raw, pid, where):
@@ -141,7 +157,9 @@ def _link_protectors(pops):
     for pop in pops:
         for protector in pop.protected_by:
             if protector not in by_id:
-                raise TopologyError(f"pop {pop.id} protected_by references unknown pop: {protector}")
+                raise TopologyError(f"node {pop.id} protected_by references unknown node: {protector}")
+            if by_id[protector].role != ROLE_PE:
+                raise TopologyError(f"node {pop.id} protected_by {protector}, which is not a pe")
             by_id[protector].protector_of.append(pop.id)
 
 
@@ -360,7 +378,7 @@ def _parse_cpes(root, pop_ids, tenants, tiers, class_names):
         seen.add(cid)
         attach = raw.get("attach")
         if not isinstance(attach, str) or attach not in pop_ids:
-            raise TopologyError(f"cpes[{i}].attach must reference an existing pop id: {attach}")
+            raise TopologyError(f"cpes[{i}].attach must reference an existing pe id: {attach}")
         # they all share the pop's transit router, so they all come out of the
         # pop's aggregate
         per_pop[attach] = per_pop.get(attach, 0) + 1

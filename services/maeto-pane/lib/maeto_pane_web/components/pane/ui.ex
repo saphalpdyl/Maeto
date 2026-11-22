@@ -50,15 +50,18 @@ defmodule MaetoPaneWeb.Pane.UI do
   def pct(share), do: "#{round(share * 100)}%"
 
   def hop_chip(:decap), do: "bg-dt46 text-dt46-ink"
+  def hop_chip(:mirror), do: "bg-dt46 text-dt46-ink"
   def hop_chip(:transit), do: "bg-endx text-endx-ink"
   def hop_chip(:end_x), do: "bg-endx text-endx-ink"
   def hop_chip(_role), do: "bg-sunken text-muted"
 
   def hop_text(:decap), do: "text-accent"
+  def hop_text(:mirror), do: "text-accent"
   def hop_text(role) when role in [:transit, :end_x], do: "text-steer"
   def hop_text(_role), do: "text-faint"
 
   def hop_behavior(:decap), do: "end.dt46"
+  def hop_behavior(:mirror), do: "end.m"
   def hop_behavior(:end_x), do: "end.x"
   def hop_behavior(_role), do: "end"
 

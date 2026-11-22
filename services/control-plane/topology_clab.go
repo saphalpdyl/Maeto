@@ -31,6 +31,7 @@ type RawTopologyData struct {
 		ID            string `json:"id"`
 		Name          string `json:"name"`
 		ClabLabel     string `json:"clab_label"`
+		Role          string `json:"role"`
 		Index         int    `json:"index"`
 		IsisNet       string `json:"isis_net"`
 		Locator       string `json:"locator"`
@@ -180,6 +181,7 @@ func generateGraphFromRawTopology(rawTopoData *RawTopologyData) (*Graph, error) 
 		g.nodes[NodeID(p.ID)] = &Node{
 			ID:       NodeID(p.ID),
 			Name:     p.Name,
+			Role:     nodeRole(p.Role),
 			ASN:      0,
 			ISISNet:  "",
 			Loopback: loopback,
@@ -402,4 +404,10 @@ func (c *ClabTopologyManager) SetDownNodes(fresh map[NodeID]bool, ready map[Node
 	}
 
 	return changed
+}
+
+// Topologies generated before roles existed leave it empty: every node was
+// both edge and core, so no role restriction applies to them
+func nodeRole(role string) NodeRole {
+	return NodeRole(role)
 }

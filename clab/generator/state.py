@@ -12,6 +12,7 @@ from .constants import (
     MGMT_ROUTES_FILENAME,
     NFT_FILENAME,
     NODE_FILENAME,
+    ROLE_PE,
 )
 from .render_boot import render_boot
 from .render_clab import render_clab
@@ -64,7 +65,8 @@ def write_output(topo, plan, digest, build_dir):
         _write(os.path.join(out, "conf", cpe.node_name, "frr.conf"), render_frr_cpe(cpe))
 
     for pop in topo.pops:
-        render_cert(out, pop.node_name, pop_identity(pop.node_name))
+        if pop.role == ROLE_PE:
+            render_cert(out, pop.node_name, pop_identity(pop.node_name))
 
         pp = plan.pops[pop.id]
         _write(os.path.join(out, "conf", pop.node_name, "frr.conf"), render_frr(pp))

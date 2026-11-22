@@ -182,6 +182,11 @@ func computePath(g *PCEGraph, costs map[CostGraphEdge]*Cost, src, dst NodeID, ob
 
 		visited[current] = true
 
+		// A pe is an edge: paths start or end there, but never pass through it
+		if current != src && g.nodes[current].Role == NodeRolePE {
+			continue
+		}
+
 		for _, edgeID := range slices.SortedFunc(slices.Values(g.adj[current]), PCEEdgeID.Compare) {
 			edge, exists := g.edges[edgeID]
 			if !exists || visited[edge.NodeTo] {

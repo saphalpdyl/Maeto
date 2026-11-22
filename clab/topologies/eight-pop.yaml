@@ -6,31 +6,54 @@ defaults:
   link_prefix: fc00:1::/32
   edge_prefix: fd00::/48
 
-pops:
+# role: pe terminates customer sites (tenant vrfs, cpe tunnels); role: p is core
+# only. pes never link to each other: each is dual-homed to two p routers, so a
+# pe is never transit and never adjacent to the pe it protects.
+nodes:
   - id: SEA # Seattle
     index: 1
+    role: pe
     protected_by: [SFO]
   - id: SFO # San Francisco
     index: 2
+    role: pe
     protected_by: [LAX]
   - id: LAX # Los Angeles
     index: 3
+    role: pe
     protected_by: [SFO]
   - id: SLC # Salt Lake City
     index: 4
+    role: pe
     protected_by: [DEN]
   - id: DEN # Denver
     index: 5
+    role: pe
     protected_by: [SLC]
   - id: ORD # Chicago
     index: 6
+    role: pe
     protected_by: [IAD]
   - id: NYC # New York
     index: 7
+    role: pe
     protected_by: [IAD]
   - id: IAD # Ashburn
     index: 8
+    role: pe
     protected_by: [NYC]
+  - id: SJC # West core, San Jose
+    index: 9
+    role: p
+  - id: PHX # Mountain core, Phoenix
+    index: 10
+    role: p
+  - id: CHI # Central core, Chicago
+    index: 11
+    role: p
+  - id: ASH # East core, Ashburn
+    index: 12
+    role: p
 
 # label: 0 is the default/bulk low-priority class
 classes:
@@ -190,76 +213,119 @@ cpes:
 # factor at 204,000 km/s (~4.9 us/km in glass). A second member stands in for a
 # physically diverse route and is 1.3x longer.
 links:
+  # pe uplinks: every pe to its two nearest p routers
   - a: SEA
-    b: SFO # 1094 km
+    b: SJC # 1120 km
     parallel:
       - bandwidth: 70
-        delay: 7.5
-        start_jitter: 0.05
-      - bandwidth: 25
-        delay: 9.8
-  - a: SEA
-    b: SLC # 1127 km
-    parallel:
-      - bandwidth: 65
         delay: 7.7
-      - bandwidth: 15
-        delay: 10.1
-        start_jitter: 0.1
-  - a: SFO
-    b: LAX # 559 km
-    parallel:
-      - bandwidth: 65
-        delay: 3.8
-      - bandwidth: 55
-        delay: 5.0
-  - a: SFO
-    b: SLC # 965 km
-    parallel:
-      - bandwidth: 40
-        delay: 6.6
-  - a: LAX
-    b: DEN # 1335 km
-    parallel:
-      - bandwidth: 70
-        delay: 9.2
-  - a: LAX
-    b: ORD # 2804 km
-    parallel:
-      - bandwidth: 65
-        delay: 19.2
-  - a: SLC
-    b: DEN # 596 km
+        start_jitter: 0.05
+  - a: SEA
+    b: PHX # 1790 km
     parallel:
       - bandwidth: 50
-        delay: 4.1
-      - bandwidth: 35
-        delay: 5.3
-  - a: DEN
-    b: ORD # 1478 km
+        delay: 12.3
+  - a: SFO
+    b: SJC # 50 km
     parallel:
       - bandwidth: 80
-        delay: 10.1
-  - a: DEN
-    b: IAD # 2390 km
+        delay: 0.3
+  - a: SFO
+    b: PHX # 1050 km
+    parallel:
+      - bandwidth: 50
+        delay: 7.2
+  - a: LAX
+    b: SJC # 490 km
+    parallel:
+      - bandwidth: 70
+        delay: 3.4
+  - a: LAX
+    b: PHX # 575 km
+    parallel:
+      - bandwidth: 70
+        delay: 3.9
+  - a: SLC
+    b: PHX # 810 km
+    parallel:
+      - bandwidth: 60
+        delay: 5.6
+  - a: SLC
+    b: CHI # 2010 km
     parallel:
       - bandwidth: 40
-        delay: 16.4
-  - a: ORD
-    b: NYC # 1144 km
+        delay: 13.8
+  - a: DEN
+    b: PHX # 940 km
     parallel:
-      - bandwidth: 45
-        delay: 7.9
-        start_jitter: 0.05
-      - bandwidth: 20
+      - bandwidth: 70
+        delay: 6.5
+  - a: DEN
+    b: CHI # 1480 km
+    parallel:
+      - bandwidth: 60
         delay: 10.2
   - a: ORD
-    b: IAD # 955 km
+    b: CHI # 25 km
     parallel:
-      - bandwidth: 40
+      - bandwidth: 80
+        delay: 0.2
+  - a: ORD
+    b: ASH # 955 km
+    parallel:
+      - bandwidth: 50
         delay: 6.6
   - a: NYC
-    b: IAD # 327 km
+    b: ASH # 340 km
     parallel:
-      - bandwidth: 40
-        delay: 2.2
+      - bandwidth: 70
+        delay: 2.3
+        start_jitter: 0.05
+  - a: NYC
+    b: CHI # 1145 km
+    parallel:
+      - bandwidth: 50
+        delay: 7.9
+  - a: IAD
+    b: ASH # 10 km
+    parallel:
+      - bandwidth: 80
+        delay: 0.1
+  - a: IAD
+    b: CHI # 960 km
+    parallel:
+      - bandwidth: 50
+        delay: 6.6
+
+  # p core: a ring with two diagonals; parallel members are physically diverse
+  # routes, 1.3x longer
+  - a: SJC
+    b: PHX # 990 km
+    parallel:
+      - bandwidth: 100
+        delay: 6.8
+      - bandwidth: 60
+        delay: 8.8
+  - a: PHX
+    b: CHI # 2340 km
+    parallel:
+      - bandwidth: 100
+        delay: 16.1
+        start_jitter: 0.05
+  - a: CHI
+    b: ASH # 960 km
+    parallel:
+      - bandwidth: 100
+        delay: 6.6
+      - bandwidth: 60
+        delay: 8.6
+  - a: SJC
+    b: CHI # 2970 km
+    parallel:
+      - bandwidth: 80
+        delay: 20.4
+  - a: PHX
+    b: ASH # 2970 km
+    parallel:
+      - bandwidth: 80
+        delay: 20.4

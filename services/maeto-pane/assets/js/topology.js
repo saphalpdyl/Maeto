@@ -224,6 +224,52 @@ const layout = (nodes, links, aspect) => {
   return pos
 }
 
+const CORE_GAP = 340
+const CORE_ZIGZAG = 60
+const EDGE_OFFSET = 260
+const EDGE_GAP = 180
+
+// With a core of p routers, the force layout tends to line a pe up with both
+// of its routers, drawing one uplink through the other router. Instead: the
+// core on one row, in the force layout's left-to-right order, and every pe
+// above or below it, centred on the routers it homes to.
+const layeredLayout = (nodes, links, aspect) => {
+  const force = layout(nodes, links, aspect)
+  const core = nodes.filter(n => n.role === "PR").map(n => n.id)
+  const edge = nodes.filter(n => n.role !== "PR").map(n => n.id)
+  const coreSet = new Set(core)
+  const pos = new Map()
+
+  core.sort((a, b) => force.get(a).x - force.get(b).x)
+  core.forEach((id, i) => {
+    pos.set(id, {x: i * CORE_GAP, y: i % 2 === 0 ? -CORE_ZIGZAG : CORE_ZIGZAG})
+  })
+
+  const uplinks = new Map(edge.map(id => [id, []]))
+  for (const link of links) {
+    if (uplinks.has(link.a) && coreSet.has(link.b)) uplinks.get(link.a).push(link.b)
+    if (uplinks.has(link.b) && coreSet.has(link.a)) uplinks.get(link.b).push(link.a)
+  }
+
+  const placed = edge.map(id => {
+    const routers = uplinks.get(id)
+    const x = routers.length
+      ? routers.reduce((sum, r) => sum + pos.get(r).x, 0) / routers.length
+      : force.get(id).x
+    return {id, x, above: force.get(id).y < 0}
+  })
+
+  for (const above of [true, false]) {
+    const row = placed.filter(p => p.above === above).sort((a, b) => a.x - b.x)
+    for (let i = 1; i < row.length; i++) {
+      row[i].x = Math.max(row[i].x, row[i - 1].x + EDGE_GAP)
+    }
+    for (const p of row) pos.set(p.id, {x: p.x, y: above ? -EDGE_OFFSET : EDGE_OFFSET})
+  }
+
+  return pos
+}
+
 const costText = value => {
   if (value == null) return "–"
   return value >= 10 ? String(Math.round(value)) : value.toFixed(1)
@@ -293,7 +339,13 @@ export default {
     if (full || next !== this.signature) {
       const relayout = next !== this.signature || !this.positions
       this.signature = next
-      if (relayout) this.positions = layout(payload.nodes, payload.links, this.el.parentElement.clientWidth / Math.max(this.el.parentElement.clientHeight, 1))
+      if (relayout) {
+        const aspect = this.el.parentElement.clientWidth / Math.max(this.el.parentElement.clientHeight, 1)
+        const hasCore = payload.nodes.some(n => n.role === "PR")
+        this.positions = hasCore
+          ? layeredLayout(payload.nodes, payload.links, aspect)
+          : layout(payload.nodes, payload.links, aspect)
+      }
       this.draw(payload)
       if (relayout) this.graph.zoomToFit({padding: 56, maxScale: 1})
     }

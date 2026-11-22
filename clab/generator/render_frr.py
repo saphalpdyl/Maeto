@@ -1,4 +1,4 @@
-from .constants import FRR_VERSION, ISIS_INSTANCE
+from .constants import FRR_VERSION, ISIS_INSTANCE, ROLE_PE
 
 
 def render_frr(pop_plan):
@@ -75,6 +75,10 @@ def render_frr(pop_plan):
         "!",
     ]
 
+    # the cpe profile is for bfd inside customer tunnels, which only a pe has
+    if p.pop.role != ROLE_PE:
+        return "\n".join(lines)
+
     lines += [
         "bfd",
         " profile maeto-cpe",
@@ -101,8 +105,8 @@ def render_frr_cpe(cpe):
         # core's; portald adds a peer per tunnel at runtime
         "bfd",
         " profile maeto-cpe",
-        "  transmit-interval 300",
-        "  receive-interval 300",
+        "  transmit-interval 100",
+        "  receive-interval 100",
         "  detect-multiplier 3",
         " !",
         "!",

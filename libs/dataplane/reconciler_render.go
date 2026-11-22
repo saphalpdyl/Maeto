@@ -205,6 +205,7 @@ func (r *Reconciler) RenderPEIntent(
 			SIDType:    SIDDT6,
 			SID:        pe.MirrorSID,
 			VrfTableID: int(mirrorTableID), // tableID (where the SID lives) is on main
+			TableID:    unix.RT_TABLE_MAIN,
 		}
 
 		resources[mirrorSID.ID().Key] = mirrorSID

@@ -23,6 +23,7 @@ from .constants import (
     OTEL_ENDPOINT,
     OTEL_SINK,
     POP_IMAGE,
+    ROLE_PE,
     TRANSIT_IMAGE,
 )
 
@@ -150,11 +151,15 @@ def render_clab(topo, plan):
             "conf/shared/frr_daemons:/etc/frr/daemons",
             f"conf/{pop.node_name}/frr.conf:/etc/frr/frr.conf",
             f"conf/{pop.node_name}/{NODE_FILENAME}:{NODE_CONTAINER_PATH}",
-            f"{CA_CERT_BIND}:{CA_CERT_CONTAINER_PATH}",
-            f"conf/{pop.node_name}/cert.pem:{CERT_CONTAINER_PATH}",
-            f"conf/{pop.node_name}/key.pem:{KEY_CONTAINER_PATH}",
             f"conf/{pop.node_name}/{BOOT_FILENAME}:{BOOT_CONTAINER_PATH}",
         ]
+        # only a pe terminates ipsec, so only a pe gets an identity
+        if pop.role == ROLE_PE:
+            binds += [
+                f"{CA_CERT_BIND}:{CA_CERT_CONTAINER_PATH}",
+                f"conf/{pop.node_name}/cert.pem:{CERT_CONTAINER_PATH}",
+                f"conf/{pop.node_name}/key.pem:{KEY_CONTAINER_PATH}",
+            ]
         if access is not None:
             binds.append(f"conf/{pop.node_name}/{NFT_FILENAME}:{NFT_CONTAINER_PATH}")
         nodes[pop.node_name] = {

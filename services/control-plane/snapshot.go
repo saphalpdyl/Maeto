@@ -23,6 +23,9 @@ type TopologyNodeSnapshot struct {
 	Loopback string            `json:"loopback"`
 	Locator  string            `json:"locator"`
 	Attrs    map[string]string `json:"attrs,omitempty"`
+
+	MirrorLocator string `json:"mirror_locator,omitempty"`
+	Role          string `json:"role,omitempty"`
 }
 
 type TopologyEdgeSnapshot struct {
@@ -200,6 +203,9 @@ func SnapshotTopology(graph *Graph, domain SRv6DomainMetadata, costs *CostGraph,
 			Loopback: prefixString(node.Loopback),
 			Locator:  prefixString(node.Locator),
 			Attrs:    node.Attrs,
+
+			MirrorLocator: prefixString(node.MirrorLocator),
+			Role:          string(node.Role),
 		})
 	}
 

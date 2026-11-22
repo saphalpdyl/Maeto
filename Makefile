@@ -1,4 +1,4 @@
-.PHONY: lint lint.editorconfig generate deploy install-virtual-environments fe sim ap ddbg dev ips tfsim tfsim-plan db-reset pop-crash pop-boot
+.PHONY: lint lint.editorconfig generate deploy install-virtual-environments fe sim ap ddbg dev ips tfsim tfsim-plan db-reset node-crash node-boot
 
 TOPOLOGY_YAML := clab/topologies/eight-pop.yaml
 TOPOLOGY_NAME := eight-pop
@@ -44,13 +44,15 @@ generate:
 deploy:
 	./scripts/clab/deploy.sh $(STATE_FILE)
 
-# crash a pop and bring it back, e.g. make pop-crash POP=PopIAD MODE=silent
+# crash a node (pe or p) and bring it back, e.g. make node-crash NODE=PeIAD MODE=silent
 MODE ?= loud
-pop-crash:
-	./scripts/clab/pop-crash.sh $(STATE_FILE) $(POP) $(MODE)
+node-crash:
+	@test -n "$(NODE)" || { echo "usage: make node-crash NODE=<PeXXX|PXXX> [MODE=loud|silent]" >&2; exit 2; }
+	./scripts/clab/pop-crash.sh $(STATE_FILE) $(NODE) $(MODE)
 
-pop-boot:
-	./scripts/clab/pop-boot.sh $(STATE_FILE) $(POP)
+node-boot:
+	@test -n "$(NODE)" || { echo "usage: make node-boot NODE=<PeXXX|PXXX>" >&2; exit 2; }
+	./scripts/clab/pop-boot.sh $(STATE_FILE) $(NODE)
 
 lint:
 	golangci-lint run ./...

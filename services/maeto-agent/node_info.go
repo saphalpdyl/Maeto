@@ -73,6 +73,8 @@ func (n *Node) ReportSubject() string {
 	return fmt.Sprintf("maeto.agent.pop%s.report", n.ID)
 }
 
+// Matches the certificate the generator issues and the identity the
+// controller hands to portals: both are derived from the node name
 func (n *Node) LocalSwanID() string {
-	return fmt.Sprintf("Pop%s.maeto.net", n.ID)
+	return fmt.Sprintf("%s.maeto.net", n.Name)
 }
