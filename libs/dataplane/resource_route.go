@@ -18,6 +18,15 @@ const (
 // back as 1024, so desired 0 and observed 1024 are the same route
 const DefaultRouteMetric = 1024
 
+const VRFCatchAllMetric = 4278198272
+
+type RouteType int
+
+const (
+	RouteTypeUnicast RouteType = iota
+	RouteTypeUnreachable
+)
+
 func routeMetric(metric int) int {
 	if metric <= 0 {
 		return DefaultRouteMetric
@@ -34,12 +43,13 @@ type Route struct {
 	Via       netip.Addr   `rc:"mut"`
 	Metric    int
 	AllowLeak bool
+	RouteType RouteType
 }
 
 func (r *Route) ID() ID {
 	return ID{
 		Kind: KindRoute,
-		Key:  fmt.Sprintf("%s:%d.%s.%s.%d", KindRoute, r.Table, r.Dst.String(), r.Dev, routeMetric(r.Metric)),
+		Key:  fmt.Sprintf("%s:%d.%s.%s.%d.%d", KindRoute, r.Table, r.Dst.String(), r.Dev, routeMetric(r.Metric), r.RouteType),
 	}
 }
 
@@ -50,7 +60,7 @@ func (r *Route) CompareTo(actual Resource) Action {
 		return ActionCreate
 	}
 	if a, ok := actual.(*Route); ok {
-		if r.Table != a.Table || r.Dst != a.Dst || r.Dev != a.Dev || r.Via != a.Via || routeMetric(r.Metric) != routeMetric(a.Metric) {
+		if r.Table != a.Table || r.Dst != a.Dst || r.Dev != a.Dev || r.Via != a.Via || routeMetric(r.Metric) != routeMetric(a.Metric) || r.RouteType != a.RouteType {
 			return ActionReplace
 		}
 		return ActionNone

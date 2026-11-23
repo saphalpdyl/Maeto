@@ -25,7 +25,6 @@ import (
 var _ Dataplane = (*LinuxNetlink)(nil)
 
 // metric for the VRF catch-all, kept as a number rather than the shell string
-const vrfUnreachableMetricValue = 4278198272
 const vrfStrictModePath = "/proc/sys/net/vrf/strict_mode"
 
 // every link and route maeto installs carries these, so a reconcile can list
@@ -159,6 +158,14 @@ func (l *LinuxNetlink) RemovePrefixRoute(prefix netip.Prefix, tableID int, metri
 	return nil
 }
 
+func routeTypeFromNetlink(t int) RouteType {
+	if t == unix.RTN_UNREACHABLE {
+		return RouteTypeUnreachable
+	}
+
+	return RouteTypeUnicast
+}
+
 func prefixToIPNet(prefix netip.Prefix) *net.IPNet {
 	return &net.IPNet{
 		IP:   net.IP(prefix.Masked().Addr().AsSlice()),
@@ -198,6 +205,12 @@ func (l *LinuxNetlink) GetPrefixRoutes() ([]DataplaneRoute, error) {
 			Rtt:        r.Rtt,
 			AdvMSS:     r.AdvMSS,
 			Metric:     r.Priority,
+			RouteType:  routeTypeFromNetlink(r.Type),
+		}
+
+		if route.RouteType == RouteTypeUnreachable {
+			route.Dev = ""
+			route.LinkIndex = 0
 		}
 
 		// Via is nil on an ordinary route, and only *netlink.Via carries an address
@@ -264,10 +277,6 @@ func (l *LinuxNetlink) UpsertVRF(tableName string, tableId int) error {
 		return fmt.Errorf("bring up vrf device %s: %w", tableName, err)
 	}
 
-	if err := netlink.RouteReplace(vrfCatchAll(tableId)); err != nil {
-		return fmt.Errorf("install vrf catch-all for %s: %w", tableName, err)
-	}
-
 	// https://onvox.net/2024/12/16/srv6-frr/#usid-caveat
 	// It is important to note that [net.vrf.strict_mode=1] setting gets reset any
 	// 	time a new VRF is added to the kernel and must be reset again
@@ -285,7 +294,7 @@ func vrfCatchAll(tableID int) *netlink.Route {
 		Type:     unix.RTN_UNREACHABLE,
 		Table:    tableID,
 		Family:   netlink.FAMILY_V6,
-		Priority: vrfUnreachableMetricValue,
+		Priority: VRFCatchAllMetric,
 		Protocol: MaetoRouteProto,
 		Dst: &net.IPNet{
 			IP:   net.IPv6zero,
@@ -543,7 +552,7 @@ func (l *LinuxNetlink) GetLinksByType(ifaceType string) ([]DataplaneLink, error)
 // the gateway is not on-link for is rejected outright. An invalid via makes it
 // a device route out tunnelIface, which is what a NOARP xfrm interface needs.
 // tableID unix.RT_TABLE_MAIN (or 0) is the main table, the cpe case.
-func (l *LinuxNetlink) InsertPrefixRoute(tunnelIface string, tableID int, prefix netip.Prefix, via netip.Addr, metric int, allowLeak bool) error {
+func (l *LinuxNetlink) InsertPrefixRoute(tunnelIface string, tableID int, prefix netip.Prefix, via netip.Addr, metric int, allowLeak bool, routeType RouteType) error {
 	route := &netlink.Route{
 		Table:    tableID,
 		Family:   netlink.FAMILY_V6,
@@ -551,7 +560,9 @@ func (l *LinuxNetlink) InsertPrefixRoute(tunnelIface string, tableID int, prefix
 		Dst:      prefixToIPNet(prefix),
 	}
 
-	if via.IsValid() {
+	if routeType == RouteTypeUnreachable {
+		route.Type = unix.RTN_UNREACHABLE
+	} else if via.IsValid() {
 		// LinkIndex stays unset: the kernel picks the device by looking up the
 		// gateway, which is more robust than pinning one that may change
 		route.Gw = net.IP(via.AsSlice())

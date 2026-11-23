@@ -108,7 +108,7 @@ func (r *Reconciler) Apply(ctx context.Context, diff DiffResult) error {
 				}
 
 			case *Route:
-				if err := r.dp.InsertPrefixRoute(res.Dev, res.Table, res.Dst, res.Via, res.Metric, res.AllowLeak); err != nil {
+				if err := r.dp.InsertPrefixRoute(res.Dev, res.Table, res.Dst, res.Via, res.Metric, res.AllowLeak, res.RouteType); err != nil {
 					r.logger.ErrorContext(ctx, "failed to insert Route", log.Err(err))
 				}
 

@@ -300,6 +300,16 @@ func (r *Reconciler) RenderPEIntent(
 
 		resources[standbyVRF.ID().Key] = standbyVRF
 
+		for _, table := range []int{int(tableID), int(standbyVRFTableID)} {
+			catchAll := &Route{
+				Table:     table,
+				Dst:       netip.PrefixFrom(netip.IPv6Unspecified(), 0),
+				Metric:    VRFCatchAllMetric,
+				RouteType: RouteTypeUnreachable,
+			}
+			resources[catchAll.ID().Key] = catchAll
+		}
+
 		if t.DT46SID.IsValid() {
 			dt46SID := &SID{
 				SIDType:    SIDDT46,
@@ -552,11 +562,12 @@ func (r *Reconciler) RenderFIB(
 		viaip, _ := netip.AddrFromSlice(r.Via.Addr)
 
 		route := &Route{
-			Table:  r.Table,
-			Dst:    netip.PrefixFrom(ip, ones),
-			Dev:    r.Dev,
-			Via:    viaip,
-			Metric: r.Metric,
+			Table:     r.Table,
+			Dst:       netip.PrefixFrom(ip, ones),
+			Dev:       r.Dev,
+			Via:       viaip,
+			Metric:    r.Metric,
+			RouteType: r.RouteType,
 		}
 
 		resources[route.ID().Key] = route

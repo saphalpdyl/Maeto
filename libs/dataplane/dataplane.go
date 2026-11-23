@@ -32,6 +32,7 @@ type DataplaneRoute struct {
 	Rtt        int
 	AdvMSS     int
 	Metric     int
+	RouteType  RouteType
 }
 
 type DataplaneSRRoute struct {
@@ -188,7 +189,7 @@ type Dataplane interface {
 	GetRules() ([]DataplaneRule, error)
 
 	// TODO: Rename tunnelIface to just dev
-	InsertPrefixRoute(tunnelIface string, tableID int, prefix netip.Prefix, via netip.Addr, metric int, allowLeak bool) error
+	InsertPrefixRoute(tunnelIface string, tableID int, prefix netip.Prefix, via netip.Addr, metric int, allowLeak bool, routeType RouteType) error
 	RemovePrefixRoute(prefix netip.Prefix, tableID int, metric int) error
 	GetPrefixRoutes() ([]DataplaneRoute, error)
 
