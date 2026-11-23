@@ -279,8 +279,9 @@ defmodule MaetoPane.Pane.Analysis do
   @plr_table 950
   defp behavior(%{"SIDType" => "dt6"}), do: "end.m"
 
-  defp behavior(%{"SIDType" => "dt46", "TableID" => table}) when table not in [nil, 0, @main_table],
-    do: "mirror dt46"
+  defp behavior(%{"SIDType" => "dt46", "TableID" => table})
+       when table not in [nil, 0, @main_table],
+       do: "mirror dt46"
 
   defp behavior(%{"SIDType" => "dt46"}), do: "end.dt46"
   defp behavior(%{"SIDType" => "end", "TableID" => @plr_table}), do: "plr end"

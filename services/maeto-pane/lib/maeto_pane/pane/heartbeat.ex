@@ -6,7 +6,7 @@ defmodule MaetoPane.Pane.Heartbeat do
   watching.
   """
 
-  @buckets 60
+  @buckets 75
   @width_ms 20_000
 
   def buckets, do: @buckets

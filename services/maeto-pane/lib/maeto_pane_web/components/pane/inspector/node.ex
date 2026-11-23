@@ -66,7 +66,7 @@ defmodule MaetoPaneWeb.Pane.Inspector.NodePanel do
             {label(List.last(@selected.heartbeat))}
           </span>
         </dt>
-        <dd><.heartbeat_bar bars={@selected.heartbeat} /></dd>
+        <dd><.heartbeat_bar id="inspector-heartbeat-bar" bars={@selected.heartbeat} /></dd>
       </div>
       <div>
         <dt class="text-xs text-muted">Sites · tenants</dt>

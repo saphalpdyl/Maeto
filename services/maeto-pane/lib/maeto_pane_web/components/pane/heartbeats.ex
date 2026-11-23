@@ -20,26 +20,81 @@ defmodule MaetoPaneWeb.Pane.Heartbeats do
           @selected == node.id && "bg-steer-soft ring-1 ring-steer-ring ring-inset"
         ]}
       >
-        <div class="mb-1.5 flex items-center justify-between gap-2">
+        <div class="mb-2 flex items-center justify-between gap-2">
           <span class="truncate text-[13px]">{node.name || node.id}</span>
           <span class={["font-mono text-xs", tone_text(List.last(node.heartbeat))]}>
             {label(List.last(node.heartbeat))}
           </span>
         </div>
-        <.heartbeat_bar bars={node.heartbeat} />
+        <.heartbeat_bar id={"heartbeat-bar-#{node.id}"} bars={node.heartbeat} />
+        <.heartbeat_axis bars={node.heartbeat} />
       </div>
     </div>
     """
   end
 
+  attr :id, :string, required: true
   attr :bars, :list, required: true
 
   def heartbeat_bar(assigns) do
     ~H"""
-    <div class="flex h-7 items-stretch gap-[3px] rounded-md border border-line bg-surface px-2 py-1.5">
-      <span :for={bar <- @bars} class={["flex-1 rounded-full", tone_bg(bar)]} />
+    <div class="h-7 rounded-md border border-line bg-surface px-2 py-1.5">
+      <div
+        id={@id}
+        phx-hook=".TickPitch"
+        class="flex h-full [mask-image:repeating-linear-gradient(to_right,black_0_var(--hb-tick,3px),transparent_var(--hb-tick,3px)_var(--hb-pitch,5px))]"
+      >
+        <span :for={bar <- @bars} class={["flex-1", tone_bg(bar)]} />
+      </div>
+    </div>
+    <script :type={Phoenix.LiveView.ColocatedHook} name=".TickPitch">
+      export default {
+        mounted() {
+          this.apply = () => {
+            const dpr = window.devicePixelRatio || 1
+            const px = n => `${Math.max(1, Math.round(n * dpr)) / dpr}px`
+            this.el.style.setProperty("--hb-tick", px(3))
+            this.el.style.setProperty("--hb-pitch", px(5))
+          }
+          this.apply()
+          window.addEventListener("resize", this.apply)
+        },
+        updated() {
+          this.apply()
+        },
+        destroyed() {
+          window.removeEventListener("resize", this.apply)
+        }
+      }
+    </script>
+    """
+  end
+
+  attr :bars, :list, required: true
+
+  def heartbeat_axis(assigns) do
+    ~H"""
+    <div class="mt-1.5 flex items-center gap-3 font-mono text-[11px] text-faint">
+      <span>{span_label(length(@bars))}</span>
+      <span class="h-px flex-1 bg-line" />
+      <span>{ready_share(@bars)}</span>
+      <span class="h-px flex-1 bg-line" />
+      <span>now</span>
     </div>
     """
+  end
+
+  defp span_label(count) do
+    "#{div(count * MaetoPane.Pane.Heartbeat.width_ms(), 60_000)}m ago"
+  end
+
+  defp ready_share(bars) do
+    known = Enum.reject(bars, &(&1 == :unknown))
+
+    case known do
+      [] -> "-"
+      _ -> "#{Float.round(Enum.count(known, &(&1 == :ready)) * 100 / length(known), 1)}% ready"
+    end
   end
 
   def label(:ready), do: "ready"

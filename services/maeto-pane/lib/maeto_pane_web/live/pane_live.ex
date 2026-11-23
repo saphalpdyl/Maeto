@@ -192,7 +192,6 @@ defmodule MaetoPaneWeb.PaneLive do
     |> assign(:facts, facts(graph, links, sites, rows, computed, changes))
     |> then(&assign(&1, :nav, Nav.groups(&1.assigns.facts, graph.nodes)))
     |> assign(:programmed_pairs, MapSet.new(rows, &{&1.pe, &1.dest}))
-
     |> price_links()
     |> resolve()
   end

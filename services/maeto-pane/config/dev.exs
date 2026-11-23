@@ -14,7 +14,7 @@ config :maeto_pane, MaetoPaneWeb.Endpoint,
   secret_key_base: "uT5CSoy61lY6jutgkh8fdlYNzNltNHTT0W2qiM72zTGG1kHlcQIEw0CYEiipAkfW",
   watchers: [
     esbuild: {Esbuild, :install_and_run, [:maeto_pane, ~w(--sourcemap=inline --watch)]},
-    tailwind: {Tailwind, :install_and_run, [:maeto_pane, ~w(--watch)]}
+    tailwind: {Tailwind, :install_and_run, [:maeto_pane, ~w(--watch=always)]}
   ]
 
 # ## SSL Support
