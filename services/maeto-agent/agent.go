@@ -118,6 +118,8 @@ func (a *Agent) Run(ctx context.Context) {
 			logger:      a.logger.With(log.Domain(log.DomainControlPlane)),
 			linkUpdates: topologyReporterLinkUpdatesChan,
 			reconciler:  a.reconciler,
+
+			repairsChanged: make(chan struct{}, 1),
 		}
 		go topology.Run(ctx)
 
@@ -133,6 +135,7 @@ func (a *Agent) Run(ctx context.Context) {
 				}
 
 				a.logger.ErrorContext(ctx, "EGRESS FAILURE: REPAIRED SUCCESSFULLY")
+				topology.RepairsChanged()
 				return nil
 			},
 			func(egress string) error {
@@ -141,6 +144,7 @@ func (a *Agent) Run(ctx context.Context) {
 				}
 
 				a.logger.InfoContext(ctx, "failover reset", slog.String("egress", egress))
+				topology.RepairsChanged()
 				return nil
 			},
 		)

@@ -84,6 +84,43 @@ func (q *Queries) InsertNodeHeartbeat(ctx context.Context, arg InsertNodeHeartbe
 	return err
 }
 
+const insertPathChange = `-- name: InsertPathChange :exec
+INSERT INTO path_changes (time, tenant, label, src, dst, kind, from_nodes, to_nodes, from_cost, to_cost, causes)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+ON CONFLICT (tenant, label, src, dst, time) DO NOTHING
+`
+
+type InsertPathChangeParams struct {
+	Time      pgtype.Timestamptz
+	Tenant    int64
+	Label     int64
+	Src       string
+	Dst       string
+	Kind      string
+	FromNodes []string
+	ToNodes   []string
+	FromCost  pgtype.Float8
+	ToCost    pgtype.Float8
+	Causes    []byte
+}
+
+func (q *Queries) InsertPathChange(ctx context.Context, arg InsertPathChangeParams) error {
+	_, err := q.db.Exec(ctx, insertPathChange,
+		arg.Time,
+		arg.Tenant,
+		arg.Label,
+		arg.Src,
+		arg.Dst,
+		arg.Kind,
+		arg.FromNodes,
+		arg.ToNodes,
+		arg.FromCost,
+		arg.ToCost,
+		arg.Causes,
+	)
+	return err
+}
+
 const listIfaceCounters = `-- name: ListIfaceCounters :many
 SELECT time, node_id, iface, rx_bytes, tx_bytes, rx_packets, tx_packets, rx_dropped, tx_dropped
 FROM iface_counters

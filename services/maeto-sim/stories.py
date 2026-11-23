@@ -9,7 +9,7 @@ import yaml
 
 from lab import Lab
 
-KINDS = ("impair", "down", "traffic")
+KINDS = ("impair", "down", "traffic", "crash", "ping")
 
 
 class StoryError(Exception):
@@ -57,6 +57,14 @@ def parse(name: str, spec: dict, lab: Lab, scenarios: set) -> Story:
         if kind == "traffic":
             if target not in scenarios:
                 raise StoryError(f"{name}: unknown scenario {target!r}")
+        elif kind == "ping":
+            for end in ("from", "to"):
+                if target.get(end) not in lab.hosts:
+                    raise StoryError(f"{name}: no host {target.get(end)!r} in this topology")
+        elif kind == "crash":
+            ref = target["node"] if isinstance(target, dict) else target
+            if not lab.node(ref):
+                raise StoryError(f"{name}: no node {ref!r} in this topology")
         else:
             ref = target["link"] if isinstance(target, dict) else target
             if not lab.find(ref):

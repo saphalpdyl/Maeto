@@ -26,6 +26,7 @@ type TopologyNodeSnapshot struct {
 
 	MirrorLocator string `json:"mirror_locator,omitempty"`
 	Role          string `json:"role,omitempty"`
+	Down          bool   `json:"down,omitempty"`
 }
 
 type TopologyEdgeSnapshot struct {
@@ -206,6 +207,7 @@ func SnapshotTopology(graph *Graph, domain SRv6DomainMetadata, costs *CostGraph,
 
 			MirrorLocator: prefixString(node.MirrorLocator),
 			Role:          string(node.Role),
+			Down:          graph.down[node.ID],
 		})
 	}
 

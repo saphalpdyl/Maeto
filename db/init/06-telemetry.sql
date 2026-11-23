@@ -37,3 +37,22 @@ CREATE TABLE node_heartbeats (
 SELECT create_hypertable('node_heartbeats', 'time');
 
 SELECT add_retention_policy('node_heartbeats', INTERVAL '7 days');
+
+CREATE TABLE path_changes (
+    time       TIMESTAMPTZ      NOT NULL,
+    tenant     BIGINT           NOT NULL,
+    label      BIGINT           NOT NULL,
+    src        TEXT             NOT NULL,
+    dst        TEXT             NOT NULL,
+    kind       TEXT             NOT NULL,
+    from_nodes TEXT[]           NOT NULL,
+    to_nodes   TEXT[]           NOT NULL,
+    from_cost  DOUBLE PRECISION,
+    to_cost    DOUBLE PRECISION,
+    causes     JSONB            NOT NULL DEFAULT '[]',
+    PRIMARY KEY (tenant, label, src, dst, time)
+);
+
+SELECT create_hypertable('path_changes', 'time');
+
+SELECT add_retention_policy('path_changes', INTERVAL '7 days');

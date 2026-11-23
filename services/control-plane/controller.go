@@ -161,6 +161,7 @@ func NewController(
 			},
 			pceImmediateRecomputeChan,
 			snapshotRefreshChan,
+			db,
 			logger.With(log.Domain(log.DomainPCE)),
 		),
 		pceUpdates:      pceUpdatesChan,

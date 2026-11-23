@@ -17,11 +17,14 @@ import nats
 
 from nats.js.errors import BucketNotFoundError
 
+import crash as crashlib
 import faults
 import lab as lablib
 import scenarios
 import stories as storylib
 
+from crash import Crash, CrashError, Crasher
+from pinger import Pinger
 from faults import Fault, FaultError, LIMITS
 from shaping import Shaper, ShapingError
 
@@ -40,10 +43,13 @@ HEARTBEAT_S = 2
 
 
 class Sim:
-    def __init__(self, shaper: Shaper):
+    def __init__(self, shaper: Shaper, crasher: Crasher, client: docker.DockerClient):
         self.shaper = shaper
+        self.crasher = crasher
+        self.pinger = Pinger(client, self.changed)
         self.lock = asyncio.Lock()
         self.faults: Dict[str, Fault] = {}
+        self.crashes: Dict[str, Crash] = {}
         self.traffic = scenarios.Traffic(TFSIM, ROOT, self.changed, TRAFFIC)
         self.dirty = asyncio.Event()
 
@@ -127,13 +133,55 @@ class Sim:
             except ShapingError as e:
                 log.error("reverting %s: %s", link_id, e)
 
+        for name in [key for key, crash in self.crashes.items() if crash.source == source]:
+            try:
+                await self.boot(name)
+            except CrashError as e:
+                log.error("booting %s: %s", name, e)
+
+    async def crash(self, ref: str, how: str, source: str, hold_s: float):
+        node = self.lab.node(ref) if self.lab else None
+        if node is None:
+            raise FaultError(f"unknown node {ref!r}")
+        if self.crashes:
+            raise FaultError("only one node can be crashed at a time")
+
+        await self.crasher.crash(node, how)
+        self.crashes[node.name] = Crash(node=node.name, mode=how, source=source, expires_at=time.time() + hold_s)
+        self.changed()
+
+    async def boot(self, name: str):
+        crash = self.crashes.pop(name, None)
+        if crash is None:
+            return
+
+        await self.crasher.boot(self.lab.node(name))
+        self.changed()
+
     async def reset(self):
         self.traffic.stop()
+        await self.pinger.stop()
         self.faults.clear()
+
+        for name in list(self.crashes):
+            try:
+                await self.boot(name)
+            except CrashError as e:
+                log.error("booting %s: %s", name, e)
+
         self.load_lab()
 
         if self.lab is None:
             return
+
+        for name in await self.crasher.parked():
+            node = self.lab.node(name)
+            if node is None:
+                continue
+            try:
+                await self.crasher.boot(node)
+            except CrashError as e:
+                log.error("booting stranded %s: %s", name, e)
 
         for link in self.lab.links.values():
             for end in link.ends("both"):
@@ -167,7 +215,7 @@ class Sim:
             await asyncio.sleep(max(self.story_started_at + story.duration_s - time.time(), 0))
         except asyncio.CancelledError:
             pass
-        except (FaultError, ShapingError, ValueError) as e:
+        except (FaultError, ShapingError, CrashError, ValueError) as e:
             log.error("story %s failed: %s", story.name, e)
             self.error = f"story {story.title} failed: {e}"
         finally:
@@ -175,6 +223,8 @@ class Sim:
                 await self.clear_source(source)
                 if self.traffic.owner == source:
                     self.traffic.stop()
+                if self.pinger.owner == source:
+                    await self.pinger.stop()
                 self.story = None
                 self.story_task = None
                 self.changed()
@@ -183,6 +233,17 @@ class Sim:
         if step.kind == "traffic":
             if not self.traffic.running:
                 await self.traffic.start(step.target, step.hold_s, owner=source)
+            return
+
+        if step.kind == "ping":
+            await self.pinger.start(
+                self.lab.hosts[step.target["from"]], self.lab.hosts[step.target["to"]], step.hold_s, owner=source,
+            )
+            return
+
+        if step.kind == "crash":
+            spec = step.target if isinstance(step.target, dict) else {"node": step.target}
+            await self.crash(spec["node"], crashlib.mode(spec), source, step.hold_s)
             return
 
         spec = step.target if isinstance(step.target, dict) else {"link": step.target}
@@ -261,6 +322,12 @@ class Sim:
                     except ShapingError as e:
                         log.error("reverting %s: %s", link_id, e)
 
+                for name in [key for key, crash in self.crashes.items() if crash.expires_at <= now]:
+                    try:
+                        await self.boot(name)
+                    except CrashError as e:
+                        log.error("booting %s: %s", name, e)
+
             if self.traffic.expired():
                 log.info("scenario %s hit its time limit", self.traffic.name)
                 self.traffic.stop()
@@ -295,6 +362,8 @@ class Sim:
             "limits": LIMITS,
             "links": links,
             "faults": [fault.view() for fault in self.faults.values()],
+            "crashes": [crash.view() for crash in self.crashes.values()],
+            "ping": self.pinger.view(),
             "scenarios": scenarios.catalog(TFSIM / "scenarios") if TRAFFIC else [],
             "scenario": self.traffic.view(),
             "last_scenario": self.traffic.last,
@@ -330,7 +399,8 @@ async def bucket(nc):
 async def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 
-    sim = Sim(Shaper(docker.from_env()))
+    client = docker.from_env()
+    sim = Sim(Shaper(client), Crasher(client), client)
     async with sim.lock:
         await sim.reset()
 
@@ -341,7 +411,7 @@ async def main():
         try:
             request = json.loads(msg.data or b"{}")
             reply = await sim.command(request)
-        except (FaultError, ShapingError, ValueError, KeyError, json.JSONDecodeError) as e:
+        except (FaultError, ShapingError, CrashError, ValueError, KeyError, json.JSONDecodeError) as e:
             reply = {"ok": False, "error": str(e)}
         except Exception as e:
             log.exception("command failed")

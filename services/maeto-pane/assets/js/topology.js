@@ -33,6 +33,7 @@ const palette = () => ({
   warn: token("--mt-warn"),
   bad: token("--mt-bad"),
   idle: token("--mt-idle"),
+  plr: token("--mt-plr"),
 })
 
 const classColor = slot => token(`--mt-class-${slot || 0}`)
@@ -46,6 +47,8 @@ const statusColor = (colors, status) =>
     issue: colors.bad,
     blind: colors.idle,
     silent: colors.faint,
+    plr: colors.plr,
+    down: colors.bad,
   })[status] || colors.faint
 
 Graph.registerNode(
@@ -59,6 +62,7 @@ Graph.registerNode(
       {tagName: "text", selector: "role"},
       {tagName: "text", selector: "name"},
       {tagName: "text", selector: "facts"},
+      {tagName: "text", selector: "badge"},
     ],
     attrs: {
       halo: {cx: R, cy: R, r: R + 10, strokeWidth: 0, fillOpacity: 0.2, fill: "none"},
@@ -92,6 +96,18 @@ Graph.registerNode(
         textVerticalAnchor: "middle",
         fontFamily: MONO,
         fontSize: 11,
+        strokeWidth: 5,
+        paintOrder: "stroke",
+        pointerEvents: "none",
+      },
+      badge: {
+        x: R,
+        y: -12,
+        textAnchor: "middle",
+        textVerticalAnchor: "middle",
+        fontFamily: MONO,
+        fontSize: 11,
+        fontWeight: 700,
         strokeWidth: 5,
         paintOrder: "stroke",
         pointerEvents: "none",
@@ -549,7 +565,9 @@ export default {
         const isPicked = picked.kind === "node" && picked.id === node.id
         const status = statusColor(colors, node.status)
         const ring =
-          overlay === "health"
+          node.status === "plr"
+            ? colors.plr
+            : overlay === "health"
             ? status
             : tracing && traced.has(node.id)
               ? traces.length === 1
@@ -557,16 +575,18 @@ export default {
                 : colors.ink
               : colors.lineStrong
         const alarm = overlay === "health" && node.status === "issue"
+        const plr = node.status === "plr"
         const dim = tracing && !traced.has(node.id)
 
         const opacity = dim ? 0.3 : 1
 
         cell.attr({
-          halo: {fill: isPicked ? colors.accent : alarm ? colors.bad : "none"},
+          halo: {fill: isPicked ? colors.accent : alarm ? colors.bad : plr ? colors.plr : "none"},
           ring: {stroke: isPicked ? colors.accent : ring, fill: colors.surface, opacity},
           role: {fill: isPicked ? colors.accent : ring, opacity},
           name: {fill: isPicked ? colors.accent : colors.ink, stroke: colors.surface, opacity},
           facts: {fill: isPicked ? colors.accent : colors.muted, stroke: colors.surface, opacity},
+          badge: {text: node.badge || "", fill: colors.plr, stroke: colors.surface, opacity},
         })
       }
 

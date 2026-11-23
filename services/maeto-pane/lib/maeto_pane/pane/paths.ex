@@ -72,7 +72,7 @@ defmodule MaetoPane.Pane.Paths do
     names = class_names(control)
     slots = class_slots(control)
 
-    (control["path_changes"] || [])
+    (Map.get(snapshot, :path_changes) || control["path_changes"] || [])
     |> Enum.map(fn change ->
       from = change["from_path"] || %{}
       to = change["to_path"] || %{}

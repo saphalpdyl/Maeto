@@ -61,6 +61,20 @@ type NodeReport struct {
 	Error      string
 }
 
+type PathChange struct {
+	Time      pgtype.Timestamptz
+	Tenant    int64
+	Label     int64
+	Src       string
+	Dst       string
+	Kind      string
+	FromNodes []string
+	ToNodes   []string
+	FromCost  pgtype.Float8
+	ToCost    pgtype.Float8
+	Causes    []byte
+}
+
 type SidAllocation struct {
 	Sid      netip.Addr
 	Locator  netip.Prefix

@@ -196,6 +196,8 @@ defmodule MaetoPaneWeb.Pane.Inspector.NodePanel do
   defp state_label(:issue), do: "Issue"
   defp state_label(:blind), do: "Blind"
   defp state_label(:silent), do: "Silent"
+  defp state_label(:plr), do: "PLR"
+  defp state_label(:down), do: "Down"
 
   defp tenants(%{view: %{tenants: tenants}}), do: length(tenants)
   defp tenants(_node), do: 0

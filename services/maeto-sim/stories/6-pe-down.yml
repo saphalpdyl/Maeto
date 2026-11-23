@@ -1,0 +1,10 @@
+title: PeSLC goes down
+description: "HostIAD pings HostSLC while PeSLC crashes for 60 seconds. The P routers next to it repair traffic onto its protector within milliseconds, the controller declares it down and moves its sites to the protector, and it rejoins once it has been ready for 20 seconds."
+duration: 105
+steps:
+  - at: 0
+    for: 105
+    ping: {from: HostIAD, to: HostSLC}
+  - at: 5
+    for: 60
+    crash: PeSLC

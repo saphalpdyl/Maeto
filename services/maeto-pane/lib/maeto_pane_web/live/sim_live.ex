@@ -173,6 +173,7 @@ defmodule MaetoPaneWeb.SimLive do
         <% else %>
           <.overview
             faults={Map.values(@faults)}
+            crashes={@sim["crashes"] || []}
             links={@links_by_id}
             limits={@limits}
             now={@now}
@@ -213,6 +214,11 @@ defmodule MaetoPaneWeb.SimLive do
       <section class="border-b border-line px-6 py-5">
         <h2 class="mb-3 text-sm font-semibold">Stories</h2>
         <.stories stories={@sim["stories"] || []} story={@sim["story"]} now={@now} busy={@busy} />
+      </section>
+
+      <section :if={@sim["ping"]} class="border-b border-line px-6 py-5">
+        <h2 class="mb-3 text-sm font-semibold">Ping</h2>
+        <.ping ping={@sim["ping"]} />
       </section>
 
       <section class="border-b border-line px-6 py-5">

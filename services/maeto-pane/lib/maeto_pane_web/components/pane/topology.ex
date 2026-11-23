@@ -93,7 +93,9 @@ defmodule MaetoPaneWeb.Pane.Topology do
                 converging: "Converging",
                 issue: "Issue",
                 blind: "Blind",
-                silent: "Silent"
+                silent: "Silent",
+                plr: "PLR",
+                down: "PE down"
               ]
             }
             class="flex items-center gap-1.5"
@@ -145,6 +147,7 @@ defmodule MaetoPaneWeb.Pane.Topology do
       name: node.name,
       status: node.status,
       role: if(sites > 0 or tenants > 0, do: "PE", else: "PR"),
+      badge: if(node.status == :plr, do: "PLR", else: nil),
       sites: sites,
       vpns: tenants,
       ifs: length((node.inventory && node.inventory["interfaces"]) || [])

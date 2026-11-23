@@ -81,6 +81,10 @@ func (t *TestDefaultRouteOnlyDataplane) ResetRepair(egress string, all bool) err
 	panic("implement me")
 }
 
+func (t *TestDefaultRouteOnlyDataplane) ActiveRepairs() ([]string, error) {
+	return nil, nil
+}
+
 func (t *TestDefaultRouteOnlyDataplane) UpsertDTSID(sid netip.Addr, vrfTableID int, tableID int, sidType dataplane.EncapType) error {
 	//TODO implement me
 	panic("implement me")

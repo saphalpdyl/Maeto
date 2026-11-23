@@ -76,6 +76,8 @@ services:
     build:
       context: .
       dockerfile: docker/maeto-sim.Dockerfile
+    privileged: true
+    pid: host
     environment:
       - NATS_CONNECT_URL=nats://clab-eight-pop-nats:4222
       - MAETO_SIM_TRAFFIC=${MAETO_SIM_TRAFFIC:-0}

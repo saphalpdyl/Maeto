@@ -49,11 +49,33 @@ class Link:
 
 
 @dataclass
+class Node:
+    name: str
+    container: str
+    ifaces: List[str]
+
+
+@dataclass
+class Host:
+    name: str
+    container: str
+    address: str
+
+
+@dataclass
 class Lab:
     name: str
     build: Path
     links: Dict[str, Link]
     pops: List[str]
+    nodes: Dict[str, Node] = field(default_factory=dict)
+    hosts: Dict[str, Host] = field(default_factory=dict)
+
+    def node(self, ref: str) -> Optional[Node]:
+        for node in self.nodes.values():
+            if ref == node.name:
+                return node
+        return self.nodes.get(ref)
 
     def find(self, ref: str) -> List[Link]:
         # "A-B" is every member between A and B, "A-B#2" just the second
@@ -143,4 +165,20 @@ def load(root: Path) -> Lab:
         )
 
     pops = sorted(pop["id"] for pop in data["pops"])
-    return Lab(name=data["name"], build=build, links=links, pops=pops)
+
+    nodes = {}
+    for pop in data["pops"]:
+        ifaces = [iface["name"] for iface in pop["interfaces"]]
+        if pop.get("access"):
+            ifaces.insert(0, pop["access"]["interface"])
+        nodes[pop["id"]] = Node(name=pop["name"], container=f"clab-{data['name']}-{pop['name']}", ifaces=ifaces)
+
+    hosts = {}
+    for host in data.get("hosts") or []:
+        hosts[host["name"]] = Host(
+            name=host["name"],
+            container=f"clab-{data['name']}-{host['name']}",
+            address=host["address"].split("/")[0],
+        )
+
+    return Lab(name=data["name"], build=build, links=links, pops=pops, nodes=nodes, hosts=hosts)

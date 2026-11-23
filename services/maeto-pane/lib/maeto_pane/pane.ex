@@ -13,6 +13,7 @@ defmodule MaetoPane.Pane do
   @topic "pane"
   @retry_after 2_000
   @heartbeat_keep_ms 25 * 60 * 1_000
+  @path_change_keep 1_024
 
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
 
@@ -25,6 +26,7 @@ defmodule MaetoPane.Pane do
     Process.flag(:trap_exit, true)
     send(self(), :watch)
     send(self(), :seed_heartbeats)
+    send(self(), :seed_path_changes)
 
     {:ok, Map.put(empty(), :started_at, System.system_time(:millisecond))}
   end
@@ -39,6 +41,8 @@ defmodule MaetoPane.Pane do
       intents: %{},
       states: %{},
       heartbeats: %{},
+      repairing: %{},
+      path_changes: [],
       started_at: System.system_time(:millisecond),
       control: nil,
       connected: false,
@@ -61,28 +65,62 @@ defmodule MaetoPane.Pane do
   end
 
   def handle_info(:seed_heartbeats, state) do
-    now = System.system_time(:millisecond)
+    owner = self()
     since = DateTime.add(DateTime.utc_now(), -@heartbeat_keep_ms, :millisecond)
 
-    case heartbeat_history(since) do
-      {:ok, rows} ->
-        seeded =
-          Enum.reduce(rows, state.heartbeats, fn [node_id, at, ready], acc ->
-            beat = {DateTime.to_unix(at, :millisecond), ready}
-            Map.update(acc, "pop.#{node_id}", [beat], &[beat | &1])
-          end)
-          |> Map.new(fn {key, beats} ->
-            {key, beats |> Enum.uniq() |> Enum.sort_by(&elem(&1, 0), :desc)}
-          end)
+    Task.start(fn -> send(owner, {:heartbeat_history, heartbeat_history(since)}) end)
 
-        {:noreply, broadcast(%{state | heartbeats: seeded, started_at: now - @heartbeat_keep_ms})}
+    {:noreply, state}
+  end
 
-      {:error, reason} ->
-        Logger.debug("heartbeat history unavailable, retrying: #{inspect(reason)}")
-        Process.send_after(self(), :seed_heartbeats, @retry_after)
+  def handle_info({:heartbeat_history, {:ok, rows}}, state) do
+    now = System.system_time(:millisecond)
 
-        {:noreply, state}
-    end
+    seeded =
+      Enum.reduce(rows, state.heartbeats, fn [node_id, at, ready], acc ->
+        beat = {DateTime.to_unix(at, :millisecond), ready}
+        Map.update(acc, "pop.#{node_id}", [beat], &[beat | &1])
+      end)
+      |> Map.new(fn {key, beats} ->
+        {key, beats |> Enum.uniq() |> Enum.sort_by(&elem(&1, 0), :desc)}
+      end)
+
+    started_at =
+      case rows do
+        [[_node_id, first, _ready] | _] -> min(DateTime.to_unix(first, :millisecond), now)
+        [] -> state.started_at
+      end
+
+    {:noreply, broadcast(%{state | heartbeats: seeded, started_at: started_at})}
+  end
+
+  def handle_info({:heartbeat_history, {:error, reason}}, state) do
+    Logger.debug("heartbeat history unavailable, retrying: #{inspect(reason)}")
+    Process.send_after(self(), :seed_heartbeats, @retry_after)
+
+    {:noreply, state}
+  end
+
+  def handle_info(:seed_path_changes, state) do
+    owner = self()
+
+    Task.start(fn -> send(owner, {:path_change_history, path_change_history()}) end)
+
+    {:noreply, state}
+  end
+
+  def handle_info({:path_change_history, {:ok, rows}}, state) do
+    history = Enum.map(rows, &path_change_row/1)
+
+    {:noreply,
+     broadcast(%{state | path_changes: merge_path_changes(state.path_changes, history)})}
+  end
+
+  def handle_info({:path_change_history, {:error, reason}}, state) do
+    Logger.debug("path change history unavailable, retrying: #{inspect(reason)}")
+    Process.send_after(self(), :seed_path_changes, @retry_after)
+
+    {:noreply, state}
   end
 
   def handle_info({:EXIT, pid, reason}, %{watchers: watchers} = state) do
@@ -100,7 +138,9 @@ defmodule MaetoPane.Pane do
   def handle_info({:kv, :control, :key_added, _key, value}, state) do
     case Jason.decode(value) do
       {:ok, decoded} ->
-        {:noreply, broadcast(Map.put(state, :control, decoded))}
+        path_changes = merge_path_changes(state.path_changes, decoded["path_changes"] || [])
+
+        {:noreply, broadcast(Map.merge(state, %{control: decoded, path_changes: path_changes}))}
 
       {:error, reason} ->
         Logger.warning("undecodable control snapshot: #{inspect(reason)}")
@@ -121,12 +161,16 @@ defmodule MaetoPane.Pane do
       now = System.system_time(:millisecond)
       beat = {now, decoded["ready"] == true}
 
+      node_key = "#{prefix}.#{id}"
+
       heartbeats =
-        Map.update(state.heartbeats, "#{prefix}.#{id}", [beat], fn beats ->
+        Map.update(state.heartbeats, node_key, [beat], fn beats ->
           [beat | Enum.take_while(beats, fn {at, _} -> now - at <= @heartbeat_keep_ms end)]
         end)
 
-      {:noreply, broadcast(%{state | heartbeats: heartbeats})}
+      repairing = Map.put(state.repairing, node_key, decoded["repairing"] || [])
+
+      {:noreply, broadcast(%{state | heartbeats: heartbeats, repairing: repairing})}
     else
       _ -> {:noreply, state}
     end
@@ -221,6 +265,66 @@ defmodule MaetoPane.Pane do
     end
   catch
     :exit, reason -> {:error, reason}
+  end
+
+  defp path_change_history do
+    sql = """
+    SELECT time, tenant, label, src, dst, kind, from_nodes, to_nodes, from_cost, to_cost, causes
+    FROM path_changes
+    ORDER BY time DESC
+    LIMIT $1
+    """
+
+    case Postgrex.query(MaetoPane.DB, sql, [@path_change_keep]) do
+      {:ok, result} -> {:ok, result.rows}
+      {:error, error} -> {:error, error}
+    end
+  catch
+    :exit, reason -> {:error, reason}
+  end
+
+  defp path_change_row([
+         at,
+         tenant,
+         label,
+         src,
+         dst,
+         kind,
+         from_nodes,
+         to_nodes,
+         from_cost,
+         to_cost,
+         causes
+       ]) do
+    %{
+      "at" => DateTime.to_iso8601(at),
+      "tenant" => tenant,
+      "label" => label,
+      "src" => src,
+      "dst" => dst,
+      "kind" => kind,
+      "from_path" => %{"nodes" => from_nodes, "cost" => from_cost},
+      "to_path" => %{"nodes" => to_nodes, "cost" => to_cost},
+      "causes" => causes
+    }
+  end
+
+  defp merge_path_changes(kept, incoming) do
+    (incoming ++ kept)
+    |> Enum.uniq_by(&path_change_key/1)
+    |> Enum.sort_by(&path_change_time/1, :desc)
+    |> Enum.take(@path_change_keep)
+  end
+
+  defp path_change_key(change) do
+    {path_change_time(change), change["tenant"], change["label"], change["src"], change["dst"]}
+  end
+
+  defp path_change_time(change) do
+    case DateTime.from_iso8601(change["at"] || "") do
+      {:ok, at, _offset} -> DateTime.to_unix(at, :microsecond)
+      _ -> 0
+    end
   end
 
   defp broadcast(state) do

@@ -14,6 +14,7 @@ defmodule MaetoPaneWeb.Pane.UI do
   def dot("warn"), do: "bg-warn"
   def dot("bad"), do: "bg-bad"
   def dot("idle"), do: "bg-idle"
+  def dot("plr"), do: "bg-plr"
   def dot("accent"), do: "bg-accent"
   def dot(_tone), do: "bg-faint"
 
@@ -21,6 +22,7 @@ defmodule MaetoPaneWeb.Pane.UI do
   def pill_classes("warn"), do: "bg-warn-soft text-warn-ink"
   def pill_classes("bad"), do: "bg-bad-soft text-bad-ink"
   def pill_classes("idle"), do: "bg-idle-soft text-idle"
+  def pill_classes("plr"), do: "bg-plr-soft text-plr-ink"
   def pill_classes("accent"), do: "bg-accent-soft text-ok-ink"
   def pill_classes("steer"), do: "bg-steer-soft text-steer-ink"
   def pill_classes(_tone), do: "bg-sunken text-muted"

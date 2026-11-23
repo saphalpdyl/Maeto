@@ -32,6 +32,15 @@ type topologyReporter struct {
 
 	linkUpdates <-chan map[string]nodesync.LinkState
 	links       map[string]nodesync.LinkState
+
+	repairsChanged chan struct{}
+}
+
+func (t *topologyReporter) RepairsChanged() {
+	select {
+	case t.repairsChanged <- struct{}{}:
+	default:
+	}
 }
 
 func (t *topologyReporter) Run(ctx context.Context) {
@@ -51,6 +60,7 @@ func (t *topologyReporter) Run(ctx context.Context) {
 		case <-ticker.C:
 		case <-retry:
 		case t.links = <-t.linkUpdates:
+		case <-t.repairsChanged:
 		}
 	}
 }
@@ -89,6 +99,13 @@ func (t *topologyReporter) collect() (*nodesync.TopologyReport, error) {
 		Links:       t.links,
 		Ready:       t.reconciler.IsDoneFirstReconcile(),
 	}
+
+	repairing, err := t.dp.ActiveRepairs()
+	if err != nil {
+		return nil, fmt.Errorf("list active repairs: %w", err)
+	}
+
+	report.Repairing = repairing
 
 	for _, sid := range sids {
 		if sid.Dst == nil {

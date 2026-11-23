@@ -32,7 +32,10 @@ defmodule MaetoPaneWeb.Pane.Inspector.Issues do
           class="space-y-1.5 border-b border-line/60 px-4 py-3.5 last:border-0"
         >
           <div class="flex items-center gap-2">
-            <span class="size-[7px] shrink-0 rounded-full bg-bad" />
+            <span class={[
+              "size-[7px] shrink-0 rounded-full",
+              if(issue.kind == :plr_active, do: "bg-plr", else: "bg-bad")
+            ]} />
             <span class="font-mono text-[13px] font-medium">{issue.kind}</span>
             <span :if={issue.sid} class="ml-auto truncate font-mono text-[11px] text-faint">
               {issue.sid}
@@ -47,6 +50,15 @@ defmodule MaetoPaneWeb.Pane.Inspector.Issues do
             class="text-xs text-link hover:underline"
           >
             Inspect {issue.node}
+          </button>
+          <button
+            :if={Map.get(issue, :link)}
+            phx-click="select"
+            phx-value-kind="link"
+            phx-value-id={issue.link}
+            class="text-xs text-link hover:underline"
+          >
+            Inspect link
           </button>
         </li>
       </ul>

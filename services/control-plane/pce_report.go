@@ -2,11 +2,16 @@ package controlplane
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"sort"
 	"sync"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/saphalpdyl/maeto/libs/store"
+	"github.com/saphalpdyl/maeto/services/control-plane/log"
 )
 
 // Carries information on reroute decisions and metrics
@@ -120,16 +125,25 @@ func attributeCauses(from *Path, dim CostDimension, was, now map[CostGraphEdge]*
 // so retention lives here rather than in the report.
 const recentPathChangeLimit = 64
 
+const pathChangeWriteTimeout = 5 * time.Second
+
 type PathChangeStore struct {
 	mu      sync.RWMutex
 	changes []PCETickReportReroute
+
+	db     *store.DataStore
+	logger *slog.Logger
 }
 
-func NewPathChangeStore() *PathChangeStore {
-	return &PathChangeStore{changes: make([]PCETickReportReroute, 0, recentPathChangeLimit)}
+func NewPathChangeStore(db *store.DataStore, logger *slog.Logger) *PathChangeStore {
+	return &PathChangeStore{
+		changes: make([]PCETickReportReroute, 0, recentPathChangeLimit),
+		db:      db,
+		logger:  logger,
+	}
 }
 
-func (s *PathChangeStore) Record(changes ...PCETickReportReroute) {
+func (s *PathChangeStore) Record(ctx context.Context, changes ...PCETickReportReroute) {
 	if s == nil || len(changes) == 0 {
 		return
 	}
@@ -141,6 +155,54 @@ func (s *PathChangeStore) Record(changes ...PCETickReportReroute) {
 	if len(s.changes) > recentPathChangeLimit {
 		s.changes = s.changes[:recentPathChangeLimit]
 	}
+
+	if s.db != nil {
+		go s.persist(context.WithoutCancel(ctx), changes)
+	}
+}
+
+func (s *PathChangeStore) persist(ctx context.Context, changes []PCETickReportReroute) {
+	ctx, cancel := context.WithTimeout(ctx, pathChangeWriteTimeout)
+	defer cancel()
+
+	for _, c := range changes {
+		causes := c.Causes
+		if causes == nil {
+			causes = []PathChangeCause{}
+		}
+
+		causesJSON, err := json.Marshal(causes)
+		if err != nil {
+			s.logger.ErrorContext(ctx, "failed to encode path change causes", log.Err(err))
+			continue
+		}
+
+		err = s.db.Queries.InsertPathChange(ctx, store.InsertPathChangeParams{
+			Time:      pgtype.Timestamptz{Time: c.At, Valid: true},
+			Tenant:    int64(c.Tenant),
+			Label:     int64(c.Label),
+			Src:       string(c.Src),
+			Dst:       string(c.Dst),
+			Kind:      string(c.Kind),
+			FromNodes: nodeNames(c.FromPath.Nodes),
+			ToNodes:   nodeNames(c.ToPath.Nodes),
+			FromCost:  pgtype.Float8{Float64: c.FromPath.Cost, Valid: len(c.FromPath.Nodes) > 0},
+			ToCost:    pgtype.Float8{Float64: c.ToPath.Cost, Valid: len(c.ToPath.Nodes) > 0},
+			Causes:    causesJSON,
+		})
+		if err != nil {
+			s.logger.ErrorContext(ctx, "failed to record path change", log.Err(err))
+		}
+	}
+}
+
+func nodeNames(nodes []NodeID) []string {
+	names := make([]string, 0, len(nodes))
+	for _, node := range nodes {
+		names = append(names, string(node))
+	}
+
+	return names
 }
 
 // Recent returns the newest changes first.

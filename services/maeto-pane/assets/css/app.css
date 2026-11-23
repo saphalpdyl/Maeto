@@ -142,6 +142,9 @@
   --color-dt46-ink: var(--mt-dt46-ink);
   --color-warn: var(--mt-warn);
   --color-warn-soft: var(--mt-warn-soft);
+  --color-plr: var(--mt-plr);
+  --color-plr-soft: var(--mt-plr-soft);
+  --color-plr-ink: var(--mt-plr-ink);
   --color-bad: var(--mt-bad);
   --color-bad-soft: var(--mt-bad-soft);
   --color-idle: var(--mt-idle);
@@ -169,6 +172,9 @@
   --mt-ok-soft: #14261a;
   --mt-warn: #f59e0b;
   --mt-warn-soft: #2a2110;
+  --mt-plr: #f97316;
+  --mt-plr-soft: #2c1a0e;
+  --mt-plr-ink: #fb923c;
   --mt-bad: #ef4444;
   --mt-bad-soft: #2b1717;
   --mt-idle: #a78bfa;
@@ -213,6 +219,9 @@
   --mt-warn: oklch(0.7 0.15 70);
   --mt-warn-soft: oklch(0.96 0.05 75);
   --mt-warn-ink: oklch(0.48 0.12 60);
+  --mt-plr: oklch(0.68 0.19 45);
+  --mt-plr-soft: oklch(0.96 0.04 45);
+  --mt-plr-ink: oklch(0.52 0.17 42);
   --mt-bad: oklch(0.6 0.19 25);
   --mt-bad-soft: oklch(0.96 0.03 25);
   --mt-bad-ink: oklch(0.5 0.17 25);

@@ -1660,6 +1660,25 @@ func (l *LinuxNetlink) ResetRepair(egress string, all bool) error {
 	return nil
 }
 
+func (l *LinuxNetlink) ActiveRepairs() ([]string, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	triggerMap, err := l.getActiveTriggers()
+	if err != nil {
+		return nil, err
+	}
+
+	egresses := make([]string, 0, len(triggerMap))
+	for egress := range triggerMap {
+		egresses = append(egresses, egress)
+	}
+
+	slices.Sort(egresses)
+
+	return egresses, nil
+}
+
 func (l *LinuxNetlink) CleanupTriggers() error {
 	l.mu.Lock()
 	defer l.mu.Unlock()

@@ -9,6 +9,8 @@ defmodule MaetoPaneWeb.Pane.Tones do
   def node_tone(:issue), do: "bad"
   def node_tone(:blind), do: "idle"
   def node_tone(:silent), do: "faint"
+  def node_tone(:plr), do: "plr"
+  def node_tone(:down), do: "bad"
 
   def path_tone(:installed), do: "ok"
   def path_tone(:drifted), do: "bad"

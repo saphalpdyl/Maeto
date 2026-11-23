@@ -7,6 +7,7 @@ defmodule MaetoPaneWeb.Pane.Sim do
   use MaetoPaneWeb, :html
 
   import MaetoPaneWeb.Pane.UI
+  import MaetoPaneWeb.Pane.Heartbeats, only: [heartbeat_bar: 1]
 
   @ttls [{"30 s", 30}, {"1 min", 60}, {"2 min", 120}, {"5 min", 300}, {"10 min", 600}]
 
@@ -392,6 +393,7 @@ defmodule MaetoPaneWeb.Pane.Sim do
       "block w-full rounded-md border border-line bg-surface px-2 py-1 font-mono text-[13px] text-ink focus:border-steer focus:outline-none"
 
   attr :faults, :list, required: true
+  attr :crashes, :list, default: []
   attr :links, :map, required: true
   attr :limits, :map, required: true
   attr :now, :float, required: true
@@ -407,8 +409,21 @@ defmodule MaetoPaneWeb.Pane.Sim do
     </header>
 
     <.group title="Active faults">
-      <p :if={@faults == []} class="text-xs text-faint">None. The fabric is at its baseline.</p>
+      <p :if={@faults == [] and @crashes == []} class="text-xs text-faint">
+        None. The fabric is at its baseline.
+      </p>
       <ul class="space-y-1">
+        <li
+          :for={crash <- @crashes}
+          class="-mx-2 flex w-[calc(100%+1rem)] items-center gap-2 px-2 py-1.5 text-xs"
+        >
+          <span class="size-1.5 shrink-0 rounded-full bg-bad" />
+          <span class="font-mono font-medium text-accent">{crash["node"]}</span>
+          <span class="min-w-0 flex-1 truncate text-muted">crashed · {crash["mode"]}</span>
+          <span class="font-mono text-faint tabular-nums">
+            {remaining(crash["expires_at"], @now)}
+          </span>
+        </li>
         <li :for={fault <- @faults}>
           <button
             phx-click="select"
@@ -437,6 +452,31 @@ defmodule MaetoPaneWeb.Pane.Sim do
         <.row label="Longest fault" value={"#{div(@limits["ttl_max_s"], 60)} min"} />
       </dl>
     </.group>
+    """
+  end
+
+  attr :ping, :map, required: true
+
+  def ping(assigns) do
+    samples = assigns.ping["samples"] || []
+    pad = List.duplicate(:unknown, max((assigns.ping["keep"] || 0) - length(samples), 0))
+    ticks = Enum.map(samples, &if(&1["rtt_ms"], do: :ready, else: :missing))
+    last = Enum.find(Enum.reverse(samples), & &1["rtt_ms"])
+    last_rtt = if last, do: "#{num(last["rtt_ms"])} ms", else: "-"
+
+    assigns = assign(assigns, bars: ticks ++ pad, last_rtt: last_rtt)
+
+    ~H"""
+    <div class="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px]">
+      <span class="font-mono">{@ping["from"]} → {@ping["to"]}</span>
+      <.pill tone={if(@ping["running"], do: "ok", else: "faint")}>
+        {if @ping["running"], do: "running", else: "stopped"}
+      </.pill>
+      <span class="ml-auto font-mono text-xs text-muted tabular-nums">
+        {@ping["sent"]} sent · {@ping["lost"]} lost · longest gap {@ping["longest_gap_ms"]} ms · last {@last_rtt}
+      </span>
+    </div>
+    <.heartbeat_bar id="sim-ping-bar" bars={@bars} />
     """
   end
 end

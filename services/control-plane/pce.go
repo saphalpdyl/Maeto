@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/saphalpdyl/maeto/libs/store"
 	"github.com/saphalpdyl/maeto/services/control-plane/log"
 )
 
@@ -45,6 +46,7 @@ func NewPCE(
 	config PCEConfig,
 	requestImmediateRecomputeChan chan struct{},
 	snapshotRefreshChan chan<- struct{},
+	db *store.DataStore,
 	logger *slog.Logger,
 ) *PCE {
 	return &PCE{
@@ -53,7 +55,7 @@ func NewPCE(
 		logger:                        logger,
 		reportChan:                    reportChan,
 		PathStore:                     NewPathStore(),
-		Changes:                       NewPathChangeStore(),
+		Changes:                       NewPathChangeStore(db, logger),
 		bandwidthReservationReg:       NewBandwidthReservationRegistry(logger),
 		holdDownDuration:              config.HoldDownDuration,
 		pceTickDuration:               config.PCETickDuration,
@@ -313,8 +315,8 @@ func (p *PCE) Run(ctx context.Context, graph *Graph) {
 		tickReport.Log(ctx)
 
 		p.PathStore.Store(paths)
-		p.Changes.Record(tickReport.Reroutes...)
-		p.Changes.Record(tickReport.GatedReroutes...)
+		p.Changes.Record(ctx, tickReport.Reroutes...)
+		p.Changes.Record(ctx, tickReport.GatedReroutes...)
 		p.previousCosts = costSnapshot
 
 		if immediate {

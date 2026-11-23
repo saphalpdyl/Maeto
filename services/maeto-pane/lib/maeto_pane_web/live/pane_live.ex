@@ -188,7 +188,11 @@ defmodule MaetoPaneWeb.PaneLive do
     |> assign(:classes, classes)
     |> assign(:changes, changes)
     |> assign(:sites_by_node, Enum.frequencies_by(sites, & &1.attach))
-    |> assign(:issues, Analysis.issues(nodes) ++ Analysis.drift(registry) ++ Paths.issues(rows))
+    |> assign(
+      :issues,
+      Analysis.events(graph) ++
+        Analysis.issues(nodes) ++ Analysis.drift(registry) ++ Paths.issues(rows)
+    )
     |> assign(:facts, facts(graph, links, sites, rows, computed, changes))
     |> then(&assign(&1, :nav, Nav.groups(&1.assigns.facts, graph.nodes)))
     |> assign(:programmed_pairs, MapSet.new(rows, &{&1.pe, &1.dest}))

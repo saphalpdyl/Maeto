@@ -230,4 +230,5 @@ type Dataplane interface {
 	CleanupTriggers() error
 	ActivateRepair(egress string) error
 	ResetRepair(egress string, all bool) error
+	ActiveRepairs() ([]string, error)
 }

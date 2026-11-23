@@ -20,6 +20,7 @@ defmodule MaetoPane.Pane.Analysis do
     views = nodes(snapshot)
     by_id = Map.new(views, &{&1.id, &1})
     faults = views |> issues() |> Enum.group_by(& &1.node)
+    repairing = Map.get(snapshot, :repairing) || %{}
 
     links = group_links(raw_edges)
 
@@ -27,7 +28,7 @@ defmodule MaetoPane.Pane.Analysis do
       nodes:
         Enum.map(raw_nodes, fn raw ->
           raw
-          |> graph_node(inventory, by_id, faults)
+          |> graph_node(inventory, by_id, faults, Map.get(repairing, "pop.#{raw["id"]}", []))
           |> Map.put(:heartbeat, MaetoPane.Pane.Heartbeat.bars(snapshot, "pop.#{raw["id"]}"))
         end),
       links: links,
@@ -142,10 +143,61 @@ defmodule MaetoPane.Pane.Analysis do
 
   def select(_graph, _selection), do: nil
 
-  defp graph_node(raw, inventory, views, faults) do
+  def events(graph) do
+    down = for node <- graph.nodes, node.down?, into: MapSet.new(), do: node.id
+
+    node_events =
+      Enum.flat_map(graph.nodes, fn node ->
+        cond do
+          node.down? ->
+            [
+              %{
+                kind: :node_down,
+                node: node.id,
+                link: nil,
+                sid: nil,
+                detail: "declared down by the controller"
+              }
+            ]
+
+          node.repairing != [] ->
+            [
+              %{
+                kind: :plr_active,
+                node: node.id,
+                link: nil,
+                sid: nil,
+                detail: "repairing traffic to #{Enum.join(node.repairing, ", ")}"
+              }
+            ]
+
+          true ->
+            []
+        end
+      end)
+
+    link_events =
+      for link <- graph.links,
+          not MapSet.member?(down, link.a) and not MapSet.member?(down, link.b),
+          down_members = Enum.count(link.edges, &(&1["up"] != true)),
+          down_members > 0 do
+        %{
+          kind: :link_down,
+          node: nil,
+          link: link.id,
+          sid: nil,
+          detail: "#{link.a}–#{link.b}: #{down_members} of #{length(link.edges)} down"
+        }
+      end
+
+    node_events ++ link_events
+  end
+
+  defp graph_node(raw, inventory, views, faults, repairing) do
     id = raw["id"]
     view = Map.get(views, id)
     node_faults = Map.get(faults, id, [])
+    down? = raw["down"] == true
 
     %{
       kind: :node,
@@ -156,7 +208,14 @@ defmodule MaetoPane.Pane.Analysis do
       view: view,
       inventory: Map.get(inventory, id),
       faults: node_faults,
-      status: node_status(view, node_faults)
+      down?: down?,
+      repairing: repairing,
+      status:
+        cond do
+          down? -> :down
+          repairing != [] -> :plr
+          true -> node_status(view, node_faults)
+        end
     }
   end
 
