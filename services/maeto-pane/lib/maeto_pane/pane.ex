@@ -14,6 +14,7 @@ defmodule MaetoPane.Pane do
   @retry_after 2_000
   @heartbeat_keep_ms 25 * 60 * 1_000
   @path_change_keep 1_024
+  @broadcast_every_ms 500
 
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
 
@@ -205,6 +206,12 @@ defmodule MaetoPane.Pane do
     end
   end
 
+  def handle_info(:broadcast, state) do
+    Phoenix.PubSub.broadcast(MaetoPane.PubSub, @topic, :pane_updated)
+
+    {:noreply, Map.put(state, :broadcast_pending, false)}
+  end
+
   def handle_info(_message, state), do: {:noreply, state}
 
   # keys are <prefix>.<id>.<lane>; the rest of the pane keys nodes by <prefix>.<id>
@@ -310,26 +317,33 @@ defmodule MaetoPane.Pane do
   end
 
   defp merge_path_changes(kept, incoming) do
-    (incoming ++ kept)
+    (Enum.map(incoming, &with_time/1) ++ kept)
     |> Enum.uniq_by(&path_change_key/1)
-    |> Enum.sort_by(&path_change_time/1, :desc)
+    |> Enum.sort_by(& &1["_time"], :desc)
     |> Enum.take(@path_change_keep)
   end
 
   defp path_change_key(change) do
-    {path_change_time(change), change["tenant"], change["label"], change["src"], change["dst"]}
+    {change["_time"], change["tenant"], change["label"], change["src"], change["dst"]}
   end
 
-  defp path_change_time(change) do
-    case DateTime.from_iso8601(change["at"] || "") do
-      {:ok, at, _offset} -> DateTime.to_unix(at, :microsecond)
-      _ -> 0
-    end
+  defp with_time(%{"_time" => _} = change), do: change
+
+  defp with_time(change) do
+    time =
+      case DateTime.from_iso8601(change["at"] || "") do
+        {:ok, at, _offset} -> DateTime.to_unix(at, :microsecond)
+        _ -> 0
+      end
+
+    Map.put(change, "_time", time)
   end
+
+  defp broadcast(%{broadcast_pending: true} = state), do: state
 
   defp broadcast(state) do
-    Phoenix.PubSub.broadcast(MaetoPane.PubSub, @topic, :pane_updated)
+    Process.send_after(self(), :broadcast, @broadcast_every_ms)
 
-    state
+    Map.put(state, :broadcast_pending, true)
   end
 end
