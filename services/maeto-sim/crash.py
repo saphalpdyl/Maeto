@@ -102,7 +102,7 @@ class Crasher:
         ctr = self.client.containers.get(node.container)
         ctr.start()
 
-        ctr.exec_run(["rm", "-f", "/var/run/charon.pid", "/var/run/charon.vici"])
+        ctr.exec_run(["sh", "-c", "rm -f /var/run/charon.pid /var/run/charon.vici /var/run/frr/*.pid"])
         for _ in range(25):
             result = ctr.exec_run(
                 ["supervisorctl", "-c", "/etc/supervisor/conf.d/supervisord.conf", "restart", "charon"]

@@ -135,7 +135,7 @@ def pop_boot_commands(plan, pop_id):
         "ip link set sr0 up",
         # bfdd connects to the xdp-bfd data plane at startup. it has to start first https://github.com/w453y/xdp-bfd
         "sh -c 'for i in $(seq 25); do supervisorctl -c /etc/supervisor/conf.d/supervisord.conf start xdp-bfd && break; sleep 0.2; done'",
-        "sh -c '/usr/lib/frr/docker-start &'"
+        "sh -c 'rm -f /var/run/frr/*.pid; /usr/lib/frr/docker-start &'"
     ]
     cmds += _access_setup(plan.pops[pop_id].access)
     cmds += _shape_setup(plan, pop_id)
@@ -218,7 +218,7 @@ def render_clab(topo, plan):
                 f"ip -6 route replace default via {cp.gateway}",
                 f"ip link set dev {cp.lan_iface} up",
                 f"ip -6 addr replace {cp.lan_address} dev {cp.lan_iface}",
-                "sh -c '/usr/lib/frr/docker-start &'",
+                "sh -c 'rm -f /var/run/frr/*.pid; /usr/lib/frr/docker-start &'",
             ],
             "labels": {"clab_label": cpe.clab_label},
         }

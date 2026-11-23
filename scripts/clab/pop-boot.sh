@@ -28,11 +28,8 @@ fi
 
 sudo docker start "$container" > /dev/null
 
-# docker start keeps the container's filesystem, so charon's pid file and vici
-# socket from before the crash are still there and charon refuses to start.
-# also, supervisord needs a moment to open its
-# socket, hence the retries.
-sudo docker exec "$container" rm -f /var/run/charon.pid /var/run/charon.vici
+# remove frr and charon pid and wait a bit for supervisor to start
+sudo docker exec "$container" sh -c 'rm -f /var/run/charon.pid /var/run/charon.vici /var/run/frr/*.pid'
 for i in $(seq 25); do
   sudo docker exec "$container" supervisorctl -c /etc/supervisor/conf.d/supervisord.conf restart charon \
     > /dev/null 2>&1 && break
