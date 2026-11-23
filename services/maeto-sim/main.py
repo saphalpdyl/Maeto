@@ -24,6 +24,7 @@ import scenarios
 import stories as storylib
 
 from crash import Crash, CrashError, Crasher
+from pathfind import PathError, ping_link
 from pinger import Pinger
 from faults import Fault, FaultError, LIMITS
 from shaping import Shaper, ShapingError
@@ -35,6 +36,11 @@ TFSIM = Path(os.environ.get("TFSIM_DIR", ROOT / "clab/tfsim"))
 STORIES = Path(__file__).resolve().parent / "stories"
 NATS_URL = os.environ.get("NATS_CONNECT_URL", "nats://127.0.0.1:4222")
 TRAFFIC = os.environ.get("MAETO_SIM_TRAFFIC", "").lower() in ("1", "true")
+
+BACKGROUND = "random"
+BACKGROUND_OWNER = "background"
+BACKGROUND_RETRY_S = 10
+BACKGROUND_MAX_S = 365 * 24 * 3600
 
 SUBJECT = "maeto.sim.cmd"
 BUCKET = "maeto-sim"
@@ -58,6 +64,8 @@ class Sim:
         self.story: Optional[storylib.Story] = None
         self.story_task: Optional[asyncio.Task] = None
         self.story_started_at = 0.0
+        self.story_link: Optional[str] = None
+        self.background_retry_at = 0.0
         self.error: Optional[str] = None
 
     def changed(self):
@@ -158,8 +166,28 @@ class Sim:
         await self.crasher.boot(self.lab.node(name))
         self.changed()
 
+    async def take_traffic(self, name: str, max_s: float, owner: str):
+        if self.traffic.owner == BACKGROUND_OWNER:
+            process = self.traffic.process
+            self.traffic.stop()
+            await asyncio.wait_for(process.wait(), scenarios.STOP_GRACE_S + 1)
+        await self.traffic.start(name, max_s, owner=owner)
+
+    async def keep_background(self):
+        if not TRAFFIC or BACKGROUND not in self.traffic.names:
+            return
+        if self.traffic.running or time.time() < self.background_retry_at:
+            return
+
+        self.background_retry_at = time.time() + BACKGROUND_RETRY_S
+        try:
+            await self.traffic.start(BACKGROUND, BACKGROUND_MAX_S, owner=BACKGROUND_OWNER)
+        except (OSError, ValueError) as e:
+            log.error("starting background traffic: %s", e)
+
     async def reset(self):
-        self.traffic.stop()
+        if self.traffic.owner != BACKGROUND_OWNER:
+            self.traffic.stop()
         await self.pinger.stop()
         self.faults.clear()
 
@@ -201,6 +229,7 @@ class Sim:
 
         self.story = self.stories[name]
         self.story_started_at = time.time()
+        self.story_link = None
         self.story_task = asyncio.create_task(self.run_story(self.story))
         self.changed()
 
@@ -215,7 +244,7 @@ class Sim:
             await asyncio.sleep(max(self.story_started_at + story.duration_s - time.time(), 0))
         except asyncio.CancelledError:
             pass
-        except (FaultError, ShapingError, CrashError, ValueError) as e:
+        except (FaultError, ShapingError, CrashError, PathError, ValueError) as e:
             log.error("story %s failed: %s", story.name, e)
             self.error = f"story {story.title} failed: {e}"
         finally:
@@ -231,8 +260,8 @@ class Sim:
 
     async def story_step(self, story: storylib.Story, step: storylib.Step, source: str):
         if step.kind == "traffic":
-            if not self.traffic.running:
-                await self.traffic.start(step.target, step.hold_s, owner=source)
+            if self.traffic.name != step.target:
+                await self.take_traffic(step.target, step.hold_s, owner=source)
             return
 
         if step.kind == "ping":
@@ -247,7 +276,12 @@ class Sim:
             return
 
         spec = step.target if isinstance(step.target, dict) else {"link": step.target}
-        for link in self.lab.find(spec["link"]):
+        if spec.get("on_path_of") == "ping":
+            links = [await self.ping_path_link()]
+        else:
+            links = self.lab.find(spec["link"])
+
+        for link in links:
             fault = Fault(
                 link=link.id,
                 kind=step.kind,
@@ -258,6 +292,15 @@ class Sim:
             if step.kind == "impair":
                 fault.impairment = faults.impairment(spec)
             await self.apply(fault)
+
+    async def ping_path_link(self) -> lablib.Link:
+        if self.story_link is None:
+            if self.pinger.source is None or not self.pinger.running:
+                raise PathError("no ping is running to follow")
+            link = await ping_link(self.lab, self.shaper, self.pinger.source, self.pinger.target)
+            log.info("%s → %s is crossing %s", self.pinger.source.name, self.pinger.target.name, link.label)
+            self.story_link = link.id
+        return self.lab.links[self.story_link]
 
     async def stop_story(self):
         task = self.story_task
@@ -294,7 +337,7 @@ class Sim:
             async with self.lock:
                 await self.clear(request.get("link"))
         elif action == "scenario_start":
-            await self.traffic.start(request.get("name"), LIMITS["scenario_max_s"])
+            await self.take_traffic(request.get("name"), LIMITS["scenario_max_s"], owner="manual")
         elif action == "scenario_stop":
             self.traffic.stop()
         elif action == "story_start":
@@ -328,9 +371,11 @@ class Sim:
                     except CrashError as e:
                         log.error("booting %s: %s", name, e)
 
-            if self.traffic.expired():
+            if self.traffic.expired() and self.traffic.owner != BACKGROUND_OWNER:
                 log.info("scenario %s hit its time limit", self.traffic.name)
                 self.traffic.stop()
+
+            await self.keep_background()
 
     def view(self) -> dict:
         links = []

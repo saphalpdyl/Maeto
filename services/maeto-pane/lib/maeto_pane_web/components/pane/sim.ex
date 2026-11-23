@@ -164,7 +164,9 @@ defmodule MaetoPaneWeb.Pane.Sim do
               <h3 class="text-[13px] font-semibold">{scenario["title"]}</h3>
               <span class="font-mono text-[11px] text-faint">{duration(scenario["duration_s"])}</span>
               <.pill :if={running?(@scenario, scenario)} tone="steer">
-                running · {remaining(@scenario["expires_at"], @now)} left
+                {if @scenario["owner"] == "background",
+                  do: "always on",
+                  else: "running · #{remaining(@scenario["expires_at"], @now)} left"}
               </.pill>
             </div>
             <p class="mt-0.5 text-[13px] text-pretty text-muted">{scenario["description"]}</p>

@@ -65,6 +65,9 @@ def parse(name: str, spec: dict, lab: Lab, scenarios: set) -> Story:
             ref = target["node"] if isinstance(target, dict) else target
             if not lab.node(ref):
                 raise StoryError(f"{name}: no node {ref!r} in this topology")
+        elif isinstance(target, dict) and target.get("on_path_of") == "ping":
+            if not any("ping" in step for step in spec.get("steps") or []):
+                raise StoryError(f"{name}: on_path_of: ping needs a ping step")
         else:
             ref = target["link"] if isinstance(target, dict) else target
             if not lab.find(ref):

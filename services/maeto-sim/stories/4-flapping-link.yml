@@ -1,8 +1,12 @@
-title: Flapping CHI–ASH
-description: "CHI–ASH drops for 15 seconds every half minute. The hold-down timer should stop paths from bouncing on and off it each time it returns."
-duration: 135
+title: Flapping link under live traffic
+description: "HostLAX2 pings HostORD2 while the core link it was crossing drops for 15 seconds every half minute. The first drop moves the ping; the hold-down timer should keep it from bouncing back onto the link each time it returns."
+duration: 140
 steps:
-  - {at: 0, for: 15, down: CHI-ASH}
-  - {at: 30, for: 15, down: CHI-ASH}
-  - {at: 60, for: 15, down: CHI-ASH}
-  - {at: 90, for: 15, down: CHI-ASH}
+  - at: 0
+    for: 140
+    ping: {from: HostLAX2, to: HostORD2}
+  - {at: 5, for: 15, down: {on_path_of: ping}}
+  - {at: 35, for: 15, down: {on_path_of: ping}}
+  - {at: 65, for: 15, down: {on_path_of: ping}}
+  - {at: 95, for: 15, down: {on_path_of: ping}}
+

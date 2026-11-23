@@ -80,7 +80,7 @@ services:
     pid: host
     environment:
       - NATS_CONNECT_URL=nats://clab-eight-pop-nats:4222
-      - MAETO_SIM_TRAFFIC=${MAETO_SIM_TRAFFIC:-0}
+      - MAETO_SIM_TRAFFIC=${MAETO_SIM_TRAFFIC:-1}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./build/:/app/build/:ro

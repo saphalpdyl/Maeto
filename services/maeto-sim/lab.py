@@ -2,6 +2,7 @@
 # sits on, and the tc chain the generator shaped each interface with at deploy
 # (a pop's setup lives in conf/<node>/boot.sh, other nodes keep it in exec)
 
+import ipaddress
 import json
 import re
 import shlex
@@ -53,6 +54,9 @@ class Node:
     name: str
     container: str
     ifaces: List[str]
+    id: str = ""
+    locator: Optional[ipaddress.IPv6Network] = None
+    core: bool = False
 
 
 @dataclass
@@ -60,6 +64,8 @@ class Host:
     name: str
     container: str
     address: str
+    subnet: str = ""
+    pe: str = ""
 
 
 @dataclass
@@ -70,6 +76,13 @@ class Lab:
     pops: List[str]
     nodes: Dict[str, Node] = field(default_factory=dict)
     hosts: Dict[str, Host] = field(default_factory=dict)
+
+    def link_at(self, pop: str, iface: str) -> Optional[Link]:
+        for link in self.links.values():
+            for end in (link.a, link.b):
+                if end.pop == pop and end.iface == iface:
+                    return link
+        return None
 
     def node(self, ref: str) -> Optional[Node]:
         for node in self.nodes.values():
@@ -171,7 +184,16 @@ def load(root: Path) -> Lab:
         ifaces = [iface["name"] for iface in pop["interfaces"]]
         if pop.get("access"):
             ifaces.insert(0, pop["access"]["interface"])
-        nodes[pop["id"]] = Node(name=pop["name"], container=f"clab-{data['name']}-{pop['name']}", ifaces=ifaces)
+        nodes[pop["id"]] = Node(
+            name=pop["name"],
+            container=f"clab-{data['name']}-{pop['name']}",
+            ifaces=ifaces,
+            id=pop["id"],
+            locator=ipaddress.IPv6Network(pop["locator"]),
+            core=not pop.get("access"),
+        )
+
+    attach = {cpe["id"]: cpe["attach_node"] for cpe in data.get("cpes") or []}
 
     hosts = {}
     for host in data.get("hosts") or []:
@@ -179,6 +201,8 @@ def load(root: Path) -> Lab:
             name=host["name"],
             container=f"clab-{data['name']}-{host['name']}",
             address=host["address"].split("/")[0],
+            subnet=host["subnet"],
+            pe=attach.get(host["cpe"], ""),
         )
 
     return Lab(name=data["name"], build=build, links=links, pops=pops, nodes=nodes, hosts=hosts)

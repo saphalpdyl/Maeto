@@ -1,5 +1,5 @@
-title: Fiber cut on SJC–CHI
-description: "HostLAX2 pings HostORD2 across SJC–CHI while it goes dark for 90 seconds. The PCE sees the link down, reroutes everything that crossed it, and returns once the link is back and stable."
+title: Fiber cut under live traffic
+description: "HostLAX2 pings HostORD2 while the core link it is crossing goes dark for 90 seconds. The PCE sees the link down, reroutes everything that crossed it, and returns once the link is back and stable."
 duration: 125
 steps:
   - at: 0
@@ -7,4 +7,4 @@ steps:
     ping: {from: HostLAX2, to: HostORD2}
   - at: 5
     for: 90
-    down: SJC-CHI
+    down: {on_path_of: ping}
