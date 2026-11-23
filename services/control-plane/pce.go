@@ -111,11 +111,10 @@ func (p *PCE) Run(ctx context.Context, graph *Graph) {
 			GatedReroutes:   make([]PCETickReportReroute, 0),
 		}
 
-		topo := graph.Clone()
-		graph.mu.RLock()
+		graph := graph.Clone()
 		pceGraph := NewPCEGraph(graph)
 
-		repairList := p.computeTILFASegments(ctx, topo, NewPCEGraph(topo))
+		repairList := p.computeTILFASegments(ctx, graph, NewPCEGraph(graph))
 
 		p.updateStaticBandwidthUtilizationCost(pceGraph)
 
@@ -124,7 +123,7 @@ func (p *PCE) Run(ctx context.Context, graph *Graph) {
 		seen := make(map[PathKey]bool)
 
 	DemandLoop:
-		for _, demand := range BuildDemands(p.tenants, topo) {
+		for _, demand := range BuildDemands(p.tenants, graph) {
 
 			// PathKey is the boundary. Label is a domain-agnostic identifier.
 			// 	It can be anything although its being used here to define objectives (latency, jitter etc.)
@@ -287,9 +286,6 @@ func (p *PCE) Run(ctx context.Context, graph *Graph) {
 			paths[pathKey] = computedPath
 		}
 
-		// the channel send can block; nothing below reads the graph
-		graph.mu.RUnlock()
-
 		// Remove bandwidth reservation of moved paths
 		for key, path := range previous {
 			if seen[key] {
@@ -331,6 +327,7 @@ func (p *PCE) Run(ctx context.Context, graph *Graph) {
 		p.reportChan <- PCEUpdate{
 			Paths:      paths,
 			RepairList: repairList,
+			Topology:   graph,
 		}
 	}
 }

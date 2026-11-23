@@ -9,6 +9,9 @@ import (
 type PCEUpdate struct {
 	RepairList LFARepairList
 	Paths      PathSet
+
+	// Need a snapshot of the graph to be used throughout the tick. Without this, we get nasty race conditions
+	Topology *Graph
 }
 
 type remoteSiteRoute struct {
