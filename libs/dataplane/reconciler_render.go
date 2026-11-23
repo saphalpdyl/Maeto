@@ -35,6 +35,18 @@ func (r *Reconciler) RenderCPEIntent(ctx context.Context, cpe *nodesync.CPEInten
 		return nil, fmt.Errorf("failed to parse xfrm prefix: %w", err)
 	}
 
+	// Fix for the bug where IKE Dead Peer detection brings down the tunnel which causes the controller
+	// to remove the primary tunnel from the intent, which also removes rule that routes the packets to
+	// the standby tunnel (the rule for standby tunnel depends on the primary tunnel intent being present)
+	// causing the CPE to fall back to the "primary" tunnel table through the default rule and blackholing
+	isPrimaryUsable := false
+	for _, tun := range cpe.Tunnels {
+		// Only true when primary is present and not down i.e not in DownNodes
+		if tun.Role == nodesync.TunnelRolePrimary && !slices.Contains(cpe.DownNodes, tun.TunnelPE) {
+			isPrimaryUsable = true
+		}
+	}
+
 	for _, tunnel := range cpe.Tunnels {
 		xfrmTunnelName := fmt.Sprintf("mto-tun-%s-%d", cpe.TenantID, tunnel.TunnelInterfaceID)
 		xfrm := &XFRM{
@@ -66,7 +78,10 @@ func (r *Reconciler) RenderCPEIntent(ctx context.Context, cpe *nodesync.CPEInten
 		}
 		resources[tunnelDefault.ID().Key] = tunnelDefault
 
-		if tunnel.Role == nodesync.TunnelRolePrimary {
+		// This (see the intentHasPrimaryTunnel comment above) won't reliably for multi-homed CPEs
+		// but for dual-homed we'll take it for now
+		if (isPrimaryUsable && tunnel.Role == nodesync.TunnelRolePrimary) ||
+			(!isPrimaryUsable && tunnel.Role == nodesync.TunnelRoleStandby) {
 			siteRule := &Rule{
 				Priority: CPERulePriority,
 				Src:      &cpe.SitePrefix,
